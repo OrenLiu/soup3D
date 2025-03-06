@@ -1,5 +1,6 @@
 """
-git
+这是一个基于OpenGL和pygame开发的3D引擎，易于新手学习，可
+用于3D游戏开发、数据可视化、3D图形的绘制等开发。
 """
 import pygame
 from pygame.locals import *
@@ -10,6 +11,7 @@ from math import *
 
 import soup3D.event
 import soup3D.camera
+import soup3D.light
 from soup3D.name import *
 
 
@@ -172,107 +174,6 @@ class Group:
         """
         for shape in self.shapes:
             shape.paint(*self.origin)
-
-
-class Light:
-    def __init__(self,
-                 light_type,
-                 pos: tuple[float, float, float],
-                 color: tuple[float, float, float]):
-        """
-        光照效果，使图形具有明暗效果
-        :param light_type: 光照类型，可以为：
-                           "point": 点光源，光向四周散发，类似灯泡
-                           "direct": 平行光源，光向一个方向平行散发，类似阳光
-        :param pos:        当light_type的值不同时有所区别
-                           当light_type="point": 光源位置，该值需为: (x, y, z)
-                           当light_type="direct": 光源朝向，该值需为: (YAW, PITCH, ROLL)
-        :param color:      光源颜色，该值需为(红色亮度, 绿色亮度, 蓝色亮度)
-        """
-        self.light_type = light_type
-        self.pos = list(pos)
-        self.color = list(color)
-        self.light_id = GL_LIGHT0  # 使用GL_LIGHT0作为光源ID
-
-        # 启用光照和光源
-        glEnable(GL_LIGHTING)
-        glEnable(self.light_id)
-
-        # 新增：启用颜色材质模式，让顶点颜色影响材质
-        glEnable(GL_COLOR_MATERIAL)
-        glColorMaterial(GL_FRONT_AND_BACK, GL_AMBIENT_AND_DIFFUSE)
-
-        # 设置初始位置和颜色
-        self.update_position()
-        self.update_color()
-
-    def update_position(self):
-        """根据light_type更新光源的位置或方向"""
-        if self.light_type == "point":
-            x, y, z = self.pos
-            glLightfv(self.light_id, GL_POSITION, (x, y, z, 1.0))  # 点光源，第四分量1.0
-        elif self.light_type == "direct":
-            yaw, pitch, roll = self.pos
-            direction = self.calculate_direction(yaw, pitch, roll)
-            glLightfv(self.light_id, GL_POSITION, (*direction, 0.0))  # 平行光，第四分量0.0
-        else:
-            raise ValueError(f"Invalid light type: {self.light_type}")
-
-    def calculate_direction(self, yaw, pitch, roll):
-        """根据YAW, PITCH, ROLL计算方向向量（参考camera的旋转逻辑）"""
-        # 初始方向为(0, 0, 1)
-        x, y, z = 0.0, 0.0, 1.0
-
-        # 绕Z轴旋转（ROLL）
-        x, y = self.rotated(x, y, 0, 0, roll)
-        # 绕X轴旋转（PITCH）
-        y, z = self.rotated(y, z, 0, 0, pitch)
-        # 绕Y轴旋转（YAW）
-        x, z = self.rotated(x, z, 0, 0, yaw)
-
-        # 归一化方向向量
-        length = (x ** 2 + y ** 2 + z ** 2) ** 0.5
-        if length == 0:
-            return 0.0, 0.0, 1.0
-        return x / length, y / length, z / length
-
-    @staticmethod
-    def rotated(Xa, Ya, Xb, Yb, degree):
-        """复制camera.py中的旋转函数逻辑"""
-        rad = radians(degree)
-        dx = Xa - Xb
-        dy = Ya - Yb
-        new_x = dx * cos(rad) - dy * sin(rad) + Xb
-        new_y = dx * sin(rad) + dy * cos(rad) + Yb
-        return new_x, new_y
-
-    def update_color(self):
-        """更新光源颜色（环境、漫反射、镜面光使用相同颜色）"""
-        r, g, b = self.color
-        glLightfv(self.light_id, GL_AMBIENT, (r, g, b, 1.0))
-        glLightfv(self.light_id, GL_DIFFUSE, (r, g, b, 1.0))
-        glLightfv(self.light_id, GL_SPECULAR, (r, g, b, 1.0))
-
-    def change_pos(self, *args):
-        """
-        更改光源位置或朝向
-        :return: None
-        """
-        if len(args) != 3:
-            raise ValueError("Expected 3 arguments for position/orientation")
-        self.pos = list(args)
-        self.update_position()
-
-    def change_color(self, R, G, B):
-        """
-        更改光源颜色
-        :param R: 红色亮度
-        :param G: 绿色亮度
-        :param B: 蓝色亮度
-        :return: None
-        """
-        self.color = [R, G, B]
-        self.update_color()
 
 
 class Texture:
