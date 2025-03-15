@@ -7,12 +7,14 @@ from pygame.locals import *
 from OpenGL.GL import *
 from OpenGL.GLU import *
 from PIL import Image
-from math import *
 
 import soup3D.event
 import soup3D.camera
 import soup3D.light
 from soup3D.name import *
+
+
+stable_shapes = {}
 
 
 class Shape:
@@ -33,7 +35,7 @@ class Shape:
         :param texture:    使用的纹理对象，默认为None
         :param generate_normals: 是否自动生成法线，仅适用于三角形类型
         """
-        self.type_menu = {
+        type_menu = {
             "line_b": GL_LINES,
             "line_s": GL_LINE_STRIP,
             "line_l": GL_LINE_LOOP,
@@ -41,17 +43,21 @@ class Shape:
             "triangle_s": GL_TRIANGLE_STRIP,
             "triangle_l": GL_TRIANGLE_FAN
         }
-        if shape_type not in self.type_menu:
+        if shape_type not in type_menu:
             raise TypeError(f"unknown type: {shape_type}")
         self.type = shape_type
         self.points = args
         self.texture = texture
         self.normals = []
+        self.display_list = None
         if generate_normals:
             self.calculate_normals()
 
     def calculate_normals(self):
-        """自动计算三角形面的法线（仅支持triangle_b类型）"""
+        """
+        自动计算三角形面的法线（仅支持triangle_b类型）
+        :return: None
+        """
         if not self.type.startswith("triangle"):
             raise ValueError("Automatic normal generation is only supported for triangle types.")
 
@@ -95,17 +101,46 @@ class Shape:
         else:
             raise NotImplementedError("Automatic normal generation is only supported for triangle_b type.")
 
+    def resize(self, width, height, length):
+        """
+        改变物体大小或长宽高的比例
+        :param width:  宽度(沿X轴)拉伸多少倍
+        :param height: 高度(沿Y轴)拉伸多少倍
+        :param length: 长度(沿Z轴)拉伸多少倍
+        :return: None
+        """
+        self.points = tuple((point[0]*width, point[1]*height, point[2]*length, *point[3:])
+                            for i, point in enumerate(self.points))
+
     def paint(self, x, y, z):
+        """
+        在单帧渲染该图形，当图形需要频繁切换形态、位置等参数时使用。
+        :param x: 坐标x增值
+        :param y: 坐标y增值
+        :param z: 坐标z增值
+        :return: None
+        """
         # 状态设置必须在glBegin/glEnd之外
+        use_alpha = False
         if self.texture is not None:
             glEnable(GL_TEXTURE_2D)
             glBindTexture(GL_TEXTURE_2D, self.texture.tex_id)
-            tex_coord_dim = 2  # 纹理坐标维度
+            if self.texture.transparent:
+                glEnable(GL_ALPHA_TEST)
+                glAlphaFunc(GL_GREATER, 0.1)
+                use_alpha = True
         else:
             glDisable(GL_TEXTURE_2D)
-            color_dim = 3  # 颜色维度
 
-        glBegin(self.type_menu[self.type])
+        type_menu = {
+            "line_b": GL_LINES,
+            "line_s": GL_LINE_STRIP,
+            "line_l": GL_LINE_LOOP,
+            "triangle_b": GL_TRIANGLES,
+            "triangle_s": GL_TRIANGLE_STRIP,
+            "triangle_l": GL_TRIANGLE_FAN
+        }
+        glBegin(type_menu[self.type])
         for i, point in enumerate(self.points):
             # 参数完整性验证
             if self.texture:
@@ -127,6 +162,80 @@ class Shape:
                 z + point[2]
             )
         glEnd()
+
+        if use_alpha:
+            glDisable(GL_ALPHA_TEST)
+
+    def stable(self, x, y, z):
+        """
+        每帧固定渲染该图形，可以用于渲染固定场景，可提升性能。
+        :param x: 坐标x增值
+        :param y: 坐标y增值
+        :param z: 坐标z增值
+        :return: None
+        """
+        global stable_shapes
+
+        if self.display_list is None:
+            stable_shapes[id(self)] = (self, x, y, z)
+            self.display_list = glGenLists(1)
+            glNewList(self.display_list, GL_COMPILE)
+
+            # 设置纹理状态
+            if self.texture is not None:
+                glEnable(GL_TEXTURE_2D)
+                glBindTexture(GL_TEXTURE_2D, self.texture.tex_id)
+            else:
+                glDisable(GL_TEXTURE_2D)
+
+            # 确定绘制类型
+            type_menu = {
+                "line_b": GL_LINES,
+                "line_s": GL_LINE_STRIP,
+                "line_l": GL_LINE_LOOP,
+                "triangle_b": GL_TRIANGLES,
+                "triangle_s": GL_TRIANGLE_STRIP,
+                "triangle_l": GL_TRIANGLE_FAN
+            }
+            glBegin(type_menu[self.type])
+
+            for i, point in enumerate(self.points):
+                # 验证参数完整性
+                if self.texture:
+                    if len(point) < 5:
+                        raise ValueError(f"Texture shape requires 5 parameters per point, got {len(point)}")
+                    glTexCoord2f(point[3], point[4])
+                else:
+                    if len(point) < 6:
+                        raise ValueError(f"Color shape requires 6 parameters per point, got {len(point)}")
+                    glColor3f(point[3], point[4], point[5])
+
+                # 设置法线
+                if self.normals and i < len(self.normals):
+                    glNormal3f(*self.normals[i])
+
+                # 顶点坐标（原始坐标）
+                glVertex3f(point[0], point[1], point[2])
+
+            glEnd()
+            glEndList()
+
+        # 应用位移并调用显示列表
+        glPushMatrix()
+        glTranslatef(x, y, z)
+        glCallList(self.display_list)
+        glPopMatrix()
+
+    def unstable(self):
+        """
+        取消stable的渲染
+        :return: None
+        """
+        global stable_shapes
+        if self.display_list is not None:
+            stable_shapes.pop(id(self))
+            glDeleteLists(self.display_list, 1)
+            self.display_list = None
 
 
 class Group:
@@ -168,23 +277,52 @@ class Group:
         self.origin[1] += y
         self.origin[2] += z
 
+    def resize(self, width, height, length):
+        """
+        改变物体大小或长宽高的比例
+        :param width:  宽度(沿X轴)拉伸多少倍
+        :param height: 高度(沿Y轴)拉伸多少倍
+        :param length: 长度(沿Z轴)拉伸多少倍
+        :return: None
+        """
+        for i, shape in enumerate(self.shapes):
+            shape.resize(width, height, length)
+
     def display(self):
         """
-        显示图形组
+        单帧显示图形组
+        :return: None
         """
         for shape in self.shapes:
             shape.paint(*self.origin)
 
+    def display_stable(self):
+        """
+        每帧显示图形组
+        :return: None
+        """
+        for shape in self.shapes:
+            shape.stable(*self.origin)
+
+    def hide(self):
+        """
+        隐藏图形组，相当于撤销display_stable操作
+        :return: None
+        """
+        for shape in self.shapes:
+            shape.unstable()
+
 
 class Texture:
-    def __init__(self, img, width, height, wrap_x="edge", wrap_y="edge", linear=False):
+    def __init__(self, img, width, height, img_type="rgb", wrap_x="edge", wrap_y="edge", linear=False):
         """
         材质纹理贴图，当图形需要贴图时，在Shape的texture
         赋值该类型
 
-        :param img:    贴图的二进制数据（需为RGB格式）
+        :param img:    贴图的二进制数据
         :param width:  贴图的宽度（像素）
         :param height: 贴图的高度（像素）
+        :param img_type: 图像模式，可为"rgb"或"rgba"
         :param wrap_x: x轴环绕方式，当取色坐标超出图片范
                        围时的取色方案，可为：
                        "repeat" -> 重复图像
@@ -194,7 +332,7 @@ class Texture:
         :param wrap_y: y轴环绕方式（参数同wrap_x）
         :param linear: 是否使用抗锯齿，True使用
                        GL_LINEAR插值，False使用
-                       GL_NEAREST[6](@ref)
+                       GL_NEAREST
         """
         # 转换参数为OpenGL常量
         wrap_map = {
@@ -202,6 +340,11 @@ class Texture:
             "mirrored": GL_MIRRORED_REPEAT,
             "edge": GL_CLAMP_TO_EDGE,
             "border": GL_CLAMP_TO_BORDER
+        }
+
+        type_map = {
+            "rgb": GL_RGB,
+            "rgba": GL_RGBA
         }
 
         # 生成纹理对象
@@ -217,8 +360,11 @@ class Texture:
                         GL_LINEAR if linear else GL_NEAREST)
 
         # 加载纹理数据
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, width, height,
-                     0, GL_RGB, GL_UNSIGNED_BYTE, img)  # [6,7](@ref)
+        glTexImage2D(GL_TEXTURE_2D, 0, type_map[img_type], width, height,
+                     0, type_map[img_type], GL_UNSIGNED_BYTE, img)
+
+        # 记录纹理是否透明（RGBA模式）
+        self.transparent = (img_type == "rgba")
 
 
 def init(width=1920, height=1080, fov=45, bg_color: tuple[float, float, float] = (0.0, 0.0, 0.0), far=1024):
@@ -235,6 +381,8 @@ def init(width=1920, height=1080, fov=45, bg_color: tuple[float, float, float] =
     pygame.display.set_mode((width, height), DOUBLEBUF | OPENGL)  # 创建OpenGL上下文
     glClearColor(*bg_color, 1)  # 在上下文创建后设置背景颜色
     glEnable(GL_DEPTH_TEST)  # 启用深度测试
+    glEnable(GL_BLEND)  # 启用混合
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)  # 设置混合函数
     glMatrixMode(GL_PROJECTION)
     glLoadIdentity()
     gluPerspective(fov, (width / height), 0.1, far)
@@ -257,6 +405,32 @@ def update():
     """
     更新画布
     """
+    global stable_shapes
+
+    # 先渲染所有不透明物体
+    for shape_id in list(stable_shapes.keys()):
+        shape, x, y, z = stable_shapes[shape_id]
+        if not (shape.texture and shape.texture.transparent):
+            glPushMatrix()
+            glTranslatef(x, y, z)
+            glCallList(shape.display_list)
+            glPopMatrix()
+
+    # 开启Alpha测试并渲染透明物体
+    glEnable(GL_ALPHA_TEST)
+    glAlphaFunc(GL_GREATER, 0.1)  # 可根据需要调整阈值
+
+    for shape_id in list(stable_shapes.keys()):
+        shape, x, y, z = stable_shapes[shape_id]
+        if shape.texture and shape.texture.transparent:
+            glPushMatrix()
+            glTranslatef(x, y, z)
+            glCallList(shape.display_list)
+            glPopMatrix()
+
+    glDisable(GL_ALPHA_TEST)
+
+    # 处理事件和刷新显示
     soup3D.event.check_event(pygame.event.get())
     pygame.display.flip()
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
