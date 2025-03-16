@@ -101,16 +101,21 @@ class Shape:
         else:
             raise NotImplementedError("Automatic normal generation is only supported for triangle_b type.")
 
-    def resize(self, width, height, length):
+    def resize(self, width, height, length, generate_normals=False):
         """
         改变物体大小或长宽高的比例
-        :param width:  宽度(沿X轴)拉伸多少倍
-        :param height: 高度(沿Y轴)拉伸多少倍
-        :param length: 长度(沿Z轴)拉伸多少倍
+        :param width:            宽度(沿X轴)拉伸多少倍
+        :param height:           高度(沿Y轴)拉伸多少倍
+        :param length:           长度(沿Z轴)拉伸多少倍
+        :param generate_normals: 是否计算发线
         :return: None
         """
-        self.points = tuple((point[0]*width, point[1]*height, point[2]*length, *point[3:])
-                            for i, point in enumerate(self.points))
+        new_points = tuple((point[0]*width, point[1]*height, point[2]*length, *point[3:])
+                           for i, point in enumerate(self.points))
+        return Shape(self.type,
+                     *new_points,
+                     texture=self.texture,
+                     generate_normals=generate_normals)
 
     def paint(self, x, y, z):
         """
@@ -239,10 +244,11 @@ class Shape:
 
 
 class Group:
-    def __init__(self, *args: Shape, origin: tuple[float] = (0.0, 0.0, 0.0)):
+    def __init__(self, *args: Shape, origin=(0.0, 0.0, 0.0)):
         """
         图形组，图形组中的所有图形的坐标都以组的原点为原点
-        :param args: 组中所有的图形
+        :param args:   组中所有的图形
+        :param origin: 图形组在世界坐标的位置
         """
         self.shapes: list[Shape] = [i for i in args if type(i) is Shape]
         """
@@ -277,16 +283,17 @@ class Group:
         self.origin[1] += y
         self.origin[2] += z
 
-    def resize(self, width, height, length):
+    def resize(self, width, height, length, generate_normals=False):
         """
         改变物体大小或长宽高的比例
-        :param width:  宽度(沿X轴)拉伸多少倍
-        :param height: 高度(沿Y轴)拉伸多少倍
-        :param length: 长度(沿Z轴)拉伸多少倍
+        :param width:            宽度(沿X轴)拉伸多少倍
+        :param height:           高度(沿Y轴)拉伸多少倍
+        :param length:           长度(沿Z轴)拉伸多少倍
+        :param generate_normals: 是否计算发线
         :return: None
         """
-        for i, shape in enumerate(self.shapes):
-            shape.resize(width, height, length)
+        new_shapes = [shape.resize(width, height, length, generate_normals) for i, shape in enumerate(self.shapes)]
+        return Group(*new_shapes, origin=self.origin)
 
     def display(self):
         """
