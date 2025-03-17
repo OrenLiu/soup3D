@@ -15,6 +15,12 @@ import soup3D.light
 from soup3D.name import *
 
 
+__all__ = [
+    'Shape', 'Group', 'Texture',
+    'init', 'background_color', 'update', 'open_obj',
+    'event', 'camera', 'light', 'name'
+]
+
 stable_shapes = {}
 
 

@@ -1,3 +1,6 @@
+"""
+相机方法库，可在soup3D空间内移动相机位置
+"""
 from OpenGL.GL import *
 from OpenGL.GLU import *
 

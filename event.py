@@ -1,8 +1,13 @@
 """
-事件处理方法库
+事件处理方法库，可添加如鼠标、键盘等事件的处理方式
 """
 import pygame
 from pygame.locals import *
+
+
+__all__ = [
+    "bind", "check_event"
+]
 
 event_menu = {
     "on_close": pygame.QUIT,

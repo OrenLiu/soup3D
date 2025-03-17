@@ -1,8 +1,15 @@
+"""
+光源处理方法库，可在soup3D空间中添加7个光源
+"""
 from OpenGL.GL import *
 from OpenGL.GLU import *
 
 from math import *
 
+
+__all__ = [
+    "init", "Cone", "Direct"
+]
 
 light_list = [GL_LIGHT0, GL_LIGHT1, GL_LIGHT2, GL_LIGHT3, GL_LIGHT4, GL_LIGHT5, GL_LIGHT6, GL_LIGHT7]
 
