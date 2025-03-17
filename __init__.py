@@ -7,6 +7,7 @@ from pygame.locals import *
 from OpenGL.GL import *
 from OpenGL.GLU import *
 from PIL import Image
+from math import *
 
 import soup3D.event
 import soup3D.camera
@@ -112,6 +113,46 @@ class Shape:
         """
         new_points = tuple((point[0]*width, point[1]*height, point[2]*length, *point[3:])
                            for i, point in enumerate(self.points))
+        return Shape(self.type,
+                     *new_points,
+                     texture=self.texture,
+                     generate_normals=generate_normals)
+
+    def turn(self, yaw, pitch, roll, generate_normals=False):
+        """
+        旋转物体
+        :param yaw:   图形旋转偏移角
+        :param pitch: 图形旋转俯仰角
+        :param roll:  图形旋转横滚角
+        :return:
+        """
+        new_points = tuple(
+            (
+                rotated(point[0], point[1], 0, 0, roll)[0],
+                rotated(point[0], point[1], 0, 0, roll)[1],
+                point[2],
+                *point[3:]
+            )
+            for i, point in enumerate(self.points)
+        )
+        new_points = tuple(
+            (
+                point[0],
+                rotated(point[1], point[2], 0, 0, pitch)[0],
+                rotated(point[1], point[2], 0, 0, pitch)[1],
+                *point[3:]
+            )
+            for i, point in enumerate(new_points)
+        )
+        new_points = tuple(
+            (
+                rotated(point[0], point[2], 0, 0, yaw)[0],
+                point[1],
+                rotated(point[0], point[2], 0, 0, yaw)[1],
+                *point[3:]
+            )
+            for i, point in enumerate(new_points)
+        )
         return Shape(self.type,
                      *new_points,
                      texture=self.texture,
@@ -293,6 +334,17 @@ class Group:
         :return: None
         """
         new_shapes = [shape.resize(width, height, length, generate_normals) for i, shape in enumerate(self.shapes)]
+        return Group(*new_shapes, origin=self.origin)
+
+    def turn(self, yaw, pitch, roll, generate_normals=False):
+        """
+        旋转物体
+        :param yaw:   图形旋转偏移角
+        :param pitch: 图形旋转俯仰角
+        :param roll:  图形旋转横滚角
+        :return:
+        """
+        new_shapes = [shape.turn(yaw, pitch, roll, generate_normals) for i, shape in enumerate(self.shapes)]
         return Group(*new_shapes, origin=self.origin)
 
     def display(self):
@@ -477,11 +529,12 @@ def open_obj(obj, mtl) -> Group:
                 try:
                     img_path = line.split(' ', 1)[1].replace('\\', '/')
                     with Image.open(img_path) as img:
-                        img = img.convert('RGB')
+                        img = img.convert('RGBA')
                         texture = Texture(
                             img.tobytes(),
                             img.width,
                             img.height,
+                            img_type=RGBA,
                             wrap_x=REPEAT,
                             wrap_y=REPEAT
                         )
@@ -552,6 +605,22 @@ def open_obj(obj, mtl) -> Group:
         ))
 
     return Group(*shapes)
+
+
+def rotated(Xa, Ya, Xb, Yb, degree):
+    """
+    点A绕点B旋转特定角度后，点A的坐标
+    :param Xa:     环绕点(点A)X坐标
+    :param Ya:     环绕点(点A)Y坐标
+    :param Xb:     被环绕点(点B)X坐标
+    :param Yb:     被环绕点(点B)Y坐标
+    :param degree: 旋转角度
+    :return: 点A旋转后的X坐标, 点A旋转后的Y坐标
+    """
+    degree = degree * pi / 180
+    outx = (Xa - Xb) * cos(degree) - (Ya - Yb) * sin(degree) + Xb
+    outy = (Xa - Xb) * sin(degree) + (Ya - Yb) * cos(degree) + Yb
+    return outx, outy
 
 
 if __name__ == '__main__':

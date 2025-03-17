@@ -17,6 +17,13 @@ ROLL = 0.0
 
 
 def goto(x: float, y: float, z: float):
+    """
+    移动相机位置
+    :param x: 相机x坐标位置
+    :param y: 相机y坐标位置
+    :param z: 相机z坐标位置
+    :return: None
+    """
     global X, Y, Z, YAW, PITCH, ROLL
     X, Y, Z = x, y, z
     glMatrixMode(GL_MODELVIEW)
@@ -25,6 +32,13 @@ def goto(x: float, y: float, z: float):
 
 
 def turn(yaw, pitch, roll):
+    """
+    旋转相机
+    :param yaw:   相机旋转偏移角
+    :param pitch: 相机旋转俯仰角
+    :param roll:  相机旋转横滚角
+    :return:
+    """
     global X, Y, Z, YAW, PITCH, ROLL
     YAW, PITCH, ROLL = yaw, pitch, roll
     glMatrixMode(GL_MODELVIEW)
@@ -33,6 +47,10 @@ def turn(yaw, pitch, roll):
 
 
 def update():
+    """
+    更新相机
+    :return: None
+    """
     centerX, centerY, centerZ = 0, 0, 1
     upX, upY, upZ = 0, 1, 0
     # 进行横滚旋转
