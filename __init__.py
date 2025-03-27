@@ -449,58 +449,71 @@ def update():
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
 
 
-def open_obj(obj, mtl) -> Group:
+def open_obj(obj, mtl=None) -> Group:
     """
     打开一个obj模型文件和mtl纹理文件，并生成图形组(Group类)
     :param obj: 模型文件位置
     :param mtl: 纹理文件位置
     :return: 图形组(Group类)
     """
+    import os  # 新增导入
 
-    # 材质数据结构
     class Material:
         def __init__(self):
-            self.diffuse = (1, 1, 1)  # 默认白色
+            self.diffuse = (1, 1, 1)
             self.texture = None
             self.ambient = (0.2, 0.2, 0.2)
 
-    # === 1. 解析MTL材质文件 ===
     materials = {}
     current_mat = None
+    mtl_dir = ""  # 新增变量存储mtl文件目录
 
-    with open(mtl, 'r', encoding='utf-8') as f:
-        for line in f:
-            line = line.strip()
-            if not line: continue
+    if mtl is not None:
+        # 获取mtl文件的绝对路径和目录
+        mtl_abspath = os.path.abspath(mtl)
+        mtl_dir = os.path.dirname(mtl_abspath)
 
-            parts = line.split()
-            if parts[0] == 'newmtl':
-                current_mat = parts[1]
-                materials[current_mat] = Material()
-            elif parts[0] == 'Kd':  # 漫反射颜色
-                materials[current_mat].diffuse = tuple(map(float, parts[1:4]))
-            elif parts[0] == 'map_Kd':  # 纹理贴图
-                try:
-                    img_path = line.split(' ', 1)[1].replace('\\', '/')
-                    with Image.open(img_path) as img:
-                        img = img.convert('RGBA')
-                        texture = Texture(
-                            img.tobytes(),
-                            img.width,
-                            img.height,
-                            img_type=RGBA,
-                            wrap_x=REPEAT,
-                            wrap_y=REPEAT
-                        )
-                    materials[current_mat].texture = texture
-                except Exception as e:
-                    print(f"加载纹理失败: {e}")
+        with open(mtl, 'r', encoding='utf-8') as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
 
-    # === 2. 解析OBJ模型文件 ===
-    vertices = []
-    tex_coords = []
-    groups = {}
-    current_mat = None
+                parts = line.split(maxsplit=1)
+                if not parts:
+                    continue
+
+                key = parts[0]
+                if key == 'newmtl':
+                    current_mat = parts[1].strip()
+                    materials[current_mat] = Material()
+                elif key == 'Kd' and current_mat:
+                    materials[current_mat].diffuse = tuple(map(float, parts[1].split()[:3]))
+                elif key == 'map_Kd' and current_mat:
+                    # 处理可能包含空格的路径
+                    texture_file = parts[1].strip().replace('\\', '/')
+                    # 拼接绝对路径
+                    texture_path = os.path.normpath(os.path.join(mtl_dir, texture_file))
+                    try:
+                        with Image.open(texture_path) as img:
+                            img = img.convert('RGBA').transpose(Image.FLIP_TOP_BOTTOM)
+                            texture = Texture(
+                                img.tobytes(),
+                                img.width,
+                                img.height,
+                                img_type=RGBA,
+                                wrap_x=REPEAT,
+                                wrap_y=REPEAT
+                            )
+                        materials[current_mat].texture = texture
+                    except Exception as e:
+                        print(f"加载纹理失败: {e}")
+
+        # === 2. 解析OBJ模型文件 ===
+        vertices = []
+        tex_coords = []
+        groups = {}
+        current_mat = None
 
     with open(obj, 'r', encoding='utf-8', errors='ignore') as f:
         for line in f:
