@@ -178,10 +178,13 @@
     
 
 
-- init(): `函数`
+- init(ambientR, ambientG, ambientB): `函数`
 
   初始化光源，启用全局光照   
-  :return: None   
+  :param ambientR: 红环境光亮度   
+  :param ambientG: 绿环境光亮度   
+  :param ambientB: 蓝环境光亮度   
+  :return:   
   
 
 
@@ -251,8 +254,6 @@ soup3D的ui子库，用于绘制2D图形，可绘制HUD叠加显示、GUI用户�
   - paint(self, x, y): `函数`
 
     在单帧渲染该图形   
-    :param x: 坐标x增值   
-    :param y: 坐标y增值   
     
 
 

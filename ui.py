@@ -104,11 +104,7 @@ class Shape:
         glPopMatrix()
 
     def paint(self, x, y):
-        """
-        在单帧渲染该图形
-        :param x: 坐标x增值
-        :param y: 坐标y增值
-        """
+        """在单帧渲染该图形"""
         type_menu = {
             "line_b": GL_LINES,
             "line_s": GL_LINE_STRIP,
@@ -120,6 +116,10 @@ class Shape:
         self._setup_projection()
         glPushMatrix()
         glTranslatef(x, y, 0)
+
+        # 保存当前光照状态并禁用光照
+        glPushAttrib(GL_ENABLE_BIT)
+        glDisable(GL_LIGHTING)
 
         if self.texture:
             glEnable(GL_TEXTURE_2D)
@@ -142,6 +142,10 @@ class Shape:
 
         if self.texture and self.texture.transparent:
             glDisable(GL_ALPHA_TEST)
+
+        # 恢复光照状态
+        glPopAttrib()
+
         glPopMatrix()
         self._restore_projection()
 

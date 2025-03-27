@@ -14,15 +14,18 @@ __all__ = [
 light_list = [GL_LIGHT0, GL_LIGHT1, GL_LIGHT2, GL_LIGHT3, GL_LIGHT4, GL_LIGHT5, GL_LIGHT6, GL_LIGHT7]
 
 
-def init():
+def init(ambientR=0, ambientG=0, ambientB=0):
     """
     初始化光源，启用全局光照
-    :return: None
+    :param ambientR: 红环境光亮度
+    :param ambientG: 绿环境光亮度
+    :param ambientB: 蓝环境光亮度
+    :return:
     """
     glEnable(GL_LIGHTING)  # 启用光照
     glLightModeli(GL_LIGHT_MODEL_TWO_SIDE, GL_TRUE)  # 启用双面光照
     glEnable(GL_NORMALIZE)
-    glLightModelfv(GL_LIGHT_MODEL_AMBIENT, (0.2, 0.2, 0.2, 1.0))
+    glLightModelfv(GL_LIGHT_MODEL_AMBIENT, (ambientR, ambientG, ambientB, 1))
     glEnable(GL_COLOR_MATERIAL)
     glColorMaterial(GL_FRONT_AND_BACK, GL_AMBIENT_AND_DIFFUSE)
 
