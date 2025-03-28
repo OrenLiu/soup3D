@@ -1,4 +1,5 @@
 """
+调用：soup3D.camera
 相机方法库，可在soup3D空间内移动相机位置
 """
 from OpenGL.GL import *

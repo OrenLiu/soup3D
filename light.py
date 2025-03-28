@@ -1,4 +1,5 @@
 """
+调用：soup3D.light
 光源处理方法库，可在soup3D空间中添加7个光源
 """
 from OpenGL.GL import *
@@ -170,6 +171,17 @@ class Direct:
         :return: None
         """
         self.color = (r, g, b)
+
+
+def ambient(R, G, B):
+    """
+    更改环境光亮度
+    :param R: 红色环境光
+    :param G: 绿色环境光
+    :param B: 蓝色环境光
+    :return: None
+    """
+    glLightModelfv(GL_LIGHT_MODEL_AMBIENT, (R, G, B, 1))
 
 
 def rotated(Xa, Ya, Xb, Yb, degree):

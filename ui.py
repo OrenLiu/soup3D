@@ -1,4 +1,5 @@
 """
+调用：soup3D.ui
 soup3D的ui子库，用于绘制2D图形，可绘制HUD叠加显示、GUI用户界面等。
 """
 from OpenGL.GLU import *

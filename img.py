@@ -1,3 +1,7 @@
+"""
+调用：soup3D
+用于管理材质贴图
+"""
 from OpenGL.GL import *
 
 
