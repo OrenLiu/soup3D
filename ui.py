@@ -118,16 +118,18 @@ class Shape:
         glPushMatrix()
         glTranslatef(x, y, 0)
 
-        # 保存当前光照状态并禁用光照
+        # 保存当前状态并禁用光照和深度测试
         glPushAttrib(GL_ENABLE_BIT)
         glDisable(GL_LIGHTING)
+        glDisable(GL_DEPTH_TEST)  # 新增：禁用深度测试
 
         if self.texture:
             glEnable(GL_TEXTURE_2D)
             glBindTexture(GL_TEXTURE_2D, self.texture.tex_id)
             if self.texture.transparent:
-                glEnable(GL_ALPHA_TEST)
-                glAlphaFunc(GL_GREATER, 0.1)
+                # 使用混合处理透明度
+                glEnable(GL_BLEND)
+                glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
         else:
             glDisable(GL_TEXTURE_2D)
 
@@ -142,9 +144,9 @@ class Shape:
         glEnd()
 
         if self.texture and self.texture.transparent:
-            glDisable(GL_ALPHA_TEST)
+            glDisable(GL_BLEND)
 
-        # 恢复光照状态
+        # 恢复之前的状态
         glPopAttrib()
 
         glPopMatrix()
