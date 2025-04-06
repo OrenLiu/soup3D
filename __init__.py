@@ -26,6 +26,9 @@ __all__ = [
 
 stable_shapes = {}
 
+_current_fov = 45
+_current_far = 1024
+
 
 class Shape:
     def __init__(self, shape_type, *args: tuple[float, ...], texture=None, generate_normals=False):
@@ -391,6 +394,10 @@ def init(width=1920, height=1080, fov=45, bg_color: tuple[float, float, float] =
     :param far:      最远渲染距离
     :return: None
     """
+    global _current_fov, _current_far
+    _current_fov = fov
+    _current_far = far
+
     pygame.init()  # 初始化pygame
     pygame.display.set_mode((width, height), DOUBLEBUF | OPENGL)  # 创建OpenGL上下文
     glClearColor(*bg_color, 1)  # 在上下文创建后设置背景颜色
@@ -402,6 +409,22 @@ def init(width=1920, height=1080, fov=45, bg_color: tuple[float, float, float] =
     gluPerspective(fov, (width / height), 0.1, far)
     soup3D.camera.goto(0, 0, 0)
     soup3D.camera.turn(0, 0, 0)
+
+
+def resize(width, height):
+    """
+    重新定义窗口尺寸
+    :param width:  窗口宽度
+    :param height: 窗口高度
+    :return: None
+    """
+    pygame.display.set_mode((width, height), DOUBLEBUF | OPENGL)
+    glViewport(0, 0, width, height)
+    glMatrixMode(GL_PROJECTION)
+    glLoadIdentity()
+    aspect_ratio = width / height
+    gluPerspective(_current_fov, aspect_ratio, 0.1, _current_far)
+    glMatrixMode(GL_MODELVIEW)
 
 
 def background_color(r, g, b):
