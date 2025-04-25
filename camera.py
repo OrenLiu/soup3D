@@ -55,7 +55,7 @@ def update():
     更新相机
     :return: None
     """
-    centerX, centerY, centerZ = 0, 0, 1
+    centerX, centerY, centerZ = 0, 0, -1
     upX, upY, upZ = 0, 1, 0
     # 进行横滚旋转
     centerX, centerY = rotated(centerX, centerY, 0, 0, ROLL)
