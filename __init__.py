@@ -183,6 +183,7 @@ class Shape:
         if self.texture is not None:
             glEnable(GL_TEXTURE_2D)
             glBindTexture(GL_TEXTURE_2D, self.texture.tex_id)
+            glColor3f(1.0, 1.0, 1.0)  # 新增行：设置颜色为白色
             if self.texture.transparent:
                 glEnable(GL_ALPHA_TEST)
                 glAlphaFunc(GL_GREATER, 0.1)
@@ -243,6 +244,7 @@ class Shape:
             if self.texture is not None:
                 glEnable(GL_TEXTURE_2D)
                 glBindTexture(GL_TEXTURE_2D, self.texture.tex_id)
+                glColor3f(1.0, 1.0, 1.0)  # 新增行：设置颜色为白色
             else:
                 glDisable(GL_TEXTURE_2D)
 
