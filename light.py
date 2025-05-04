@@ -107,7 +107,7 @@ class Cone:
         """
         self.toward = (yaw, pitch, roll)
 
-    def color(self, r, g, b):
+    def dye(self, r, g, b):
         """
         更改光线颜色
         :param r: 红色
@@ -162,7 +162,7 @@ class Direct:
         """
         self.toward = (yaw, pitch, roll)
 
-    def color(self, r, g, b):
+    def dye(self, r, g, b):
         """
         更改光线颜色
         :param r: 红色
