@@ -66,6 +66,50 @@ class Shape:
         if generate_normals:
             self.calculate_normals()
 
+    def _generate_display_list(self):
+        self.display_list = glGenLists(1)
+        glNewList(self.display_list, GL_COMPILE)
+
+        # 设置纹理状态
+        if self.texture is not None:
+            glEnable(GL_TEXTURE_2D)
+            glBindTexture(GL_TEXTURE_2D, self.texture.tex_id)
+            glColor3f(1.0, 1.0, 1.0)  # 新增行：设置颜色为白色
+        else:
+            glDisable(GL_TEXTURE_2D)
+
+        # 确定绘制类型
+        type_menu = {
+            "line_b": GL_LINES,
+            "line_s": GL_LINE_STRIP,
+            "line_l": GL_LINE_LOOP,
+            "triangle_b": GL_TRIANGLES,
+            "triangle_s": GL_TRIANGLE_STRIP,
+            "triangle_l": GL_TRIANGLE_FAN
+        }
+        glBegin(type_menu[self.type])
+
+        for i, point in enumerate(self.points):
+            # 验证参数完整性
+            if self.texture:
+                if len(point) < 5:
+                    raise ValueError(f"Texture shape requires 5 parameters per point, got {len(point)}")
+                glTexCoord2f(point[3], point[4])
+            else:
+                if len(point) < 6:
+                    raise ValueError(f"Color shape requires 6 parameters per point, got {len(point)}")
+                glColor3f(point[3], point[4], point[5])
+
+            # 设置法线
+            if self.normals and i < len(self.normals):
+                glNormal3f(*self.normals[i])
+
+            # 顶点坐标（原始坐标）
+            glVertex3f(point[0], point[1], point[2])
+
+        glEnd()
+        glEndList()
+
     def calculate_normals(self):
         """
         自动计算三角形面的法线（仅支持triangle_b类型）
@@ -178,52 +222,13 @@ class Shape:
         :param z: 坐标z增值
         :return: None
         """
-        # 状态设置必须在glBegin/glEnd之外
-        use_alpha = False
-        if self.texture is not None:
-            glEnable(GL_TEXTURE_2D)
-            glBindTexture(GL_TEXTURE_2D, self.texture.tex_id)
-            glColor3f(1.0, 1.0, 1.0)  # 新增行：设置颜色为白色
-            if self.texture.transparent:
-                glEnable(GL_ALPHA_TEST)
-                glAlphaFunc(GL_GREATER, 0.1)
-                use_alpha = True
-        else:
-            glDisable(GL_TEXTURE_2D)
+        if not self.display_list:  # 延迟初始化
+            self._generate_display_list()
 
-        type_menu = {
-            "line_b": GL_LINES,
-            "line_s": GL_LINE_STRIP,
-            "line_l": GL_LINE_LOOP,
-            "triangle_b": GL_TRIANGLES,
-            "triangle_s": GL_TRIANGLE_STRIP,
-            "triangle_l": GL_TRIANGLE_FAN
-        }
-        glBegin(type_menu[self.type])
-        for i, point in enumerate(self.points):
-            # 参数完整性验证
-            if self.texture:
-                if len(point) < 5:
-                    raise ValueError(f"Texture shape requires 5 parameters per point, got {len(point)}")
-                glTexCoord2f(*point[3:5])
-            else:
-                if len(point) < 6:
-                    raise ValueError(f"Color shape requires 6 parameters per point, got {len(point)}")
-                glColor3f(*point[3:6])
-
-            # 设置法线（如果存在）
-            if self.normals and i < len(self.normals):
-                glNormal3f(*self.normals[i])
-
-            glVertex3f(
-                x + point[0],
-                y + point[1],
-                z + point[2]
-            )
-        glEnd()
-
-        if use_alpha:
-            glDisable(GL_ALPHA_TEST)
+        glPushMatrix()
+        glTranslatef(x, y, z)  # 动态应用坐标偏移
+        glCallList(self.display_list)  # 复用显示列表
+        glPopMatrix()
 
     def stable(self, x, y, z):
         """
@@ -235,56 +240,11 @@ class Shape:
         """
         global stable_shapes
 
-        if self.display_list is None:
-            stable_shapes[id(self)] = (self, x, y, z)
-            self.display_list = glGenLists(1)
-            glNewList(self.display_list, GL_COMPILE)
+        if not self.display_list:  # 确保显示列表存在
+            self._generate_display_list()
 
-            # 设置纹理状态
-            if self.texture is not None:
-                glEnable(GL_TEXTURE_2D)
-                glBindTexture(GL_TEXTURE_2D, self.texture.tex_id)
-                glColor3f(1.0, 1.0, 1.0)  # 新增行：设置颜色为白色
-            else:
-                glDisable(GL_TEXTURE_2D)
-
-            # 确定绘制类型
-            type_menu = {
-                "line_b": GL_LINES,
-                "line_s": GL_LINE_STRIP,
-                "line_l": GL_LINE_LOOP,
-                "triangle_b": GL_TRIANGLES,
-                "triangle_s": GL_TRIANGLE_STRIP,
-                "triangle_l": GL_TRIANGLE_FAN
-            }
-            glBegin(type_menu[self.type])
-
-            for i, point in enumerate(self.points):
-                # 验证参数完整性
-                if self.texture:
-                    if len(point) < 5:
-                        raise ValueError(f"Texture shape requires 5 parameters per point, got {len(point)}")
-                    glTexCoord2f(point[3], point[4])
-                else:
-                    if len(point) < 6:
-                        raise ValueError(f"Color shape requires 6 parameters per point, got {len(point)}")
-                    glColor3f(point[3], point[4], point[5])
-
-                # 设置法线
-                if self.normals and i < len(self.normals):
-                    glNormal3f(*self.normals[i])
-
-                # 顶点坐标（原始坐标）
-                glVertex3f(point[0], point[1], point[2])
-
-            glEnd()
-            glEndList()
-
-        # 应用位移并调用显示列表
-        glPushMatrix()
-        glTranslatef(x, y, z)
-        glCallList(self.display_list)
-        glPopMatrix()
+            # 注册坐标信息到全局字典
+        stable_shapes[id(self)] = (self, x, y, z)
 
     def unstable(self):
         """
