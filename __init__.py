@@ -495,11 +495,11 @@ def open_obj(obj, mtl=None) -> Group:
                     except Exception as e:
                         print(f"加载纹理失败: {e}")
 
-        # === 2. 解析OBJ模型文件 ===
-        vertices = []
-        tex_coords = []
-        groups = {}
-        current_mat = None
+    # === 2. 解析OBJ模型文件 ===
+    vertices = []
+    tex_coords = []
+    groups = {}
+    current_mat = None
 
     with open(obj, 'r', encoding='utf-8', errors='ignore') as f:
         for line in f:
@@ -507,8 +507,8 @@ def open_obj(obj, mtl=None) -> Group:
             if not line: continue
 
             if line.startswith('v '):
-                x, orig_y, orig_z = map(float, line.split()[1:4])
-                vertices.append((x, orig_z, orig_y))  # 坐标系转换
+                x, y, z = map(float, line.split()[1:4])
+                vertices.append((x, y, z))  # 坐标系转换
             elif line.startswith('vt '):  # 纹理坐标
                 tex_coords.append(tuple(map(float, line.split()[1:3])))
             elif line.startswith('usemtl'):  # 使用材质
