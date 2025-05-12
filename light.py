@@ -52,8 +52,6 @@ class Cone:
         self.attenuation = attenuation
         self.angle = angle
 
-        glEnable(self.light_id)
-
     def display(self):
         """更新光源参数到OpenGL"""
         # 位置和方向计算
@@ -75,7 +73,7 @@ class Cone:
 
     def _calc_direction(self):
         """根据欧拉角计算方向向量"""
-        x, y, z = 0, 0, 1  # 初始Z轴正方向
+        x, y, z = 0, 0, -1  # 初始Z轴负方向
         yaw, pitch, roll = self.toward
 
         # 应用旋转顺序：roll -> pitch -> yaw
@@ -117,6 +115,29 @@ class Cone:
         """
         self.color = (r, g, b)
 
+    def turn_off(self):
+        """
+        熄灭光源
+        :return: None
+        """
+        glDisable(self.light_id)
+
+    def turn_on(self):
+        """
+        点亮光源
+        :return: None
+        """
+        glEnable(self.light_id)
+
+    def destroy(self):
+        """
+        摧毁光源，并归还光源编号
+        :return: None
+        """
+        glDisable(self.light_id)
+        self.light_id = None
+        light_list.append(self.light_id)
+
 
 class Direct:
     def __init__(self,
@@ -131,8 +152,6 @@ class Direct:
         self.toward = toward
         self.color = color
 
-        glEnable(self.light_id)
-
     def display(self):
         """更新方向光源参数"""
         direction = self._calc_direction()
@@ -142,7 +161,7 @@ class Direct:
 
     def _calc_direction(self):
         """计算逆向方向向量"""
-        x, y, z = 0, 0, 1  # OpenGL方向光约定方向
+        x, y, z = 0, 0, -1  # OpenGL方向光约定方向
         yaw, pitch, roll = self.toward
 
         x, y = rotated(x, y, 0, 0, roll)
@@ -171,6 +190,29 @@ class Direct:
         :return: None
         """
         self.color = (r, g, b)
+
+    def turn_off(self):
+        """
+        熄灭光源
+        :return: None
+        """
+        glDisable(self.light_id)
+
+    def turn_on(self):
+        """
+        点亮光源
+        :return: None
+        """
+        glEnable(self.light_id)
+
+    def destroy(self):
+        """
+        摧毁光源，并归还光源编号
+        :return: None
+        """
+        glDisable(self.light_id)
+        self.light_id = None
+        light_list.append(self.light_id)
 
 
 def ambient(R, G, B):
