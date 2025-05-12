@@ -257,6 +257,27 @@ class Shape:
             glDeleteLists(self.display_list, 1)
             self.display_list = None
 
+    def destroy(self):
+        """
+        释放与该图形相关的所有内存地址、显存地址等，在确定
+        不再调用与该图形相关的任何成员时调用该函数
+        :return: None
+        """
+        global stable_shapes
+
+        # 从稳定渲染列表中移除并删除显示列表
+        if id(self) in stable_shapes:
+            self.unstable()
+        # 直接删除可能存在的显示列表（非稳定状态）
+        elif self.display_list is not None:
+            glDeleteLists(self.display_list, 1)
+            self.display_list = None
+
+        # 清空数据引用
+        self.points = tuple()
+        self.normals = []
+        self.texture = None
+
 
 class Group:
     def __init__(self, *args: Shape, origin=(0.0, 0.0, 0.0)):
@@ -344,6 +365,17 @@ class Group:
         """
         for shape in self.shapes:
             shape.unstable()
+
+    def destroy(self):
+        """
+        释放与该图形组相关的所有内存地址、显存地址等，在确
+        定不再调用与该图形组相关的任何成员时调用该函数
+        :return: None
+        """
+        for shape in self.shapes:
+            shape.destroy()
+        self.shapes.clear()
+        self.origin = [0.0, 0.0, 0.0]
 
 
 def init(width=1920, height=1080, fov=45, bg_color: tuple[float, float, float] = (0.0, 0.0, 0.0), far=1024):
