@@ -10,30 +10,28 @@ from OpenGL.GLU import *
 from PIL import Image
 from math import *
 
+import soup3D.shader
+import soup3D.img
 import soup3D.event
 import soup3D.camera
 import soup3D.light
 import soup3D.ui
 from soup3D.name import *
-from soup3D.img import *
 
-
-__all__ = [
-    'Shape', 'Group', 'Texture',
-    'init', 'background_color', 'update', 'open_obj',
-    'event', 'camera', 'light', 'name'
-]
-
+render_queue = []  # 全局渲染队列
 stable_shapes = {}
 
 _current_fov = 45
 _current_far = 1024
 
 
-class Shape:
-    def __init__(self, shape_type, *args: tuple[float, ...], texture=None, generate_normals=False):
+class Face:
+    def __init__(self,
+                 shape_type: str,
+                 surface: soup3D.shader.BSDF,
+                 vertex: list | tuple):
         """
-        图形，可以批量生成线段、三角形
+        表面，可用于创建线段、多边形
         :param shape_type: 绘制方式，可以填写这些内容：
                            "line_b": 不相连线段
                            "line_s": 连续线段
@@ -41,14 +39,17 @@ class Shape:
                            "triangle_b": 不相连三角形
                            "triangle_s": 相连三角形
                            "triangle_l": 头尾相连的连续三角形
-        :param args:       图形中所有的端点，每个参数的格式为：
-                           (x, y, z, r, g, b)
-                           或
-                           (x, y, z, texture_x, texture_y)
-        :param texture:    使用的纹理对象，默认为None
-        :param generate_normals: 是否自动生成法线，仅适用于三角形类型
+        :param surface:    表面使用的BSDF着色器
+        :param vertex:     图形中所有的端点，格式为：
+                           [(x, y, z, u, v), ...]
         """
-        type_menu = {
+        # 1. 初始化类成员
+        self.shape_type = shape_type
+        self.surface = surface
+        self.vertex = vertex
+
+        # 设置OpenGL绘制模式
+        self.mode_map = {
             "line_b": GL_LINES,
             "line_s": GL_LINE_STRIP,
             "line_l": GL_LINE_LOOP,
@@ -56,326 +57,274 @@ class Shape:
             "triangle_s": GL_TRIANGLE_STRIP,
             "triangle_l": GL_TRIANGLE_FAN
         }
-        if shape_type not in type_menu:
-            raise TypeError(f"unknown type: {shape_type}")
-        self.type = shape_type
-        self.points = args
-        self.texture = texture
-        self.normals = []
-        self.display_list = None
-        if generate_normals:
-            self.calculate_normals()
+
+        if shape_type not in self.mode_map:
+            raise ValueError(f"不支持的shape_type: {shape_type}")
+
+        self.mode = self.mode_map[shape_type]
+
+        # 计算渲染优先级（基于base_color的透明度）
+        self.render_priority = False
+        # 检查base_color是否是Texture或MixChannel
+        if isinstance(self.surface.base_color, soup3D.shader.Texture):
+            # 假设Texture可能包含透明像素
+            self.render_priority = True
+        elif isinstance(self.surface.base_color, soup3D.shader.MixChannel):
+            # 检查MixChannel的A通道
+            if isinstance(self.surface.base_color.A, (float, int)):
+                # 如果A通道是浮点数且小于1.0
+                if self.surface.base_color.A < 1.0:
+                    self.render_priority = True
+            else:
+                # 如果A通道是Channel对象（可能包含透明像素）
+                self.render_priority = True
+
+        # 2. 创建OpenGL渲染列表
+        self.list_id = glGenLists(1)
+        self._generate_display_list()
+
+        # 3. 计算平面法线方向
+        if len(vertex) >= 3:
+            v0 = vertex[0]
+            v1 = vertex[1]
+            v2 = vertex[2]
+
+            # 计算两个向量
+            u = (v1[0] - v0[0], v1[1] - v0[1], v1[2] - v0[2])
+            v = (v2[0] - v0[0], v2[1] - v0[1], v2[2] - v0[2])
+
+            # 叉乘得到法线
+            self.normal = (
+                u[1] * v[2] - u[2] * v[1],
+                u[2] * v[0] - u[0] * v[2],
+                u[0] * v[1] - u[1] * v[0]
+            )
+        else:
+            self.normal = (0, 0, 1)  # 默认Z轴正向
 
     def _generate_display_list(self):
-        self.display_list = glGenLists(1)
-        glNewList(self.display_list, GL_COMPILE)
+        """生成OpenGL显示列表，应用材质属性"""
+        # 处理透明度
+        self.smoothness_tex_id = None
+        self.emission_tex_id = None
 
-        # 设置纹理状态
-        if self.texture is not None:
-            glEnable(GL_TEXTURE_2D)
-            glBindTexture(GL_TEXTURE_2D, self.texture.tex_id)
-            glColor3f(1.0, 1.0, 1.0)  # 新增行：设置颜色为白色
+        # 获取顶点纹理尺寸（使用第一个顶点的UV坐标）
+        tex_size = (64, 64)  # 默认纹理尺寸
+        if self.vertex and len(self.vertex[0]) >= 5:
+            # 假设所有顶点使用相同的纹理尺寸
+            tex_size = (int(max(v[3] for v in self.vertex) * 64),
+                        int(max(v[4] for v in self.vertex) * 64))
+
+        # 材质贴图（分配到纹理单元0）
+        self.texture_id = None
+        if isinstance(self.surface.base_color, soup3D.shader.Texture):
+            pil_img = self.surface.base_color.pil_pic
+            self.texture_id = soup3D.img.pil_to_texture(pil_img, texture_unit=0)
+        elif isinstance(self.surface.base_color, soup3D.shader.MixChannel):
+            pil_img = self.surface.base_color.pil_pic
+            self.texture_id = soup3D.img.pil_to_texture(pil_img, texture_unit=0)
+
+        # 法线贴图（分配到纹理单元1）
+        self.normal_map_id = None
+        if isinstance(self.surface.normal, soup3D.shader.Texture):
+            pil_img = self.surface.normal.pil_pic
+            self.normal_map_id = soup3D.img.pil_to_texture(pil_img, texture_unit=1)
+        elif isinstance(self.surface.normal, soup3D.shader.MixChannel):
+            pil_img = self.surface.normal.pil_pic
+            self.normal_map_id = soup3D.img.pil_to_texture(pil_img, texture_unit=1)
+
+        # 处理光滑度纹理
+        if isinstance(self.surface.smoothness, soup3D.shader.Channel):
+            band_img = self.surface.smoothness.get_pil_band(tex_size)
+            # 创建灰度图像
+            smooth_img = Image.new("L", band_img.size)
+            smooth_img.putdata(band_img.getdata())
+            self.smoothness_tex_id = soup3D.img.pil_to_texture(smooth_img, texture_unit=3)
+
+        # 处理自发光纹理
+        if isinstance(self.surface.emission, soup3D.shader.Channel):
+            band_img = self.surface.emission.get_pil_band(tex_size)
+            # 创建灰度图像
+            emission_img = Image.new("L", band_img.size)
+            emission_img.putdata(band_img.getdata())
+            self.emission_tex_id = soup3D.img.pil_to_texture(emission_img, texture_unit=4)
+
+        # 创建显示列表
+        glNewList(self.list_id, GL_COMPILE)
+
+        # 启用必要的OpenGL功能
+        glEnable(GL_DEPTH_TEST)
+
+        # 设置材质属性
+        if self.texture_id:
+            # 使用纹理时不设置颜色
+            glColor4f(1.0, 1.0, 1.0, 1.0)
         else:
-            glDisable(GL_TEXTURE_2D)
-
-        # 确定绘制类型
-        type_menu = {
-            "line_b": GL_LINES,
-            "line_s": GL_LINE_STRIP,
-            "line_l": GL_LINE_LOOP,
-            "triangle_b": GL_TRIANGLES,
-            "triangle_s": GL_TRIANGLE_STRIP,
-            "triangle_l": GL_TRIANGLE_FAN
-        }
-        glBegin(type_menu[self.type])
-
-        for i, point in enumerate(self.points):
-            # 验证参数完整性
-            if self.texture:
-                if len(point) < 5:
-                    raise ValueError(f"Texture shape requires 5 parameters per point, got {len(point)}")
-                glTexCoord2f(point[3], point[4])
+            # 如果没有纹理，使用基色
+            if isinstance(self.surface.base_color, tuple):
+                base_color = self.surface.base_color
             else:
-                if len(point) < 6:
-                    raise ValueError(f"Color shape requires 6 parameters per point, got {len(point)}")
-                glColor3f(point[3], point[4], point[5])
+                base_color = (1.0, 1.0, 1.0)  # 默认白色
+            glColor4f(base_color[0], base_color[1], base_color[2], 1.0)
 
-            # 设置法线
-            if self.normals and i < len(self.normals):
-                glNormal3f(*self.normals[i])
+        # 检查是否需要透明度 (基于base_color是否可能有透明)
+        use_alpha = self.render_priority
 
-            # 顶点坐标（原始坐标）
-            glVertex3f(point[0], point[1], point[2])
+        # 启用混合
+        if use_alpha:
+            # 保存当前混合模式
+            glPushAttrib(GL_COLOR_BUFFER_BIT | GL_ENABLE_BIT)
 
-        glEnd()
-        glEndList()
+            # 启用并设置正确的混合函数
+            glEnable(GL_BLEND)
+            glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
 
-    def calculate_normals(self):
-        """
-        自动计算三角形面的法线（仅支持triangle_b类型）
-        :return: None
-        """
-        if not self.type.startswith("triangle"):
-            raise ValueError("Automatic normal generation is only supported for triangle types.")
-
-        if self.type == "triangle_b":
-            num_points = len(self.points)
-            if num_points % 3 != 0:
-                raise ValueError("For triangle_b type, the number of vertices must be a multiple of 3.")
-
-            self.normals = []
-            for i in range(0, num_points, 3):
-                # 获取三个顶点坐标
-                v0 = self.points[i]
-                v1 = self.points[i + 1]
-                v2 = self.points[i + 2]
-
-                # 转换为三维坐标
-                p0 = (v0[0], v0[1], v0[2])
-                p1 = (v1[0], v1[1], v1[2])
-                p2 = (v2[0], v2[1], v2[2])
-
-                # 计算两个边向量
-                e1 = (p1[0] - p0[0], p1[1] - p0[1], p1[2] - p0[2])
-                e2 = (p2[0] - p0[0], p2[1] - p0[1], p2[2] - p0[2])
-
-                # 叉乘计算法线
-                normal = (
-                    e1[1] * e2[2] - e1[2] * e2[1],
-                    e1[2] * e2[0] - e1[0] * e2[2],
-                    e1[0] * e2[1] - e1[1] * e2[0]
-                )
-
-                # 归一化
-                length = (normal[0] ** 2 + normal[1] ** 2 + normal[2] ** 2) ** 0.5
-                if length == 0:
-                    normal = (0.0, 0.0, 0.0)
-                else:
-                    normal = (normal[0] / length, normal[1] / length, normal[2] / length)
-
-                # 为每个顶点分配相同的面法线
-                self.normals.extend([normal, normal, normal])
+            # 使用预乘Alpha混合以获得更好的结果
+            glBlendEquation(GL_FUNC_ADD)
+            glBlendFuncSeparate(
+                GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA,
+                GL_ONE, GL_ONE_MINUS_SRC_ALPHA
+            )
         else:
-            raise NotImplementedError("Automatic normal generation is only supported for triangle_b type.")
+            glDisable(GL_BLEND)
 
-    def resize(self, width, height, length, generate_normals=False):
-        """
-        改变物体大小或长宽高的比例
-        :param width:            宽度(沿X轴)拉伸多少倍
-        :param height:           高度(沿Y轴)拉伸多少倍
-        :param length:           长度(沿Z轴)拉伸多少倍
-        :param generate_normals: 是否计算发线
-        :return: None
-        """
-        new_points = tuple((point[0]*width, point[1]*height, point[2]*length, *point[3:])
-                           for i, point in enumerate(self.points))
-        return Shape(self.type,
-                     *new_points,
-                     texture=self.texture,
-                     generate_normals=generate_normals)
+        # 开启纹理
+        if self.texture_id or self.normal_map_id or self.smoothness_tex_id or self.emission_tex_id:
+            glEnable(GL_TEXTURE_2D)
 
-    def turn(self, yaw, pitch, roll, generate_normals=False):
-        """
-        旋转物体
-        :param yaw:   图形旋转偏移角
-        :param pitch: 图形旋转俯仰角
-        :param roll:  图形旋转横滚角
-        :return: None
-        """
-        new_points = tuple(
-            (
-                rotated(point[0], point[1], 0, 0, roll)[0],
-                rotated(point[0], point[1], 0, 0, roll)[1],
-                point[2],
-                *point[3:]
-            )
-            for i, point in enumerate(self.points)
-        )
-        new_points = tuple(
-            (
-                point[0],
-                rotated(point[1], point[2], 0, 0, pitch)[0],
-                rotated(point[1], point[2], 0, 0, pitch)[1],
-                *point[3:]
-            )
-            for i, point in enumerate(new_points)
-        )
-        new_points = tuple(
-            (
-                rotated(point[0], point[2], 0, 0, yaw)[0],
-                point[1],
-                rotated(point[0], point[2], 0, 0, yaw)[1],
-                *point[3:]
-            )
-            for i, point in enumerate(new_points)
-        )
-        return Shape(self.type,
-                     *new_points,
-                     texture=self.texture,
-                     generate_normals=generate_normals)
+        # 激活并绑定材质贴图（纹理单元0）
+        if self.texture_id:
+            glActiveTexture(GL_TEXTURE0)
+            glBindTexture(GL_TEXTURE_2D, self.texture_id)
+            glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE)
+
+        # 激活并绑定法线贴图（纹理单元1）
+        if self.normal_map_id:
+            glActiveTexture(GL_TEXTURE1)
+            glBindTexture(GL_TEXTURE_2D, self.normal_map_id)
+            glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_COMBINE)
+            glTexEnvi(GL_TEXTURE_ENV, GL_COMBINE_RGB, GL_DOT3_RGB)
+
+        # 激活并绑定光滑度贴图（纹理单元3）
+        if self.smoothness_tex_id:
+            glActiveTexture(GL_TEXTURE3)
+            glBindTexture(GL_TEXTURE_2D, self.smoothness_tex_id)
+            glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE)
+
+        # 激活并绑定自发光贴图（纹理单元4）
+        if self.emission_tex_id:
+            glActiveTexture(GL_TEXTURE4)
+            glBindTexture(GL_TEXTURE_2D, self.emission_tex_id)
+            glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE)
+
+        # 光滑度处理
+        if self.surface.smoothness != 0.0 and not self.smoothness_tex_id:
+            smoothness = max(0.0, min(1.0, float(self.surface.smoothness)))
+            glMaterialf(GL_FRONT, GL_SHININESS, 128 * smoothness)
+            glMaterialfv(GL_FRONT, GL_SPECULAR, (1.0, 1.0, 1.0, 1.0))
+
+        # 自发光处理
+        if self.surface.emission != 0.0 and not self.emission_tex_id:
+            emission = max(0.0, min(1.0, float(self.surface.emission)))
+            glMaterialfv(GL_FRONT, GL_EMISSION, (emission, emission, emission, 1.0))
+
+        # 绘制几何图形
+        glBegin(self.mode)
+        for v in self.vertex:
+            if len(v) == 5:
+                # 设置纹理坐标
+                if self.texture_id:
+                    glMultiTexCoord2f(GL_TEXTURE0, v[3], v[4])  # base_color纹理
+                if self.normal_map_id:
+                    glMultiTexCoord2f(GL_TEXTURE1, v[3], v[4])  # 法线纹理
+                if self.smoothness_tex_id:
+                    glMultiTexCoord2f(GL_TEXTURE3, v[3], v[4])  # 光滑度纹理
+                if self.emission_tex_id:
+                    glMultiTexCoord2f(GL_TEXTURE4, v[3], v[4])  # 自发光纹理
+                glVertex3f(v[0], v[1], v[2])
+            else:
+                # 没有纹理坐标的情况
+                glVertex3f(v[0], v[1], v[2])
+        glEnd()
+
+        # 清理OpenGL状态
+        if self.texture_id or self.normal_map_id or self.smoothness_tex_id or self.emission_tex_id:
+            glDisable(GL_TEXTURE_2D)
+            glActiveTexture(GL_TEXTURE0)
+
+        # 恢复光照属性
+        if self.surface.smoothness != 0.0 and not self.smoothness_tex_id:
+            glMaterialfv(GL_FRONT, GL_SPECULAR, (0.0, 0.0, 0.0, 1.0))
+
+        if self.surface.emission != 0.0 and not self.emission_tex_id:
+            glMaterialfv(GL_FRONT, GL_EMISSION, (0.0, 0.0, 0.0, 1.0))
+
+        if use_alpha:
+            # 恢复之前的混合状态
+            glPopAttrib()
+
+        glEndList()
 
     def paint(self, x, y, z):
         """
-        在单帧渲染该图形，当图形需要频繁切换形态、位置等参数时使用。
+        将渲染任务添加到渲染队列
         :param x: 坐标x增值
         :param y: 坐标y增值
         :param z: 坐标z增值
         :return: None
         """
-        if not self.display_list:  # 延迟初始化
-            self._generate_display_list()
+        # 计算物体位置相对于相机的位置（用于深度排序）
+        cam_pos = soup3D.camera.X, soup3D.camera.Y, soup3D.camera.Z
+        obj_pos = (x, y, z)
+        distance = sqrt((x - cam_pos[0]) ** 2 +
+                        (y - cam_pos[1]) ** 2 +
+                        (z - cam_pos[2]) ** 2)
 
-        glPushMatrix()
-        glTranslatef(x, y, z)  # 动态应用坐标偏移
-        glCallList(self.display_list)  # 复用显示列表
-        glPopMatrix()
-
-    def stable(self, x, y, z):
-        """
-        每帧固定渲染该图形，可以用于渲染固定场景，可提升性能。
-        :param x: 坐标x增值
-        :param y: 坐标y增值
-        :param z: 坐标z增值
-        :return: None
-        """
-        global stable_shapes
-
-        if not self.display_list:  # 确保显示列表存在
-            self._generate_display_list()
-
-            # 注册坐标信息到全局字典
-        stable_shapes[id(self)] = (self, x, y, z)
-
-    def unstable(self):
-        """
-        取消stable的渲染
-        :return: None
-        """
-        global stable_shapes
-        if self.display_list is not None:
-            stable_shapes.pop(id(self))
-            glDeleteLists(self.display_list, 1)
-            self.display_list = None
+        # 添加到全局渲染队列
+        render_queue.append((distance, self.render_priority, self, obj_pos))
 
     def destroy(self):
         """
-        释放与该图形相关的所有内存地址、显存地址等，在确定
-        不再调用与该图形相关的任何成员时调用该函数
+        释放与该图形相关的所有资源
         :return: None
         """
-        global stable_shapes
+        # 删除显示列表
+        glDeleteLists(self.list_id, 1)
 
-        # 从稳定渲染列表中移除并删除显示列表
-        if id(self) in stable_shapes:
-            self.unstable()
-        # 直接删除可能存在的显示列表（非稳定状态）
-        elif self.display_list is not None:
-            glDeleteLists(self.display_list, 1)
-            self.display_list = None
-
-        # 清空数据引用
-        self.points = tuple()
-        self.normals = []
-        self.texture = None
-
-
-class Group:
-    def __init__(self, *args: Shape, origin=(0.0, 0.0, 0.0)):
-        """
-        图形组，图形组中的所有图形的坐标都以组的原点为原点
-        :param args:   组中所有的图形
-        :param origin: 图形组在世界坐标的位置
-        """
-        self.shapes: list[Shape] = [i for i in args if type(i) is Shape]
-        """
-        图形列表，数据格式：
-        [
-            Shape1,
-            Shape2,
-            ...
+        # 删除纹理
+        textures = [
+            self.texture_id,
+            self.normal_map_id,
+            self.smoothness_tex_id,
+            self.emission_tex_id
         ]
-        """
-        self.origin = [float(i) for i in origin]
 
-    def goto(self, x, y, z):
-        """
-        以世界坐标更改图形组位置
-        :param x: 图形组x坐标
-        :param y: 图形组y坐标
-        :param z: 图形组z坐标
-        :return: None
-        """
-        self.origin = [float(x), float(y), float(z)]
+        for tex_id in textures:
+            if tex_id:
+                glDeleteTextures([tex_id])
 
-    def move(self, x, y, z):
-        """
-        以相对坐标更改图形组位置
-        :param x: x增加多少
-        :param y: y增加多少
-        :param z: z增加多少
-        :return: None
-        """
-        self.origin[0] += x
-        self.origin[1] += y
-        self.origin[2] += z
 
-    def resize(self, width, height, length, generate_normals=False):
+class Model:
+    def __init__(self, x: int | float, y: int | float, z: int | float, *face: Face):
         """
-        改变物体大小或长宽高的比例
-        :param width:            宽度(沿X轴)拉伸多少倍
-        :param height:           高度(沿Y轴)拉伸多少倍
-        :param length:           长度(沿Z轴)拉伸多少倍
-        :param generate_normals: 是否计算发线
-        :return: None
+        模型，由多个面(Face)组成，
+        :param x:    模型原点对应x坐标
+        :param y:    模型原点对应y坐标
+        :param z:    模型原点对应z坐标
+        :param face: 面
         """
-        new_shapes = [shape.resize(width, height, length, generate_normals) for i, shape in enumerate(self.shapes)]
-        return Group(*new_shapes, origin=self.origin)
+        self.x, self.y, self.z = x, y, z
+        self.faces = list(face)
 
-    def turn(self, yaw, pitch, roll, generate_normals=False):
-        """
-        旋转物体
-        :param yaw:   图形旋转偏移角
-        :param pitch: 图形旋转俯仰角
-        :param roll:  图形旋转横滚角
-        :return:
-        """
-        new_shapes = [shape.turn(yaw, pitch, roll, generate_normals) for i, shape in enumerate(self.shapes)]
-        return Group(*new_shapes, origin=self.origin)
 
-    def display(self):
-        """
-        单帧显示图形组
-        :return: None
-        """
-        for shape in self.shapes:
-            shape.paint(*self.origin)
-
-    def display_stable(self):
-        """
-        每帧显示图形组
-        :return: None
-        """
-        for shape in self.shapes:
-            shape.stable(*self.origin)
-
-    def hide(self):
-        """
-        隐藏图形组，相当于撤销display_stable操作
-        :return: None
-        """
-        for shape in self.shapes:
-            shape.unstable()
-
-    def destroy(self):
-        """
-        释放与该图形组相关的所有内存地址、显存地址等，在确
-        定不再调用与该图形组相关的任何成员时调用该函数
-        :return: None
-        """
-        for shape in self.shapes:
-            shape.destroy()
-        self.shapes.clear()
-        self.origin = [0.0, 0.0, 0.0]
+def _get_channel_value(channel):
+    """从Channel对象或浮点数获取通道值"""
+    if isinstance(channel, soup3D.shader.Channel):
+        # 对于纹理通道，我们不再使用平均值，而是使用纹理
+        return 0.5  # 返回中间值，实际值将由纹理提供
+    elif isinstance(channel, float) or isinstance(channel, int):
+        return float(channel)
+    return 1.0
 
 
 def init(width=1920, height=1080, fov=45, bg_color: tuple[float, float, float] = (0.0, 0.0, 0.0), far=1024):
@@ -434,165 +383,45 @@ def background_color(r, g, b):
 
 def update():
     """
-    更新画布
+    更新画布，包括处理渲染队列
     """
-    global stable_shapes
+    global render_queue
 
-    # 先渲染所有不透明物体
-    for shape_id in list(stable_shapes.keys()):
-        shape, x, y, z = stable_shapes[shape_id]
-        if not (shape.texture and shape.texture.transparent):
-            glPushMatrix()
-            glTranslatef(x, y, z)
-            glCallList(shape.display_list)
-            glPopMatrix()
-
-    # 开启Alpha测试并渲染透明物体
-    glEnable(GL_ALPHA_TEST)
-    glAlphaFunc(GL_GREATER, 0.1)  # 可根据需要调整阈值
-
-    for shape_id in list(stable_shapes.keys()):
-        shape, x, y, z = stable_shapes[shape_id]
-        if shape.texture and shape.texture.transparent:
-            glPushMatrix()
-            glTranslatef(x, y, z)
-            glCallList(shape.display_list)
-            glPopMatrix()
-
-    glDisable(GL_ALPHA_TEST)
-
-    # 处理事件和刷新显示
+    # 处理事件
     soup3D.event.check_event(pygame.event.get())
-    pygame.display.flip()
+
+    # 清空画布
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
 
+    # 设置相机
+    soup3D.camera.update()
 
-def open_obj(obj, mtl=None) -> Group:
-    """
-    打开一个obj模型文件和mtl纹理文件，并生成图形组(Group类)
-    :param obj: 模型文件位置
-    :param mtl: 纹理文件位置
-    :return: 图形组(Group类)
-    """
-    import os  # 新增导入
+    # 对渲染队列排序：首先按渲染优先级（透明物体最后渲染），然后按距离（从远到近）
+    render_queue.sort(key=lambda item: (item[1], -item[0]), reverse=False)
 
-    class Material:
-        def __init__(self):
-            self.diffuse = (1, 1, 1)
-            self.texture = None
-            self.ambient = (0.2, 0.2, 0.2)
+    # 渲染所有物体
+    for distance, priority, face, position in render_queue:
+        # 获取位置
+        x, y, z = position
 
-    materials = {}
-    current_mat = None
-    mtl_dir = ""  # 新增变量存储mtl文件目录
+        # 实际渲染
+        glPushMatrix()
+        glTranslatef(x, y, z)
+        glCallList(face.list_id)
+        glPopMatrix()
 
-    if mtl is not None:
-        # 获取mtl文件的绝对路径和目录
-        mtl_abspath = os.path.abspath(mtl)
-        mtl_dir = os.path.dirname(mtl_abspath)
+    # 清空渲染队列
+    render_queue = []
 
-        with open(mtl, 'r', encoding='utf-8') as f:
-            for line in f:
-                line = line.strip()
-                if not line:
-                    continue
-
-                parts = line.split(maxsplit=1)
-                if not parts:
-                    continue
-
-                key = parts[0]
-                if key == 'newmtl':
-                    current_mat = parts[1].strip()
-                    materials[current_mat] = Material()
-                elif key == 'Kd' and current_mat:
-                    materials[current_mat].diffuse = tuple(map(float, parts[1].split()[:3]))
-                elif key == 'map_Kd' and current_mat:
-                    # 处理可能包含空格的路径
-                    texture_file = parts[1].strip().replace('\\', '/')
-                    # 拼接绝对路径
-                    texture_path = os.path.normpath(os.path.join(mtl_dir, texture_file))
-                    try:
-                        with Image.open(texture_path) as img:
-                            img = img.convert('RGBA').transpose(Image.FLIP_TOP_BOTTOM)
-                            texture = Texture(
-                                img.tobytes(),
-                                img.width,
-                                img.height,
-                                img_type=RGBA,
-                                wrap_x=REPEAT,
-                                wrap_y=REPEAT
-                            )
-                        materials[current_mat].texture = texture
-                    except Exception as e:
-                        print(f"加载纹理失败: {e}")
-
-    # === 2. 解析OBJ模型文件 ===
-    vertices = []
-    tex_coords = []
-    groups = {}
-    current_mat = None
-
-    with open(obj, 'r', encoding='utf-8', errors='ignore') as f:
-        for line in f:
-            line = line.strip()
-            if not line: continue
-
-            if line.startswith('v '):
-                x, y, z = map(float, line.split()[1:4])
-                vertices.append((x, y, z))  # 坐标系转换
-            elif line.startswith('vt '):  # 纹理坐标
-                tex_coords.append(tuple(map(float, line.split()[1:3])))
-            elif line.startswith('usemtl'):  # 使用材质
-                current_mat = line.split()[1]
-                if current_mat not in groups:
-                    groups[current_mat] = []
-            elif line.startswith('f '):  # 面定义
-                face = []
-                for vertex in line.split()[1:]:
-                    indices = vertex.split('/')
-                    # 解析顶点索引（支持v/vt/vn格式）
-                    v_idx = int(indices[0]) - 1
-                    vt_idx = int(indices[1]) - 1 if len(indices) > 1 and indices[1] else None
-
-                    # 获取材质属性
-                    mat = materials.get(current_mat, Material())
-
-                    # 构建顶点数据
-                    if mat.texture:  # 纹理模式
-                        tex = tex_coords[vt_idx] if vt_idx is not None else (0, 0)
-                        face.append((
-                            *vertices[v_idx],  # x,y,z
-                            *tex  # u,v
-                        ))
-                    else:  # 颜色模式
-                        face.append((
-                            *vertices[v_idx],  # x,y,z
-                            *mat.diffuse  # r,g,b
-                        ))
-
-                # 三角剖分（处理四边形面）
-                for i in range(2, len(face)):
-                    groups[current_mat].extend([face[0], face[i - 1], face[i]])
-
-    # === 3. 创建Shape对象 ===
-    shapes = []
-    for mat_name, points in groups.items():
-        mat = materials.get(mat_name, Material())
-
-        # 每3个点组成一个三角形
-        shape_type = "triangle_b"
-        shapes.append(Shape(
-            shape_type,
-            *points,
-            texture=mat.texture,
-            generate_normals=True
-        ))
-
-    return Group(*shapes)
+    # 刷新显示
+    pygame.display.flip()
 
 
-def rotated(Xa, Ya, Xb, Yb, degree):
+def open_obj(obj, mtl=None):
+    ...
+
+
+def _rotated(Xa, Ya, Xb, Yb, degree):
     """
     点A绕点B旋转特定角度后，点A的坐标
     :param Xa:     环绕点(点A)X坐标
@@ -609,14 +438,4 @@ def rotated(Xa, Ya, Xb, Yb, degree):
 
 
 if __name__ == '__main__':
-    init(bg_color=(1, 1, 1))
-
-    running = True
-    soup3D.event.bind(MOUSE_WHEEL, print)
-    tri = Shape(TRIANGLE_L,
-                (1, 0, 0, 1, 1, 1),
-                (0, 0, 0, 1, 1, 1),
-                (0, 1, 0, 1, 1, 1))
-    while running:
-        tri.paint(0, 0, -5)
-        update()
+    ...
