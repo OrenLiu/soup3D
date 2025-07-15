@@ -9,6 +9,7 @@ from OpenGL.GL import *
 from OpenGL.GLU import *
 from PIL import Image
 from math import *
+import os
 
 import soup3D.shader
 import soup3D.img
@@ -18,7 +19,7 @@ import soup3D.light
 import soup3D.ui
 from soup3D.name import *
 
-render_queue = []  # 全局渲染队列
+render_queue: list["Model"] = []  # 全局渲染队列
 stable_shapes = {}
 
 _current_fov = 45
@@ -28,10 +29,10 @@ _current_far = 1024
 class Face:
     def __init__(self,
                  shape_type: str,
-                 surface: soup3D.shader.BSDF,
+                 surface: soup3D.shader.FPL | soup3D.shader.ShaderProgram,
                  vertex: list | tuple):
         """
-        表面，可用于创建线段、多边形
+        表面，可用于创建模型(Model类)的线段、多边形
         :param shape_type: 绘制方式，可以填写这些内容：
                            "line_b": 不相连线段
                            "line_s": 连续线段
@@ -40,13 +41,13 @@ class Face:
                            "triangle_s": 相连三角形
                            "triangle_l": 头尾相连的连续三角形
         :param surface:    表面使用的BSDF着色器
-        :param vertex:     图形中所有的端点，格式为：
+        :param vertex:     表面中所有的端点，格式为：
                            [(x, y, z, u, v), ...]
         """
-        # 1. 初始化类成员
-        self.shape_type = shape_type
-        self.surface = surface
-        self.vertex = vertex
+        # 初始化类成员
+        self.shape_type = shape_type  # 绘制方式
+        self.surface = surface        # 表面着色单元
+        self.vertex = vertex          # 表面端点
 
         # 设置OpenGL绘制模式
         self.mode_map = {
@@ -58,30 +59,10 @@ class Face:
             "triangle_l": GL_TRIANGLE_FAN
         }
 
-        if shape_type not in self.mode_map:
-            raise ValueError(f"不支持的shape_type: {shape_type}")
+        if shape_type not in self.mode_map:  # 确认绘制方式是否存在
+            raise ValueError(f"unknown shape_type: {shape_type}")  # 抛出未知绘制方式的异常
 
-        self.mode = self.mode_map[shape_type]
-
-        # 计算渲染优先级（基于base_color的透明度）
-        self.render_priority = False
-        # 检查base_color是否是Texture或MixChannel
-        if isinstance(self.surface.base_color, soup3D.shader.Texture):
-            # 假设Texture可能包含透明像素
-            self.render_priority = True
-        elif isinstance(self.surface.base_color, soup3D.shader.MixChannel):
-            # 检查MixChannel的A通道
-            if isinstance(self.surface.base_color.A, (float, int)):
-                # 如果A通道是浮点数且小于1.0
-                if self.surface.base_color.A < 1.0:
-                    self.render_priority = True
-            else:
-                # 如果A通道是Channel对象（可能包含透明像素）
-                self.render_priority = True
-
-        # 2. 创建OpenGL渲染列表
-        self.list_id = glGenLists(1)
-        self._generate_display_list()
+        self.mode = self.mode_map[shape_type]  # 转换为OpenGL绘制模式
 
         # 3. 计算平面法线方向
         if len(vertex) >= 3:
@@ -102,212 +83,11 @@ class Face:
         else:
             self.normal = (0, 0, 1)  # 默认Z轴正向
 
-    def _generate_display_list(self):
-        """生成OpenGL显示列表，应用材质属性"""
-        # 处理透明度
-        self.smoothness_tex_id = None
-        self.emission_tex_id = None
-
-        # 获取顶点纹理尺寸（使用第一个顶点的UV坐标）
-        tex_size = (64, 64)  # 默认纹理尺寸
-        if self.vertex and len(self.vertex[0]) >= 5:
-            # 假设所有顶点使用相同的纹理尺寸
-            tex_size = (int(max(v[3] for v in self.vertex) * 64),
-                        int(max(v[4] for v in self.vertex) * 64))
-
-        # 材质贴图（分配到纹理单元0）
-        self.texture_id = None
-        if isinstance(self.surface.base_color, soup3D.shader.Texture):
-            pil_img = self.surface.base_color.pil_pic
-            self.texture_id = soup3D.img.pil_to_texture(pil_img, texture_unit=0)
-        elif isinstance(self.surface.base_color, soup3D.shader.MixChannel):
-            pil_img = self.surface.base_color.pil_pic
-            self.texture_id = soup3D.img.pil_to_texture(pil_img, texture_unit=0)
-
-        # 法线贴图（分配到纹理单元1）
-        self.normal_map_id = None
-        if isinstance(self.surface.normal, soup3D.shader.Texture):
-            pil_img = self.surface.normal.pil_pic
-            self.normal_map_id = soup3D.img.pil_to_texture(pil_img, texture_unit=1)
-        elif isinstance(self.surface.normal, soup3D.shader.MixChannel):
-            pil_img = self.surface.normal.pil_pic
-            self.normal_map_id = soup3D.img.pil_to_texture(pil_img, texture_unit=1)
-
-        # 处理光滑度纹理
-        if isinstance(self.surface.smoothness, soup3D.shader.Channel):
-            band_img = self.surface.smoothness.get_pil_band(tex_size)
-            # 创建灰度图像
-            smooth_img = Image.new("L", band_img.size)
-            smooth_img.putdata(band_img.getdata())
-            self.smoothness_tex_id = soup3D.img.pil_to_texture(smooth_img, texture_unit=3)
-
-        # 处理自发光纹理
-        if isinstance(self.surface.emission, soup3D.shader.Channel):
-            band_img = self.surface.emission.get_pil_band(tex_size)
-            # 创建灰度图像
-            emission_img = Image.new("L", band_img.size)
-            emission_img.putdata(band_img.getdata())
-            self.emission_tex_id = soup3D.img.pil_to_texture(emission_img, texture_unit=4)
-
-        # 创建显示列表
-        glNewList(self.list_id, GL_COMPILE)
-
-        # 启用必要的OpenGL功能
-        glEnable(GL_DEPTH_TEST)
-
-        # 设置材质属性
-        if self.texture_id:
-            # 使用纹理时不设置颜色
-            glColor4f(1.0, 1.0, 1.0, 1.0)
-        else:
-            # 如果没有纹理，使用基色
-            if isinstance(self.surface.base_color, tuple):
-                base_color = self.surface.base_color
-            else:
-                base_color = (1.0, 1.0, 1.0)  # 默认白色
-            glColor4f(base_color[0], base_color[1], base_color[2], 1.0)
-
-        # 检查是否需要透明度 (基于base_color是否可能有透明)
-        use_alpha = self.render_priority
-
-        # 启用混合
-        if use_alpha:
-            # 保存当前混合模式
-            glPushAttrib(GL_COLOR_BUFFER_BIT | GL_ENABLE_BIT)
-
-            # 启用并设置正确的混合函数
-            glEnable(GL_BLEND)
-            glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
-
-            # 使用预乘Alpha混合以获得更好的结果
-            glBlendEquation(GL_FUNC_ADD)
-            glBlendFuncSeparate(
-                GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA,
-                GL_ONE, GL_ONE_MINUS_SRC_ALPHA
-            )
-        else:
-            glDisable(GL_BLEND)
-
-        # 开启纹理
-        if self.texture_id or self.normal_map_id or self.smoothness_tex_id or self.emission_tex_id:
-            glEnable(GL_TEXTURE_2D)
-
-        # 激活并绑定材质贴图（纹理单元0）
-        if self.texture_id:
-            glActiveTexture(GL_TEXTURE0)
-            glBindTexture(GL_TEXTURE_2D, self.texture_id)
-            glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE)
-
-        # 激活并绑定法线贴图（纹理单元1）
-        if self.normal_map_id:
-            glActiveTexture(GL_TEXTURE1)
-            glBindTexture(GL_TEXTURE_2D, self.normal_map_id)
-            glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_COMBINE)
-            glTexEnvi(GL_TEXTURE_ENV, GL_COMBINE_RGB, GL_DOT3_RGB)
-
-        # 激活并绑定光滑度贴图（纹理单元3）
-        if self.smoothness_tex_id:
-            glActiveTexture(GL_TEXTURE3)
-            glBindTexture(GL_TEXTURE_2D, self.smoothness_tex_id)
-            glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE)
-
-        # 激活并绑定自发光贴图（纹理单元4）
-        if self.emission_tex_id:
-            glActiveTexture(GL_TEXTURE4)
-            glBindTexture(GL_TEXTURE_2D, self.emission_tex_id)
-            glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE)
-
-        # 光滑度处理
-        if self.surface.smoothness != 0.0 and not self.smoothness_tex_id:
-            smoothness = max(0.0, min(1.0, float(self.surface.smoothness)))
-            glMaterialf(GL_FRONT, GL_SHININESS, 128 * smoothness)
-            glMaterialfv(GL_FRONT, GL_SPECULAR, (1.0, 1.0, 1.0, 1.0))
-
-        # 自发光处理
-        if self.surface.emission != 0.0 and not self.emission_tex_id:
-            emission = max(0.0, min(1.0, float(self.surface.emission)))
-            glMaterialfv(GL_FRONT, GL_EMISSION, (emission, emission, emission, 1.0))
-
-        # 绘制几何图形
-        glBegin(self.mode)
-        for v in self.vertex:
-            if len(v) == 5:
-                # 设置纹理坐标
-                if self.texture_id:
-                    glMultiTexCoord2f(GL_TEXTURE0, v[3], v[4])  # base_color纹理
-                if self.normal_map_id:
-                    glMultiTexCoord2f(GL_TEXTURE1, v[3], v[4])  # 法线纹理
-                if self.smoothness_tex_id:
-                    glMultiTexCoord2f(GL_TEXTURE3, v[3], v[4])  # 光滑度纹理
-                if self.emission_tex_id:
-                    glMultiTexCoord2f(GL_TEXTURE4, v[3], v[4])  # 自发光纹理
-                glVertex3f(v[0], v[1], v[2])
-            else:
-                # 没有纹理坐标的情况
-                glVertex3f(v[0], v[1], v[2])
-        glEnd()
-
-        # 清理OpenGL状态
-        if self.texture_id or self.normal_map_id or self.smoothness_tex_id or self.emission_tex_id:
-            glDisable(GL_TEXTURE_2D)
-            glActiveTexture(GL_TEXTURE0)
-
-        # 恢复光照属性
-        if self.surface.smoothness != 0.0 and not self.smoothness_tex_id:
-            glMaterialfv(GL_FRONT, GL_SPECULAR, (0.0, 0.0, 0.0, 1.0))
-
-        if self.surface.emission != 0.0 and not self.emission_tex_id:
-            glMaterialfv(GL_FRONT, GL_EMISSION, (0.0, 0.0, 0.0, 1.0))
-
-        if use_alpha:
-            # 恢复之前的混合状态
-            glPopAttrib()
-
-        glEndList()
-
-    def paint(self, x, y, z):
-        """
-        将渲染任务添加到渲染队列
-        :param x: 坐标x增值
-        :param y: 坐标y增值
-        :param z: 坐标z增值
-        :return: None
-        """
-        # 计算物体位置相对于相机的位置（用于深度排序）
-        cam_pos = soup3D.camera.X, soup3D.camera.Y, soup3D.camera.Z
-        obj_pos = (x, y, z)
-        distance = sqrt((x - cam_pos[0]) ** 2 +
-                        (y - cam_pos[1]) ** 2 +
-                        (z - cam_pos[2]) ** 2)
-
-        # 添加到全局渲染队列
-        render_queue.append((distance, self.render_priority, self, obj_pos))
-
-    def destroy(self):
-        """
-        释放与该图形相关的所有资源
-        :return: None
-        """
-        # 删除显示列表
-        glDeleteLists(self.list_id, 1)
-
-        # 删除纹理
-        textures = [
-            self.texture_id,
-            self.normal_map_id,
-            self.smoothness_tex_id,
-            self.emission_tex_id
-        ]
-
-        for tex_id in textures:
-            if tex_id:
-                glDeleteTextures([tex_id])
-
 
 class Model:
     def __init__(self, x: int | float, y: int | float, z: int | float, *face: Face):
         """
-        模型，由多个面(Face)组成，
+        模型，由多个面(Face类)组成，
         :param x:    模型原点对应x坐标
         :param y:    模型原点对应y坐标
         :param z:    模型原点对应z坐标
@@ -315,6 +95,118 @@ class Model:
         """
         self.x, self.y, self.z = x, y, z
         self.faces = list(face)
+
+        self.list_id = glGenLists(1)
+        self._generate_display_list()
+
+    def paint(self):
+        render_queue.append(self)
+
+    def _generate_display_list(self):
+        """生成OpenGL显示列表，应用材质属性"""
+        # 创建显示列表
+        glNewList(self.list_id, GL_COMPILE)
+        for face in self.faces:
+
+            # 材质贴图
+            texture_id = face.surface.base_color_id
+
+            # 启用必要的OpenGL功能
+            glEnable(GL_DEPTH_TEST)
+
+            # 设置材质属性
+            if texture_id:
+                # 使用纹理时不设置颜色
+                glColor4f(1.0, 1.0, 1.0, 1.0)
+            else:
+                # 如果没有纹理，使用基色
+                if isinstance(face.surface.base_color, tuple):
+                    base_color = face.surface.base_color
+                else:
+                    base_color = (1.0, 1.0, 1.0)  # 默认白色
+                glColor4f(base_color[0], base_color[1], base_color[2], 1.0)
+
+            # 开启纹理
+            if texture_id:
+                glEnable(GL_TEXTURE_2D)
+
+            # 激活并绑定材质贴图（纹理单元0）
+            if texture_id:
+                glActiveTexture(GL_TEXTURE0)
+                glBindTexture(GL_TEXTURE_2D, texture_id)
+                glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE)
+
+            # 自发光处理
+            if face.surface.emission != 0.0:
+                emission = max(0.0, min(1.0, float(face.surface.emission)))
+                glMaterialfv(GL_FRONT, GL_EMISSION, (emission, emission, emission, 1.0))
+
+            # 绘制几何图形
+            glBegin(face.mode)
+            glNormal3f(face.normal[0], face.normal[1], face.normal[2])
+            for v in face.vertex:
+                if len(v) == 5:
+                    # 设置纹理坐标
+                    if texture_id:
+                        glMultiTexCoord2f(GL_TEXTURE0, v[3], v[4])  # base_color纹理
+                    glVertex3f(v[0], v[1], v[2])
+                else:
+                    # 没有纹理坐标的情况
+                    glVertex3f(v[0], v[1], v[2])
+            glEnd()
+
+            # 清理OpenGL状态
+            if texture_id:
+                glDisable(GL_TEXTURE_2D)
+                glActiveTexture(GL_TEXTURE0)
+
+            if face.surface.emission != 0.0:
+                glMaterialfv(GL_FRONT, GL_EMISSION, (0.0, 0.0, 0.0, 1.0))
+
+        glEndList()
+
+    def show(self):
+        global stable_shapes
+        stable_shapes[id(self)] = self
+
+    def hide(self):
+        global stable_shapes
+        stable_shapes.pop(id(self))
+
+    def goto(self, x, y, z):
+        """
+        传送模型
+        :param x: 新x坐标
+        :param y: 新y坐标
+        :param z: 新z坐标
+        :return:
+        """
+        self.x, self.y, self.z = x, y, z
+
+    def deep_del(self):
+        """
+        深度清理模型，清理该模型本身及所有该模型用到的元素。在确定不再使用该模型时可使用该方法释放内存。
+        :return: None
+        """
+        global render_queue
+        global stable_shapes
+
+        # 1. 清理顶点列表
+        glDeleteLists(self.list_id, 1)
+
+        # 2. 清理所有面使用的纹理资源
+        for face in self.faces:
+            # 清理基础色纹理
+            if face.surface.base_color_id:
+                glDeleteTextures([face.surface.base_color_id])
+
+        # 3. 从全局渲染队列中移除（如果存在）
+        if self in render_queue:
+            render_queue.remove(self)
+
+        # 4. 从稳定形状中移除（如果存在）
+        if id(self) in stable_shapes:
+            stable_shapes.pop(id(self))
 
 
 def _get_channel_value(channel):
@@ -387,27 +279,26 @@ def update():
     """
     global render_queue
 
+    # 将所有固定渲染场景加入全局渲染列队
+    for shape_id in stable_shapes:
+        shape = stable_shapes[shape_id]
+        shape.paint()
+
     # 处理事件
     soup3D.event.check_event(pygame.event.get())
 
     # 清空画布
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
 
-    # 设置相机
-    soup3D.camera.update()
-
-    # 对渲染队列排序：首先按渲染优先级（透明物体最后渲染），然后按距离（从远到近）
-    render_queue.sort(key=lambda item: (item[1], -item[0]), reverse=False)
-
     # 渲染所有物体
-    for distance, priority, face, position in render_queue:
+    for model in render_queue:
         # 获取位置
-        x, y, z = position
+        x, y, z = model.x, model.y, model.z
 
         # 实际渲染
         glPushMatrix()
         glTranslatef(x, y, z)
-        glCallList(face.list_id)
+        glCallList(model.list_id)
         glPopMatrix()
 
     # 清空渲染队列
@@ -418,7 +309,208 @@ def update():
 
 
 def open_obj(obj, mtl=None):
-    ...
+    """
+    从obj文件导入模型
+    :param obj: *.obj模型文件路径
+    :param mtl: *.mtl纹理文件路径
+    :return: 生成出来的模型数据(Model类)
+    """
+    # 处理mtl文件
+    mtl_dict = {}
+    if mtl is not None:
+        mtl_file = open(mtl, "r")
+        mtl_str = mtl_file.read()
+        mtl_file.close()
+        command_lines = mtl_str.split("\n")
+        line_count = 1
+        now_mtl = None
+
+        R, G, B, A = 1.0, 1.0, 1.0, 1.0
+        width, height = 1, 1
+        emission = 0
+        for row in command_lines:
+            command = row.split("#")[0]
+            args = command.split()
+            if len(args) > 0:
+                if args[0] == "newmtl":
+                    if now_mtl is not None:
+                        mtl_dict[now_mtl] = soup3D.shader.FPL(
+                            soup3D.shader.MixChannel((width, height), R, G, B, A),
+                            emission=emission
+                        )
+
+                        R, G, B, A = 1.0, 1.0, 1.0, 1.0
+                        width, height = 1, 1
+                        emission = 0
+                    now_mtl = args[1]
+                if args[0] == "Kd":
+                    R, G, B = float(args[1]), float(args[2]), float(args[3])
+                if args[0] == "d":
+                    A = float(args[1])
+                if args[0] == "Ke":
+                    # 使用RGB中的最大值作为自发光强度
+                    emission = max(float(args[1]), float(args[2]), float(args[3]))
+                if args[0] == "map_Kd":
+                    # 处理带空格的纹理路径：获取命令后的全部字符串作为路径
+                    tex_path = command.split()[1:]  # 获取文件名部分(可能包含空格)
+                    tex_path = " ".join(tex_path)  # 重新组合路径
+                    # 处理可能的引号包裹的路径
+                    if tex_path.startswith('"') and tex_path.endswith('"'):
+                        tex_path = tex_path[1:-1]
+                    # 构建完整的相对路径
+                    base_dir = os.path.dirname(mtl)
+                    tex_path = os.path.join(base_dir, tex_path)
+                    pil_pic = Image.open(tex_path)
+                    width, height = pil_pic.width, pil_pic.height
+                    texture = soup3D.shader.Texture(pil_pic)
+                    R = soup3D.shader.Channel(texture, 0)
+                    G = soup3D.shader.Channel(texture, 1)
+                    B = soup3D.shader.Channel(texture, 2)
+                if args[0] == "map_d":
+                    # 同样处理map_d命令的路径
+                    tex_path = command.split()[1:]
+                    tex_path = " ".join(tex_path)
+                    if tex_path.startswith('"') and tex_path.endswith('"'):
+                        tex_path = tex_path[1:-1]
+                    base_dir = os.path.dirname(mtl)
+                    tex_path = os.path.join(base_dir, tex_path)
+                    texture = soup3D.shader.Texture(Image.open(tex_path))
+                    A = soup3D.shader.Channel(texture, 3)
+            line_count += 1
+
+        # 添加最后一个材质
+        if now_mtl is not None:
+            mtl_dict[now_mtl] = soup3D.shader.FPL(
+                soup3D.shader.MixChannel((width, height), R, G, B, A),
+                emission=emission
+            )
+
+    # 创建默认材质（如果未提供MTL或材质未定义时使用）
+    default_material = soup3D.shader.FPL(
+        soup3D.shader.MixChannel((1, 1), 1.0, 1.0, 1.0, 1.0),
+        emission=0.0
+    )
+
+    # 处理obj文件
+    vertices = []  # 顶点坐标 (x, y, z)
+    tex_coords = []  # 纹理坐标 (u, v)
+    normals = []  # 法线向量 (nx, ny, nz)
+    faces = []  # 存储解析出的面数据
+
+    # 当前使用的材质
+    current_material = None
+
+    with open(obj, 'r') as obj_file:
+        for line in obj_file:
+            line = line.strip()
+            if not line or line.startswith('#'):
+                continue
+
+            parts = line.split()
+            if not parts:
+                continue
+
+            prefix = parts[0]
+            data = parts[1:]
+
+            # 处理顶点数据
+            if prefix == 'v':
+                # 顶点坐标 (x, y, z [, w])
+                if len(data) >= 3:
+                    x, y, z = map(float, data[:3])
+                    vertices.append((x, y, z))
+
+            # 处理纹理坐标
+            elif prefix == 'vt':
+                # 纹理坐标 (u, v [, w])
+                if len(data) >= 2:
+                    u, v = map(float, data[:2])
+                    tex_coords.append((u, v))
+
+            # 处理法线
+            elif prefix == 'vn':
+                # 法线向量 (x, y, z)
+                if len(data) >= 3:
+                    nx, ny, nz = map(float, data[:3])
+                    normals.append((nx, ny, nz))
+
+            # 处理材质库引用
+            elif prefix == 'mtllib':
+                # 已在外部处理，无需二次处理
+                pass
+
+            # 处理材质使用
+            elif prefix == 'usemtl':
+                # 切换当前使用的材质
+                if data:
+                    material_name = data[0]
+                    # 如果材质在库中未定义，使用默认材质
+                    current_material = mtl_dict.get(material_name, default_material)
+
+            # 处理面定义
+            elif prefix == 'f':
+                if len(data) < 3:
+                    continue  # 至少需要3个顶点构成面
+
+                face_vertices = []
+
+                # 多边形三角剖分（简单实现，适合凸多边形）
+                base_indexes = []
+                for vertex_def in data:
+                    # 解析顶点/纹理/法线索引（格式如：v/vt/vn 或 v//vn 等）
+                    indexes = vertex_def.split('/')
+
+                    # 处理缺少纹理坐标的情况（填充空值）
+                    while len(indexes) < 3:
+                        indexes.append('')
+
+                    # 转换索引为整数（索引从1开始，需要转为0开始）
+                    # 支持负数索引（从末尾开始计数）
+                    v_idx = int(indexes[0]) - 1 if indexes[0] else -1
+                    vt_idx = int(indexes[1]) - 1 if indexes[1] else -1
+                    vn_idx = int(indexes[2]) - 1 if indexes[2] else -1
+
+                    # 处理负索引（相对索引）
+                    if v_idx < 0: v_idx = len(vertices) + v_idx
+                    if vt_idx < 0: vt_idx = len(tex_coords) + vt_idx
+                    if vn_idx < 0: vn_idx = len(normals) + vn_idx
+
+                    # 获取顶点数据（确保索引在有效范围内）
+                    vert = list(vertices[v_idx])
+
+                    # 如果有纹理坐标，添加纹理坐标
+                    if 0 <= vt_idx < len(tex_coords):
+                        u, v = tex_coords[vt_idx]
+                        vert.extend([u, v])
+
+                    base_indexes.append(tuple(vert))
+
+                # 简单三角剖分：使用第一个顶点为基准，连接其他顶点形成三角形
+                for i in range(1, len(base_indexes) - 1):
+                    # 每个三角形由第一个顶点和连续的两个顶点组成
+                    triangle = [
+                        base_indexes[0],
+                        base_indexes[i],
+                        base_indexes[i + 1]
+                    ]
+                    # 添加到面的顶点列表
+                    face_vertices.append(triangle)
+
+                # 创建面对象（使用当前材质）
+                material = current_material if current_material else default_material
+
+                # 将三角剖分后的所有三角形面加入列表
+                for tri_vertices in face_vertices:
+                    face = Face(
+                        shape_type="triangle_b",  # 分离的三角形
+                        surface=material,
+                        vertex=tri_vertices
+                    )
+                    faces.append(face)
+
+    # 创建模型对象（原点设置为0,0,0）
+    model = Model(0, 0, 0, *faces)
+    return model
 
 
 def _rotated(Xa, Ya, Xb, Yb, degree):

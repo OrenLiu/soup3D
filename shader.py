@@ -2,6 +2,12 @@
 处理soup3D中的着色系统
 """
 import PIL.Image
+import numpy as np
+from OpenGL.GL import *
+from OpenGL.GL.shaders import compileShader, compileProgram
+import glfw
+
+import soup3D.img
 
 
 class Texture:
@@ -15,37 +21,16 @@ class Texture:
         通道3: 透明度(如无该通道，则统一返回1)
         :param pil_pic: pillow图像
         """
+        if not isinstance(pil_pic, PIL.Image.Image):
+            raise TypeError(f"pil_pic should be PIL.Image.Image not {type(pil_pic)}")
+
         self.pil_pic = pil_pic
 
         self.hash = None
         self.update()
 
     def update(self):
-        self.change_hash()
-
-    def change_hash(self):
-        """
-        更改着色单元哈希值
-        :return: None
-        """
-        self.hash = self.get_hash()
-
-    def get_hash(self):
-        """
-        获取新着色单元哈希值
-        :return: 新着色单元哈希值
-        """
-        return hash_shader(self.pil_pic.tobytes())
-
-    def reset(self, pil_pic: PIL.Image.Image | None = None):
-        """
-        重设类成员，并重置着色单元哈希值
-        参数同__init__，无需更改的参数可填写None
-        """
-        if pil_pic is not None:
-            self.pil_pic = pil_pic
-
-        self.change_hash()
+        ...
 
 
 class Channel:
@@ -55,71 +40,45 @@ class Channel:
         :param texture:   提取通道的贴图
         :param channelID: 通道编号
         """
+        if not isinstance(texture, Texture):
+            raise TypeError(f"texture should be Texture not {type(texture)}")
+
+        if not isinstance(channelID, int):
+            raise TypeError(f"channelID should be int not {type(channelID)}")
+
         self.texture = texture
         self.channelID = channelID
 
-        self.band_cache = None  # 添加通道图像缓存
+        self.pil_band = None
 
         self.hash = None
         self.update()
 
-    def get_pil_band(self, size=None):
-        """获取通道的PIL图像，可指定尺寸"""
+    def get_pil_band(self):
+        """
+        获取单通道pil图像
+        :return:
+        """
         img = self.texture.pil_pic
         if img.mode != 'RGBA':
             img = img.convert('RGBA')
 
         bands = img.split()
-        band = bands[self.channelID]
+        self.pil_band = bands[self.channelID]
 
-        if size is not None and size != band.size:
-            band = band.resize(size, PIL.Image.BILINEAR)
-
-        return band
+        return self.pil_band
 
     def update(self):
-        self.change_hash()
-
-    def change_hash(self):
-        """
-        更改着色单元哈希值
-        :return: None
-        """
-        self.hash = self.get_hash()
-
-    def get_hash(self):
-        """
-        获取新着色单元哈希值
-        :return: 新着色单元哈希值
-        """
-        return hash_shader(self.texture, self.channelID)
-
-    def reset(self,
-              texture: Texture | None = None,
-              channelID: int | None = None):
-        """
-        重设类成员，并重置着色单元哈希值
-        参数同__init__，无需更改的参数可填写None
-        """
-        if texture is not None:
-            if not isinstance(texture, Texture):
-                raise TypeError(f"Texture requires Texture, got {type(texture)}")
-            self.texture = texture
-        if channelID is not None:
-            if not isinstance(channelID, int):
-                raise TypeError(f"channelID requires int, got {type(channelID)}")
-            self.channelID = channelID
-
-        self.change_hash()
+        self.get_pil_band()
 
 
 class MixChannel:
     def __init__(self,
                  resize: tuple[int, int],
-                 R: float | Channel,
-                 G: float | Channel,
-                 B: float | Channel,
-                 A: float | Channel = 1.0):
+                 R: int | float | Channel,
+                 G: int | float | Channel,
+                 B: int | float | Channel,
+                 A: int | float | Channel = 1.0):
         """
         混合通道成为一个贴图
         混合通道贴图(MixChannel)可通过类似贴图(Texture)的方式提取通道
@@ -129,6 +88,21 @@ class MixChannel:
         :param B: 蓝色通道，可直接通过0.0~1.0的小数定义通道亮度，也可以引入Channel通道实现引入贴图通道
         :param A: 透明度通道，可直接通过0.0~1.0的小数定义通道亮度，也可以引入Channel通道实现引入贴图通道
         """
+        if not isinstance(resize, tuple):
+            raise TypeError(f"resize should be tuple[int not {type(resize)}")
+
+        if not isinstance(R, int | float | Channel):
+            raise TypeError(f"R should be int | float | Channel not {type(R)}")
+
+        if not isinstance(G, int | float | Channel):
+            raise TypeError(f"G should be int | float | Channel not {type(G)}")
+
+        if not isinstance(B, int | float | Channel):
+            raise TypeError(f"B should be int | float | Channel not {type(B)}")
+
+        if not isinstance(A, int | float | Channel):
+            raise TypeError(f"A should be int | float | Channel not {type(A)}")
+
         self.resize = resize
         self.R = R
         self.G = G
@@ -185,254 +159,51 @@ class MixChannel:
         # 合并为最终RGBA图像
         self.pil_pic = PIL.Image.merge('RGBA', final_bands)
 
-        # 更新着色单元哈希值
-        self.change_hash()
 
-    def change_hash(self):
-        """
-        更改着色单元哈希值
-        :return: None
-        """
-        self.hash = self.get_hash()
-
-    def get_hash(self):
-        """
-        获取新着色单元哈希值
-        :return: 新着色单元哈希值
-        """
-        return hash_shader(self.resize, self.R, self.G, self.B, self.A)
-
-    def reset(self,
-              resize: tuple[int, int] | None = None,
-              R: float | Channel | None = None,
-              G: float | Channel | None = None,
-              B: float | Channel | None = None,
-              A: float | Channel | None = None):
-        """
-        重设类成员，并重置着色单元哈希值
-        参数同__init__，无需更改的参数可填写None
-        """
-        if resize is not None:
-            if not (isinstance(resize, tuple) and len(resize) == 2 and
-                    all(isinstance(i, int) for i in resize)):
-                raise TypeError("resize requires tuple[int, int]")
-            self.resize = resize
-
-        def update_channel(name, value, attr):
-            if value is None:
-                return
-            if not (isinstance(value, (float, Channel)) or
-                    (isinstance(value, int) and value == 0)):  # 允许0作为float
-                raise TypeError(f"{name} requires float or Channel, got {type(value)}")
-            if isinstance(value, float) and not (0.0 <= value <= 1.0):
-                raise ValueError(f"{name} must be between 0.0 and 1.0, got {value}")
-            setattr(self, attr, value)
-
-        update_channel("R", R, "R")
-        update_channel("G", G, "G")
-        update_channel("B", B, "B")
-        update_channel("A", A, "A")
-
-        self.change_hash()
-
-
-class BSDF:
+class FPL:
     def __init__(self,
                  base_color: Texture | MixChannel,
-                 smoothness: float | Channel = 0.0,
-                 normal: Texture | MixChannel = None,
-                 emission: float | Channel = 0.0):
+                 emission: float = 0.0):
         """
-        原理化双向散射分布函数
+        Fixed pipeline固定管线式贴图
         :param base_color: 主要颜色
-        :param smoothness: 光滑度
-        :param normal:     法线贴图
         :param emission:   自发光度
         """
+        if not isinstance(base_color, Texture | MixChannel):
+            raise TypeError(f"base_color should be Texture | MixChannel not {type(base_color)}")
+
+        if not isinstance(emission, float):
+            raise TypeError(f"emission should be float not {type(emission)}")
+
         self.base_color = base_color
-        self.smoothness = smoothness
-        self.normal = normal
-        if self.normal is None:
-            self.normal = MixChannel((1, 1), 0.5, 0.5, 1)
         self.emission = emission
 
+        self.base_color_id = None
+
         self.hash = None
-        self.change_hash()
+        self.update()
 
     def update(self):
-        self.change_hash()
+        # 处理基础色材质
+        pil_img = self.base_color.pil_pic
+        self.base_color_id = soup3D.img.pil_to_texture(pil_img, texture_unit=0)
 
-    def change_hash(self):
+
+type_group = Texture | Channel | MixChannel | FPL
+
+
+class ShaderProgram:
+    def __init__(self, vertex: str, fragment: str):
         """
-        更改着色单元哈希值
-        :return: None
+        着色程序
+        :param vertex:   顶点着色程序
+        :param fragment: 片段着色程序
         """
-        self.hash = self.get_hash()
+        self.vertex = vertex
+        self.fragment = fragment
 
-    def get_hash(self):
-        """
-        获取新着色单元哈希值
-        :return: 新着色单元哈希值
-        """
-        return hash_shader(self.base_color, self.normal, self.emission)
-
-    def reset(self,
-              base_color: Texture | MixChannel | None,
-              smoothness: float | Channel | None,
-              normal: Texture | MixChannel | None,
-              emission: float | Channel | None):
-        if base_color is not None:
-            self.base_color = base_color
-        if smoothness is not None:
-            self.smoothness = smoothness
-        if normal is not None:
-            self.normal = normal
-        if emission is not None:
-            self.emission = emission
-
-        self.change_hash()
-
-
-type_group = Texture | Channel | MixChannel | BSDF
-
-
-def shader2mermaid(shader: type_group, visited=None, level=0):
-    """
-    将着色单元的层级关系以mermaid的方式进行展示
-    :param shader: 需要展示其以及其所有子着色单元层级关系的着色单元
-    :param visited: 已访问节点的字典，防止无限循环
-    :param level: 当前节点的递归层级
-    :return: mermaid代码
-    """
-    if visited is None:
-        visited = {}
-
-    # 生成唯一节点ID
-    node_id = id(shader)
-
-    # 初始化输出
-    mermaid_lines = []
-
-    # 检查是否已访问过该节点
-    if node_id in visited:
-        return mermaid_lines
-    visited[node_id] = True
-
-    # 确定节点描述文本 - 使用更具描述性的标签
-    if isinstance(shader, Texture):
-        node_label = "[\"Texture\"]"
-    elif isinstance(shader, Channel):
-        channel_names = {0: "R", 1: "G", 2: "B", 3: "A"}
-        node_label = f"[\"Channel {channel_names.get(shader.channelID, '?')}\"]"
-    elif isinstance(shader, MixChannel):
-        node_label = "[\"MixChannel\"]"
-    elif isinstance(shader, BSDF):
-        node_label = "[\"BSDF\"]"
-    else:
-        return mermaid_lines
-
-    # 添加当前节点
-    mermaid_lines.append(f"    node_{node_id}{node_label}")
-
-    # 递归处理子节点并添加关系
-    if isinstance(shader, Channel):
-        # Channel -> Texture
-        child_lines = shader2mermaid(shader.texture, visited, level + 1)
-        mermaid_lines.extend(child_lines)
-        mermaid_lines.append(f"    node_{id(shader.texture)} -->|\"texture\"| node_{node_id}")
-
-    elif isinstance(shader, MixChannel):
-        # 处理MixChannel的子通道
-        for i, channel in enumerate(['R', 'G', 'B', 'A']):
-            value = getattr(shader, channel)
-
-            # 处理常量值
-            if isinstance(value, (int, float)):
-                const_id = f"{node_id}_{channel}"
-                mermaid_lines.append(f"    const_{const_id}[\"Const: {value}\"]")
-                mermaid_lines.append(f"    const_{const_id} -->|\"{channel}\"| node_{node_id}")
-            # 处理Channel对象
-            elif isinstance(value, Channel):
-                child_lines = shader2mermaid(value, visited, level + 1)
-                mermaid_lines.extend(child_lines)
-                mermaid_lines.append(f"    node_{id(value)} -->|\"{channel}\"| node_{node_id}")
-
-    elif isinstance(shader, BSDF):
-        # 处理BSDF的子属性
-        for prop, value in [
-            ('base_color', shader.base_color),
-            ('smoothness', shader.smoothness),
-            ('normal', shader.normal),
-            ('emission', shader.emission)
-        ]:
-            # 处理常量值
-            if isinstance(value, (int, float)):
-                const_id = f"{node_id}_{prop}"
-                mermaid_lines.append(f"    const_{const_id}[\"Const: {value}\"]")
-                mermaid_lines.append(f"    const_{const_id} -->|\"{prop}\"| node_{node_id}")
-            # 处理着色单元
-            elif isinstance(value, type_group):
-                child_lines = shader2mermaid(value, visited, level + 1)
-                mermaid_lines.extend(child_lines)
-                mermaid_lines.append(f"    node_{id(value)} -->|\"{prop}\"| node_{node_id}")
-
-    # 添加流程图声明
-    if level == 0:  # 仅在根节点添加
-        codes = ""
-        for line in ["flowchart TD"] + mermaid_lines:
-            codes += line+"\n"
-        return codes
-    return mermaid_lines
-
-
-def hash_shader(*args):
-    str_join_hash = ""
-    for arg in args:
-        if isinstance(arg, type_group):
-            str_join_hash += f"{arg.get_hash()},"
-        else:
-            str_join_hash += f"{arg},"
-    return hash(str_join_hash)
-
-
-def soft_update(shader: type_group):
-    """
-    软更新着色树，通过比对哈希值判断是否需要更新着色单元
-    :return: None
-    """
-    need_update = False
-
-    if shader.hash != shader.get_hash():
-        need_update = True
-
-    if type(shader) is Texture:
-        return need_update
-    if type(shader) is Channel:
-        need_update = need_update or soft_update(shader.texture)
-        return need_update
-    if type(shader) is MixChannel:
-        if type(shader.R) is Channel:
-            need_update = need_update or soft_update(shader.R)
-        if type(shader.G) is Channel:
-            need_update = need_update or soft_update(shader.G)
-        if type(shader.B) is Channel:
-            need_update = need_update or soft_update(shader.B)
-        if type(shader.A) is Channel:
-            need_update = need_update or soft_update(shader.A)
-        return need_update
-    if type(shader) is BSDF:
-        if type(shader.base_color) in (Texture, Channel):
-            need_update = need_update or soft_update(shader.base_color)
-        if type(shader.smoothness) is Channel:
-            need_update = need_update or soft_update(shader.smoothness)
-        if type(shader.normal) in (Texture, Channel):
-            need_update = need_update or soft_update(shader.normal)
-        if type(shader.emission) is Channel:
-            need_update = need_update or soft_update(shader.emission)
-        return need_update
-
-    if need_update:
-        shader.update()
+        self.vertex_shader = compileShader(self.vertex, GL_VERTEX_SHADER)
+        self.fragment_shader = compileShader(self.fragment, GL_FRAGMENT_SHADER)
 
 
 if __name__ == '__main__':

@@ -58,21 +58,21 @@ def update():
     centerX, centerY, centerZ = 0, 0, -1
     upX, upY, upZ = 0, 1, 0
     # 进行横滚旋转
-    centerX, centerY = rotated(centerX, centerY, 0, 0, ROLL)
-    upX, upY = rotated(upX, upY, 0, 0, ROLL)
+    centerX, centerY = _rotated(centerX, centerY, 0, 0, ROLL)
+    upX, upY = _rotated(upX, upY, 0, 0, ROLL)
 
     # 进行俯仰旋转
-    centerY, centerZ = rotated(centerY, centerZ, 0, 0, PITCH)
-    upY, upZ = rotated(upY, upZ, 0, 0, PITCH)
+    centerY, centerZ = _rotated(centerY, centerZ, 0, 0, PITCH)
+    upY, upZ = _rotated(upY, upZ, 0, 0, PITCH)
 
     # 进行偏行旋转
-    centerX, centerZ = rotated(centerX, centerZ, 0, 0, YAW)
-    upX, upZ = rotated(upX, upZ, 0, 0, YAW)
+    centerX, centerZ = _rotated(centerX, centerZ, 0, 0, YAW)
+    upX, upZ = _rotated(upX, upZ, 0, 0, YAW)
 
     gluLookAt(X, Y, Z, centerX+X, centerY+Y, centerZ+Z, upX, upY, upZ)
 
 
-def rotated(Xa, Ya, Xb, Yb, degree):
+def _rotated(Xa, Ya, Xb, Yb, degree):
     """
     点A绕点B旋转特定角度后，点A的坐标
     :param Xa:     环绕点(点A)X坐标
