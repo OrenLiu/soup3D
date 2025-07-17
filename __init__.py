@@ -306,7 +306,7 @@ def _paint_ui(shape, x, y):
 
     if shape.texture:
         glEnable(GL_TEXTURE_2D)
-        glBindTexture(GL_TEXTURE_2D, _pil_to_texture(shape.texture.pil_pic))
+        glBindTexture(GL_TEXTURE_2D, shape.tex_id)
 
         # 使用混合处理透明度
         glEnable(GL_BLEND)
@@ -589,59 +589,6 @@ def _rotated(Xa, Ya, Xb, Yb, degree):
     outx = (Xa - Xb) * cos(degree) - (Ya - Yb) * sin(degree) + Xb
     outy = (Xa - Xb) * sin(degree) + (Ya - Yb) * cos(degree) + Yb
     return outx, outy
-
-
-def _pil_to_texture(pil_img: Image.Image, texture_id: int | None = None, texture_unit: int = 0) -> int:
-    """
-    将PIL图像转换为OpenGL纹理
-    :param pil_img: PIL图像对象
-    :param texture_id: 已有纹理ID（如None则创建新纹理）
-    :param texture_unit: 纹理单元编号（0表示GL_TEXTURE0，1表示GL_TEXTURE1等）
-    :return: 纹理ID
-    """
-    # 激活指定纹理单元
-    glActiveTexture(GL_TEXTURE0 + texture_unit)
-
-    # 确定图像模式并转换为RGBA格式
-    mode = pil_img.mode
-    if mode == '1':  # 黑白图像
-        pil_img = pil_img.convert('RGBA')
-        data = pil_img.tobytes('raw', 'RGBA', 0, -1)
-    elif mode == 'L':  # 灰度图像
-        pil_img = pil_img.convert('RGBA')
-        data = pil_img.tobytes('raw', 'RGBA', 0, -1)
-    elif mode == 'RGB':  # RGB图像
-        pil_img = pil_img.convert('RGBA')
-        data = pil_img.tobytes('raw', 'RGBA', 0, -1)
-    elif mode == 'RGBA':  # RGBA图像
-        data = pil_img.tobytes('raw', 'RGBA', 0, -1)
-    else:
-        # 其他格式转换为RGBA
-        pil_img = pil_img.convert('RGBA')
-        data = pil_img.tobytes('raw', 'RGBA', 0, -1)
-
-    # 获取图像尺寸
-    width, height = pil_img.size
-
-    # 创建或绑定纹理
-    if texture_id is None:
-        texture_id = glGenTextures(1)
-
-    glBindTexture(GL_TEXTURE_2D, texture_id)
-
-    # 设置纹理参数
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT)
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT)
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR)
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR)
-
-    # 上传纹理数据
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, data)
-
-    # 生成mipmap（提高纹理在远距离的渲染质量）
-    glGenerateMipmap(GL_TEXTURE_2D)
-
-    return texture_id
 
 
 if __name__ == '__main__':
