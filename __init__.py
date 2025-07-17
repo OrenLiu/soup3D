@@ -12,7 +12,6 @@ from math import *
 import os
 
 import soup3D.shader
-import soup3D.img
 import soup3D.event
 import soup3D.camera
 import soup3D.light
@@ -234,6 +233,10 @@ def init(width=1920, height=1080, fov=45, bg_color: tuple[float, float, float] =
     _current_far = far
 
     pygame.init()  # 初始化pygame
+    pygame.display.set_caption("soup3D")
+    current_file = os.path.abspath(__file__)
+    package_dir = os.path.dirname(current_file)
+    soup3D.set_ico(os.path.join(package_dir, "osoup.png"))
     pygame.display.set_mode((width, height), DOUBLEBUF | OPENGL)  # 创建OpenGL上下文
     glClearColor(*bg_color, 1)  # 在上下文创建后设置背景颜色
     glEnable(GL_DEPTH_TEST)  # 启用深度测试
@@ -262,6 +265,15 @@ def resize(width, height):
     glMatrixMode(GL_MODELVIEW)
 
 
+def set_title(title: str):
+    pygame.display.set_caption(title)
+
+
+def set_ico(path):
+    icon = pygame.image.load(path)
+    pygame.display.set_icon(icon)
+
+
 def background_color(r, g, b):
     """
     设定背景颜色
@@ -271,6 +283,50 @@ def background_color(r, g, b):
     :return:
     """
     glClearColor(r, g, b, 1)
+
+
+def _paint_ui(shape, x, y):
+    """在单帧渲染该图形"""
+    type_menu = {
+        "line_b": GL_LINES,
+        "line_s": GL_LINE_STRIP,
+        "line_l": GL_LINE_LOOP,
+        "triangle_b": GL_TRIANGLES,
+        "triangle_s": GL_TRIANGLE_STRIP,
+        "triangle_l": GL_TRIANGLE_FAN
+    }
+    shape._setup_projection()
+    glPushMatrix()
+    glTranslatef(x, y, 0)
+
+    # 保存当前状态并禁用光照和深度测试
+    glPushAttrib(GL_ENABLE_BIT)
+    glDisable(GL_LIGHTING)
+    glDisable(GL_DEPTH_TEST)  # 新增：禁用深度测试
+
+    if shape.texture:
+        glEnable(GL_TEXTURE_2D)
+        glBindTexture(GL_TEXTURE_2D, _pil_to_texture(shape.texture.pil_pic))
+
+        # 使用混合处理透明度
+        glEnable(GL_BLEND)
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
+    else:
+        glDisable(GL_TEXTURE_2D)
+
+    glBegin(type_menu[shape.type])
+    for point in shape.vertex:
+        glTexCoord2f(point[2], point[3])
+        glVertex2f(point[0], point[1])
+    glEnd()
+
+    glDisable(GL_BLEND)
+
+    # 恢复之前的状态
+    glPopAttrib()
+
+    glPopMatrix()
+    shape._restore_projection()
 
 
 def update():
@@ -287,9 +343,6 @@ def update():
     # 处理事件
     soup3D.event.check_event(pygame.event.get())
 
-    # 清空画布
-    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
-
     # 渲染所有物体
     for model in render_queue:
         # 获取位置
@@ -304,8 +357,17 @@ def update():
     # 清空渲染队列
     render_queue = []
 
+    # 渲染ui界面
+    for i in soup3D.ui.render_queue:
+        _paint_ui(*i)
+
+    # 清空ui渲染列队
+    soup3D.ui.render_queue = []
+
     # 刷新显示
     pygame.display.flip()
+    # 清空画布
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
 
 
 def open_obj(obj, mtl=None):
@@ -527,6 +589,59 @@ def _rotated(Xa, Ya, Xb, Yb, degree):
     outx = (Xa - Xb) * cos(degree) - (Ya - Yb) * sin(degree) + Xb
     outy = (Xa - Xb) * sin(degree) + (Ya - Yb) * cos(degree) + Yb
     return outx, outy
+
+
+def _pil_to_texture(pil_img: Image.Image, texture_id: int | None = None, texture_unit: int = 0) -> int:
+    """
+    将PIL图像转换为OpenGL纹理
+    :param pil_img: PIL图像对象
+    :param texture_id: 已有纹理ID（如None则创建新纹理）
+    :param texture_unit: 纹理单元编号（0表示GL_TEXTURE0，1表示GL_TEXTURE1等）
+    :return: 纹理ID
+    """
+    # 激活指定纹理单元
+    glActiveTexture(GL_TEXTURE0 + texture_unit)
+
+    # 确定图像模式并转换为RGBA格式
+    mode = pil_img.mode
+    if mode == '1':  # 黑白图像
+        pil_img = pil_img.convert('RGBA')
+        data = pil_img.tobytes('raw', 'RGBA', 0, -1)
+    elif mode == 'L':  # 灰度图像
+        pil_img = pil_img.convert('RGBA')
+        data = pil_img.tobytes('raw', 'RGBA', 0, -1)
+    elif mode == 'RGB':  # RGB图像
+        pil_img = pil_img.convert('RGBA')
+        data = pil_img.tobytes('raw', 'RGBA', 0, -1)
+    elif mode == 'RGBA':  # RGBA图像
+        data = pil_img.tobytes('raw', 'RGBA', 0, -1)
+    else:
+        # 其他格式转换为RGBA
+        pil_img = pil_img.convert('RGBA')
+        data = pil_img.tobytes('raw', 'RGBA', 0, -1)
+
+    # 获取图像尺寸
+    width, height = pil_img.size
+
+    # 创建或绑定纹理
+    if texture_id is None:
+        texture_id = glGenTextures(1)
+
+    glBindTexture(GL_TEXTURE_2D, texture_id)
+
+    # 设置纹理参数
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT)
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT)
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR)
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR)
+
+    # 上传纹理数据
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, data)
+
+    # 生成mipmap（提高纹理在远距离的渲染质量）
+    glGenerateMipmap(GL_TEXTURE_2D)
+
+    return texture_id
 
 
 if __name__ == '__main__':

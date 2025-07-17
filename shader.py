@@ -7,8 +7,6 @@ from OpenGL.GL import *
 from OpenGL.GL.shaders import compileShader, compileProgram
 import glfw
 
-import soup3D.img
-
 
 class Texture:
     def __init__(self, pil_pic: PIL.Image.Image):
@@ -34,14 +32,14 @@ class Texture:
 
 
 class Channel:
-    def __init__(self, texture: Texture, channelID: int):
+    def __init__(self, texture: "Texture | MixChannel", channelID: int):
         """
         提取贴图中的单个通道
         :param texture:   提取通道的贴图
         :param channelID: 通道编号
         """
-        if not isinstance(texture, Texture):
-            raise TypeError(f"texture should be Texture not {type(texture)}")
+        if not isinstance(texture, Texture | MixChannel):
+            raise TypeError(f"texture should be Texture | MixChannel not {type(texture)}")
 
         if not isinstance(channelID, int):
             raise TypeError(f"channelID should be int not {type(channelID)}")
@@ -186,7 +184,7 @@ class FPL:
     def update(self):
         # 处理基础色材质
         pil_img = self.base_color.pil_pic
-        self.base_color_id = soup3D.img.pil_to_texture(pil_img, texture_unit=0)
+        self.base_color_id = _pil_to_texture(pil_img, texture_unit=0)
 
 
 type_group = Texture | Channel | MixChannel | FPL
@@ -204,6 +202,59 @@ class ShaderProgram:
 
         self.vertex_shader = compileShader(self.vertex, GL_VERTEX_SHADER)
         self.fragment_shader = compileShader(self.fragment, GL_FRAGMENT_SHADER)
+
+
+def _pil_to_texture(pil_img: PIL.Image.Image, texture_id: int | None = None, texture_unit: int = 0) -> int:
+    """
+    将PIL图像转换为OpenGL纹理
+    :param pil_img: PIL图像对象
+    :param texture_id: 已有纹理ID（如None则创建新纹理）
+    :param texture_unit: 纹理单元编号（0表示GL_TEXTURE0，1表示GL_TEXTURE1等）
+    :return: 纹理ID
+    """
+    # 激活指定纹理单元
+    glActiveTexture(GL_TEXTURE0 + texture_unit)
+
+    # 确定图像模式并转换为RGBA格式
+    mode = pil_img.mode
+    if mode == '1':  # 黑白图像
+        pil_img = pil_img.convert('RGBA')
+        data = pil_img.tobytes('raw', 'RGBA', 0, -1)
+    elif mode == 'L':  # 灰度图像
+        pil_img = pil_img.convert('RGBA')
+        data = pil_img.tobytes('raw', 'RGBA', 0, -1)
+    elif mode == 'RGB':  # RGB图像
+        pil_img = pil_img.convert('RGBA')
+        data = pil_img.tobytes('raw', 'RGBA', 0, -1)
+    elif mode == 'RGBA':  # RGBA图像
+        data = pil_img.tobytes('raw', 'RGBA', 0, -1)
+    else:
+        # 其他格式转换为RGBA
+        pil_img = pil_img.convert('RGBA')
+        data = pil_img.tobytes('raw', 'RGBA', 0, -1)
+
+    # 获取图像尺寸
+    width, height = pil_img.size
+
+    # 创建或绑定纹理
+    if texture_id is None:
+        texture_id = glGenTextures(1)
+
+    glBindTexture(GL_TEXTURE_2D, texture_id)
+
+    # 设置纹理参数
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT)
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT)
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR)
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR)
+
+    # 上传纹理数据
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, data)
+
+    # 生成mipmap（提高纹理在远距离的渲染质量）
+    glGenerateMipmap(GL_TEXTURE_2D)
+
+    return texture_id
 
 
 if __name__ == '__main__':
