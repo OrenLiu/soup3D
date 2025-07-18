@@ -31,7 +31,7 @@ class Face:
                  surface: soup3D.shader.FPL | soup3D.shader.ShaderProgram,
                  vertex: list | tuple):
         """
-        表面，可用于创建模型(Model类)的线段、多边形
+        表面，可用于创建模型(Model类)的线段和多边形
         :param shape_type: 绘制方式，可以填写这些内容：
                            "line_b": 不相连线段
                            "line_s": 连续线段
@@ -86,7 +86,7 @@ class Face:
 class Model:
     def __init__(self, x: int | float, y: int | float, z: int | float, *face: Face):
         """
-        模型，由多个面(Face类)组成，
+        模型，由多个面(Face类)组成，建议将场景中的面组合成尽量少的模型
         :param x:    模型原点对应x坐标
         :param y:    模型原点对应y坐标
         :param z:    模型原点对应z坐标
@@ -99,6 +99,10 @@ class Model:
         self._generate_display_list()
 
     def paint(self):
+        """
+        在单帧绘制该模型
+        :return: None
+        """
         render_queue.append(self)
 
     def _generate_display_list(self):
@@ -165,10 +169,18 @@ class Model:
         glEndList()
 
     def show(self):
+        """
+        固定每帧渲染该模型
+        :return: None
+        """
         global stable_shapes
         stable_shapes[id(self)] = self
 
     def hide(self):
+        """
+        取消固定渲染
+        :return: None
+        """
         global stable_shapes
         stable_shapes.pop(id(self))
 
@@ -266,10 +278,20 @@ def resize(width, height):
 
 
 def set_title(title: str):
+    """
+    设置窗口标题
+    :param title: 窗口标题
+    :return: None
+    """
     pygame.display.set_caption(title)
 
 
 def set_ico(path):
+    """
+    设置窗口图标
+    :param path: 图标所在位置
+    :return: None
+    """
     icon = pygame.image.load(path)
     pygame.display.set_icon(icon)
 
@@ -280,7 +302,7 @@ def background_color(r, g, b):
     :param r: 红色(0.0-1.0)
     :param g: 绿色(0.0-1.0)
     :param b: 蓝色(0.0-1.0)
-    :return:
+    :return: None
     """
     glClearColor(r, g, b, 1)
 

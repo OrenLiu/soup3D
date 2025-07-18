@@ -14,6 +14,7 @@ pip install -i https://osoup.top/simple soup3D
 ```bash
 pip install pygame
 pip install pyopengl
+pip install pillow
 ```
 
 ## 小试牛刀
@@ -27,65 +28,33 @@ from math import *
 from time import*
 
 
-def stop(event):
+def stop(event):  # 用于绑定窗口关闭事件的函数，每个事件绑定的函数都需要有一个参数。
     global running
     running = False
-
-
-def rotated(Xa, Ya, Xb, Yb, degree):
-    """
-    点A绕点B旋转特定角度后，点A的坐标
-    :param Xa:     环绕点(点A)X坐标
-    :param Ya:     环绕点(点A)Y坐标
-    :param Xb:     被环绕点(点B)X坐标
-    :param Yb:     被环绕点(点B)Y坐标
-    :param degree: 旋转角度
-    :return: 点A旋转后的X坐标, 点A旋转后的Y坐标
-    """
-    degree = degree * pi / 180
-    outx = (Xa - Xb) * cos(degree) - (Ya - Yb) * sin(degree) + Xb
-    outy = (Xa - Xb) * sin(degree) + (Ya - Yb) * cos(degree) + Yb
-    return outx, outy
 
 
 running = True
 
 
 if __name__ == '__main__':
-    soup3D.init(bg_color=(0.5, 0.75, 1))       # 设置背景颜色
+    soup3D.init(bg_color=(0.5, 0.75, 1))       # 初始化窗口
     soup3D.event.bind(ON_CLOSE, stop)          # 绑定关闭窗口事件
 
-    soup3D.light.init()                                   # 初始化光照
-    sun = soup3D.light.Direct((45, 45, 45), (1, 0.5, 0))  # 创建光照
+    green = soup3D.shader.FPL(soup3D.shader.MixChannel((1, 1), 0, 1, 0))  # 创建绿色材质
+    face = soup3D.Face(TRIANGLE_B, green, [                               # 创建面
+        (0, 0, 0, 0, 0),  # (R, G, B, U, V)
+        (100, 0, 0, 0, 0),
+        (0, 100, 0, 0, 0)
+    ])
 
-    ground = soup3D.Group(  # 创建一个圆
-        soup3D.Shape(TRIANGLE_L,
-                     * [(rotated(0, 10, 0, 0, i)[1], rotated(0, 10, 0, 0, i)[0], 20, 0, 0.5, 1) for i in range(360)]
-                     )
-    )
-
-    ground.display_stable()  # 固定显示圆
-
-    fps = 0
-    last = time()
-    frame_time = time()
+    triangle = soup3D.Model(0, 0, -500, face)  # 将面加入模型
+    triangle.show()                            # 显示模型
     while running:  # 主循环
-        frame_time = time()
-
-        now = time()
-        sun.display()  # 应用光照
-
-        soup3D.update()  # 更新并渲染整个场景
-        fps += 1
-        if time() - last > 1:
-            print(fps)
-            last = time()
-            fps = 0
-
+        soup3D.update()  # 更新画面
 
 ```
 
-这段代码运行后，您可以看到一个圆形在窗口中
+这段代码运行后，您可以看到一个绿色三角形在窗口中
 
 ## 更多内容
 
