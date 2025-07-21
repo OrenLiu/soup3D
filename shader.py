@@ -161,7 +161,7 @@ class MixChannel:
 class FPL:
     def __init__(self,
                  base_color: Texture | MixChannel,
-                 emission: float = 0.0):
+                 emission: float | int = 0.0):
         """
         Fixed pipeline固定管线式贴图
         :param base_color: 主要颜色
@@ -170,8 +170,8 @@ class FPL:
         if not isinstance(base_color, Texture | MixChannel):
             raise TypeError(f"base_color should be Texture | MixChannel not {type(base_color)}")
 
-        if not isinstance(emission, float):
-            raise TypeError(f"emission should be float not {type(emission)}")
+        if not isinstance(emission, float | int):
+            raise TypeError(f"emission should be float | int not {type(emission)}")
 
         self.base_color = base_color
         self.emission = emission
