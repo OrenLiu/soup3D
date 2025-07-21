@@ -93,6 +93,7 @@ class Model:
         :param face: 面
         """
         self.x, self.y, self.z = x, y, z
+        self.yaw, self.pitch, self.roll = 0, 0, 0
         self.faces = list(face)
 
         self.list_id = glGenLists(1)
@@ -190,9 +191,19 @@ class Model:
         :param x: 新x坐标
         :param y: 新y坐标
         :param z: 新z坐标
-        :return:
+        :return: None
         """
         self.x, self.y, self.z = x, y, z
+
+    def turn(self, yaw, pitch, roll):
+        """
+        旋转模型
+        :param yaw:   偏移角度，绕世界z轴旋转
+        :param pitch: 俯仰角度，绕模型x轴旋转
+        :param roll:  横滚角度，绕模型y轴旋转
+        :return: None
+        """
+        self.yaw, self.pitch, self.roll = yaw, pitch, roll
 
     def deep_del(self):
         """
@@ -369,10 +380,14 @@ def update():
     for model in render_queue:
         # 获取位置
         x, y, z = model.x, model.y, model.z
+        yaw, pitch, roll = model.yaw, model.pitch, model.roll
 
         # 实际渲染
         glPushMatrix()
         glTranslatef(x, y, z)
+        glRotatef(roll, 1, 0, 0)
+        glRotatef(pitch, 0, 0, 1)
+        glRotatef(yaw, 0, 1, 0)
         glCallList(model.list_id)
         glPopMatrix()
 
