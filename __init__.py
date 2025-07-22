@@ -94,6 +94,7 @@ class Model:
         """
         self.x, self.y, self.z = x, y, z
         self.yaw, self.pitch, self.roll = 0, 0, 0
+        self.width, self.height, self.length = 1, 1, 1
         self.faces = list(face)
 
         self.list_id = glGenLists(1)
@@ -204,6 +205,16 @@ class Model:
         :return: None
         """
         self.yaw, self.pitch, self.roll = yaw, pitch, roll
+
+    def size(self, width, height, length):
+        """
+        模型尺寸缩放
+        :param width:  模型宽度倍数，沿模型x轴缩放的倍数
+        :param height: 模型高度倍数，沿模型y轴缩放的倍数
+        :param length: 模型长度倍数，沿模型z轴缩放的倍数
+        :return: None
+        """
+        self.width, self.height, self.length = width, height, length
 
     def deep_del(self):
         """
@@ -381,13 +392,20 @@ def update():
         # 获取位置
         x, y, z = model.x, model.y, model.z
         yaw, pitch, roll = model.yaw, model.pitch, model.roll
+        width, height, length = model.width, model.height, model.length
 
         # 实际渲染
         glPushMatrix()
-        glTranslatef(x, y, z)
+
+        # 应用模型缩放
+        glScalef(width, height, length)
+        # 应用模型旋转
         glRotatef(roll, 1, 0, 0)
         glRotatef(pitch, 0, 0, 1)
         glRotatef(yaw, 0, 1, 0)
+        # 应用模型位置
+        glTranslatef(x, y, z)
+
         glCallList(model.list_id)
         glPopMatrix()
 
