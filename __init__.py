@@ -349,7 +349,7 @@ def _paint_ui(shape, x, y):
 
     glBegin(type_menu[shape.type])
     for point in shape.vertex:
-        glTexCoord2f(point[2], point[3])
+        glTexCoord2f(point[2], 1-point[3])
         glVertex2f(point[0], point[1])
     glEnd()
 
