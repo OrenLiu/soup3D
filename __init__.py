@@ -397,14 +397,14 @@ def update():
         # 实际渲染
         glPushMatrix()
 
-        # 应用模型缩放
-        glScalef(width, height, length)
+        # 应用模型位置
+        glTranslatef(x, y, z)
         # 应用模型旋转
         glRotatef(roll, 1, 0, 0)
         glRotatef(pitch, 0, 0, 1)
         glRotatef(yaw, 0, 1, 0)
-        # 应用模型位置
-        glTranslatef(x, y, z)
+        # 应用模型缩放
+        glScalef(width, height, length)
 
         glCallList(model.list_id)
         glPopMatrix()
