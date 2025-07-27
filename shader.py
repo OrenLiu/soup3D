@@ -51,7 +51,7 @@ class Channel:
         self.hash = None
         self.update()
 
-    def get_pil_band(self):
+    def get_pil_band(self) -> PIL.Image:
         """
         获取单通道pil图像
         :return:
@@ -65,7 +65,7 @@ class Channel:
 
         return self.pil_band
 
-    def update(self):
+    def update(self) -> None:
         self.get_pil_band()
 
 
@@ -111,7 +111,7 @@ class MixChannel:
         self.hash = None
         self.update()
 
-    def update(self):
+    def update(self) -> None:
         """
         更新所有缓存项
         :return: None
@@ -180,7 +180,7 @@ class FPL:
         self.hash = None
         self.update()
 
-    def update(self):
+    def update(self) -> None:
         # 处理基础色材质
         pil_img = self.base_color.pil_pic
         self.base_color_id = _pil_to_texture(pil_img, texture_unit=0)

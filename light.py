@@ -8,14 +8,14 @@ from OpenGL.GLU import *
 from math import *
 
 
-__all__ = [
+__all__ : list[str] = [
     "init", "Cone", "Direct"
 ]
 
-light_list = [GL_LIGHT0, GL_LIGHT1, GL_LIGHT2, GL_LIGHT3, GL_LIGHT4, GL_LIGHT5, GL_LIGHT6, GL_LIGHT7]
+light_list : list[int] = [GL_LIGHT0, GL_LIGHT1, GL_LIGHT2, GL_LIGHT3, GL_LIGHT4, GL_LIGHT5, GL_LIGHT6, GL_LIGHT7]
 
 
-def init(ambientR=0, ambientG=0, ambientB=0):
+def init(ambientR : float =0, ambientG : float =0, ambientB : float =0):
     """
     初始化光源，启用全局光照
     :param ambientR: 红环境光亮度
@@ -33,9 +33,9 @@ def init(ambientR=0, ambientG=0, ambientB=0):
 
 class Cone:
     def __init__(self,
-                 place: (float, float, float),
-                 toward: (float, float, float),
-                 color: (float, float, float),
+                 place: tuple[float, float, float],
+                 toward: tuple[float, float, float],
+                 color: tuple[float, float, float],
                  attenuation: float, angle=180):
         """
         锥形光线，类似灯泡光线
@@ -52,7 +52,7 @@ class Cone:
         self.attenuation = attenuation
         self.angle = angle
 
-    def display(self):
+    def display(self) -> None:
         """更新光源参数到OpenGL"""
         # 位置和方向计算
         direction = self._calc_direction()
@@ -71,7 +71,7 @@ class Cone:
         # 衰减参数
         glLightf(self.light_id, GL_LINEAR_ATTENUATION, self.attenuation)
 
-    def _calc_direction(self):
+    def _calc_direction(self) -> tuple[float, float, float]:
         """根据欧拉角计算方向向量"""
         x, y, z = 0, 0, -1  # 初始Z轴负方向
         yaw, pitch, roll = self.toward
@@ -85,7 +85,7 @@ class Cone:
         length = sqrt(x ** 2 + y ** 2 + z ** 2)
         return (x / length, y / length, z / length) if length != 0 else (0, 0, 1)
 
-    def goto(self, x, y, z):
+    def goto(self, x : float, y : float, z : float) -> None:
         """
         更改光源位置
         :param x: 光源x坐标
@@ -95,7 +95,7 @@ class Cone:
         """
         self.place = (x, y, z)
 
-    def turn(self, yaw, pitch, roll):
+    def turn(self, yaw : float, pitch : float, roll : float) -> None:
         """
         更改光线朝向
         :param yaw:   光线偏移角度
@@ -105,7 +105,7 @@ class Cone:
         """
         self.toward = (yaw, pitch, roll)
 
-    def dye(self, r, g, b):
+    def dye(self, r : float, g : float, b : float) -> None:
         """
         更改光线颜色
         :param r: 红色
@@ -115,21 +115,21 @@ class Cone:
         """
         self.color = (r, g, b)
 
-    def turn_off(self):
+    def turn_off(self) -> None:
         """
         熄灭光源
         :return: None
         """
         glDisable(self.light_id)
 
-    def turn_on(self):
+    def turn_on(self) -> None:
         """
         点亮光源
         :return: None
         """
         glEnable(self.light_id)
 
-    def destroy(self):
+    def destroy(self) -> None:
         """
         摧毁光源，并归还光源编号
         :return: None
@@ -141,8 +141,8 @@ class Cone:
 
 class Direct:
     def __init__(self,
-                 toward: (float, float, float),
-                 color: (float, float, float)):
+                 toward: tuple[float, float, float],
+                 color: tuple[float, float, float]) -> None:
         """
         方向光线，类似太阳光线
         :param toward: 光源朝向(yaw, pitch, roll)
@@ -152,14 +152,14 @@ class Direct:
         self.toward = toward
         self.color = color
 
-    def display(self):
+    def display(self) -> None:
         """更新方向光源参数"""
         direction = self._calc_direction()
         glLightfv(self.light_id, GL_POSITION, (*direction, 0.0))
         glLightfv(self.light_id, GL_DIFFUSE, (*self.color, 1.0))
         glLightfv(self.light_id, GL_SPECULAR, (*self.color, 1.0))
 
-    def _calc_direction(self):
+    def _calc_direction(self) -> tuple[float, float, float]:
         """计算逆向方向向量"""
         x, y, z = 0, 0, -1  # OpenGL方向光约定方向
         yaw, pitch, roll = self.toward
@@ -171,7 +171,7 @@ class Direct:
         length = sqrt(x ** 2 + y ** 2 + z ** 2)
         return (-x / length, -y / length, -z / length) if length != 0 else (0, 0, 1)
 
-    def turn(self, yaw, pitch, roll):
+    def turn(self, yaw : float, pitch : float, roll : float) -> None:
         """
         更改光线朝向
         :param yaw:   光线偏移角度
@@ -181,7 +181,7 @@ class Direct:
         """
         self.toward = (yaw, pitch, roll)
 
-    def dye(self, r, g, b):
+    def dye(self, r : float, g : float, b : float) -> None:
         """
         更改光线颜色
         :param r: 红色
@@ -191,21 +191,21 @@ class Direct:
         """
         self.color = (r, g, b)
 
-    def turn_off(self):
+    def turn_off(self) -> None:
         """
         熄灭光源
         :return: None
         """
         glDisable(self.light_id)
 
-    def turn_on(self):
+    def turn_on(self) -> None:
         """
         点亮光源
         :return: None
         """
         glEnable(self.light_id)
 
-    def destroy(self):
+    def destroy(self) -> None:
         """
         摧毁光源，并归还光源编号
         :return: None
@@ -215,7 +215,7 @@ class Direct:
         light_list.append(self.light_id)
 
 
-def ambient(R, G, B):
+def ambient(R : float, G : float, B : float) -> None:
     """
     更改环境光亮度
     :param R: 红色环境光
@@ -226,7 +226,7 @@ def ambient(R, G, B):
     glLightModelfv(GL_LIGHT_MODEL_AMBIENT, (R, G, B, 1))
 
 
-def rotated(Xa, Ya, Xb, Yb, degree):
+def rotated(Xa: float, Ya: float, Xb: float, Yb: float, degree: float) -> tuple[float, float]:
     """
     点A绕点B旋转特定角度后，点A的坐标
     :param Xa:     环绕点(点A)X坐标

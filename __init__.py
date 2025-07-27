@@ -29,7 +29,7 @@ class Face:
     def __init__(self,
                  shape_type: str,
                  surface: soup3D.shader.FPL | soup3D.shader.ShaderProgram,
-                 vertex: list | tuple):
+                 vertex: list | tuple) -> None:
         """
         表面，可用于创建模型(Model类)的线段和多边形
         :param shape_type: 绘制方式，可以填写这些内容：
@@ -84,7 +84,7 @@ class Face:
 
 
 class Model:
-    def __init__(self, x: int | float, y: int | float, z: int | float, *face: Face):
+    def __init__(self, x: int | float, y: int | float, z: int | float, *face: Face) -> None:
         """
         模型，由多个面(Face类)组成，建议将场景中的面组合成尽量少的模型
         :param x:    模型原点对应x坐标
@@ -100,14 +100,14 @@ class Model:
         self.list_id = glGenLists(1)
         self._generate_display_list()
 
-    def paint(self):
+    def paint(self) -> None:
         """
         在单帧绘制该模型
         :return: None
         """
         render_queue.append(self)
 
-    def _generate_display_list(self):
+    def _generate_display_list(self) -> None:
         """生成OpenGL显示列表，应用材质属性"""
         # 创建显示列表
         glNewList(self.list_id, GL_COMPILE)
@@ -170,7 +170,7 @@ class Model:
 
         glEndList()
 
-    def show(self):
+    def show(self) -> None:
         """
         固定每帧渲染该模型
         :return: None
@@ -178,7 +178,7 @@ class Model:
         global stable_shapes
         stable_shapes[id(self)] = self
 
-    def hide(self):
+    def hide(self) -> None:
         """
         取消固定渲染
         :return: None
@@ -186,7 +186,7 @@ class Model:
         global stable_shapes
         stable_shapes.pop(id(self))
 
-    def goto(self, x, y, z):
+    def goto(self, x: int | float, y: int | float, z: int | float) -> None:
         """
         传送模型
         :param x: 新x坐标
@@ -196,7 +196,7 @@ class Model:
         """
         self.x, self.y, self.z = x, y, z
 
-    def turn(self, yaw, pitch, roll):
+    def turn(self, yaw: int | float, pitch: int | float, roll: int | float) -> None:
         """
         旋转模型
         :param yaw:   偏移角度，绕世界z轴旋转
@@ -206,7 +206,7 @@ class Model:
         """
         self.yaw, self.pitch, self.roll = yaw, pitch, roll
 
-    def size(self, width, height, length):
+    def size(self, width: int | float, height: int | float, length: int | float) -> None:
         """
         模型尺寸缩放
         :param width:  模型宽度倍数，沿模型x轴缩放的倍数
@@ -216,7 +216,7 @@ class Model:
         """
         self.width, self.height, self.length = width, height, length
 
-    def deep_del(self):
+    def deep_del(self) -> None:
         """
         深度清理模型，清理该模型本身及所有该模型用到的元素。在确定不再使用该模型时可使用该方法释放内存。
         :return: None
@@ -242,7 +242,7 @@ class Model:
             stable_shapes.pop(id(self))
 
 
-def _get_channel_value(channel):
+def _get_channel_value(channel : soup3D.shader.Channel) -> float:
     """从Channel对象或浮点数获取通道值"""
     if isinstance(channel, soup3D.shader.Channel):
         # 对于纹理通道，我们不再使用平均值，而是使用纹理
@@ -252,7 +252,7 @@ def _get_channel_value(channel):
     return 1.0
 
 
-def init(width=1920, height=1080, fov=45, bg_color: tuple[float, float, float] = (0.0, 0.0, 0.0), far=1024):
+def init(width : int | float=1920, height : int | float=1080, fov : int | float=45, bg_color: tuple[float, float, float] = (0.0, 0.0, 0.0), far : int | float=1024) -> None:
     """
     初始化3D引擎
     :param width:    视网膜宽度
@@ -283,7 +283,7 @@ def init(width=1920, height=1080, fov=45, bg_color: tuple[float, float, float] =
     soup3D.camera.turn(0, 0, 0)
 
 
-def resize(width, height):
+def resize(width : int | float, height : int | float) -> None:
     """
     重新定义窗口尺寸
     :param width:  窗口宽度
@@ -299,7 +299,7 @@ def resize(width, height):
     glMatrixMode(GL_MODELVIEW)
 
 
-def set_title(title: str):
+def set_title(title: str) -> None:
     """
     设置窗口标题
     :param title: 窗口标题
@@ -308,7 +308,7 @@ def set_title(title: str):
     pygame.display.set_caption(title)
 
 
-def set_ico(path):
+def set_ico(path : str) -> None:
     """
     设置窗口图标
     :param path: 图标所在位置
@@ -318,7 +318,7 @@ def set_ico(path):
     pygame.display.set_icon(icon)
 
 
-def background_color(r, g, b):
+def background_color(r : float, g : float, b : float) -> None:
     """
     设定背景颜色
     :param r: 红色(0.0-1.0)
@@ -329,7 +329,7 @@ def background_color(r, g, b):
     glClearColor(r, g, b, 1)
 
 
-def _paint_ui(shape, x, y):
+def _paint_ui(shape : soup3D.ui.Shape, x : int | float, y : int | float) -> None:
     """在单帧渲染该图形"""
     type_menu = {
         "line_b": GL_LINES,
@@ -373,7 +373,7 @@ def _paint_ui(shape, x, y):
     shape._restore_projection()
 
 
-def update():
+def update() -> None:
     """
     更新画布，包括处理渲染队列
     """
@@ -425,7 +425,7 @@ def update():
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
 
 
-def open_obj(obj, mtl=None):
+def open_obj(obj : str, mtl : str=None) -> Model:
     """
     从obj文件导入模型
     :param obj: *.obj模型文件路径
@@ -630,7 +630,7 @@ def open_obj(obj, mtl=None):
     return model
 
 
-def _rotated(Xa, Ya, Xb, Yb, degree):
+def _rotated(Xa : int | float, Ya : int | float, Xb : int | float, Yb : int | float, degree : int | float) -> tuple[float, float]:
     """
     点A绕点B旋转特定角度后，点A的坐标
     :param Xa:     环绕点(点A)X坐标

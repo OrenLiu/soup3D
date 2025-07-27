@@ -7,20 +7,20 @@ from OpenGL.GLU import *
 
 from math import *
 
-__all__ = ["X", "Y", "Z", "YAW", "PITCH", "ROLL",
+__all__ : list[str] = ["X", "Y", "Z", "YAW", "PITCH", "ROLL",
            "goto",
            "turn",
            "update",]
 
-X = 0.0
-Y = 0.0
-Z = 0.0
-YAW = 0.0
-PITCH = 0.0
-ROLL = 0.0
+X : float = 0.0
+Y : float = 0.0
+Z : float = 0.0
+YAW : float = 0.0
+PITCH : float = 0.0
+ROLL : float = 0.0
 
 
-def goto(x: float, y: float, z: float):
+def goto(x: float, y: float, z: float) -> None:
     """
     移动相机位置
     :param x: 相机x坐标位置
@@ -35,7 +35,7 @@ def goto(x: float, y: float, z: float):
     update()
 
 
-def turn(yaw, pitch, roll):
+def turn(yaw: float, pitch: float, roll: float) -> None:
     """
     旋转相机
     :param yaw:   相机旋转偏移角
@@ -50,7 +50,7 @@ def turn(yaw, pitch, roll):
     update()
 
 
-def update():
+def update() -> None:
     """
     更新相机
     :return: None
@@ -72,7 +72,7 @@ def update():
     gluLookAt(X, Y, Z, centerX+X, centerY+Y, centerZ+Z, upX, upY, upZ)
 
 
-def _rotated(Xa, Ya, Xb, Yb, degree):
+def _rotated(Xa : float, Ya : float, Xb : float, Yb : float, degree : float) -> tuple[float, float]:
     """
     点A绕点B旋转特定角度后，点A的坐标
     :param Xa:     环绕点(点A)X坐标

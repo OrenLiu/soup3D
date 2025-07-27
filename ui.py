@@ -9,7 +9,7 @@ from PIL import Image
 
 import soup3D.shader
 
-render_queue = []  # 全局渲染队列
+render_queue : list[tuple["Shape", float, float]] = []  # 全局渲染队列
 
 
 class Shape:
@@ -44,7 +44,7 @@ class Shape:
         self.display_list = None
         self.tex_id = _pil_to_texture(self.texture.pil_pic)
 
-    def _setup_projection(self):
+    def _setup_projection(self) -> None:
         """设置正交投影"""
         viewport = glGetIntegerv(GL_VIEWPORT)
         glMatrixMode(GL_PROJECTION)
@@ -55,21 +55,21 @@ class Shape:
         glPushMatrix()
         glLoadIdentity()
 
-    def _restore_projection(self):
+    def _restore_projection(self) -> None:
         """恢复投影矩阵"""
         glMatrixMode(GL_PROJECTION)
         glPopMatrix()
         glMatrixMode(GL_MODELVIEW)
         glPopMatrix()
 
-    def paint(self, x, y):
+    def paint(self : "Shape", x : float, y : float) -> None:
         """在单帧渲染该图形"""
         global render_queue
         render_queue.append((self, x, y))
 
 
 class Group:
-    def __init__(self, *arg: Shape, origin=(0.0, 0.0)):
+    def __init__(self, *arg: Shape, origin : tuple[float, float]=(0.0, 0.0)):
         """
         图形组
         :param arg:    组中所有的图形
@@ -78,17 +78,17 @@ class Group:
         self.shapes = list(arg)
         self.origin = list(origin)
 
-    def goto(self, x, y):
+    def goto(self, x : float, y : float) -> None:
         """设置绝对位置"""
         self.origin[0] = x
         self.origin[1] = y
 
-    def move(self, x, y):
+    def move(self, x : float, y : float) -> None:
         """相对移动"""
         self.origin[0] += x
         self.origin[1] += y
 
-    def display(self):
+    def display(self) -> None:
         """单帧显示"""
         for shape in self.shapes:
             shape.paint(*self.origin)

@@ -1,27 +1,3 @@
-这是一个基于`OpenGL`和`pygame`开发的3D引擎，易于新手学习，可  
-用于3D游戏开发、数据可视化、3D图形的绘制等开发。
-
-## 安装
-
-如果您的`python`环境中包含`pip`，可使用如下代码进行安装：
-
-```bash
-pip install -i https://osoup.top/simple soup3D
-```
-
-使用该库还需要`OpenGL`和`pygame`，可使用如下代码安装：
-
-```bash
-pip install pygame
-pip install pyopengl
-pip install pillow
-```
-
-## 小试牛刀
-
-安装完成后，您可以试试这段代码：
-
-```python
 import soup3D
 import soup3D.event
 import soup3D.shader
@@ -51,10 +27,3 @@ if __name__ == '__main__':
     triangle.show()                            # 显示模型
     while running:  # 主循环
         soup3D.update()  # 更新画面
-```
-
-这段代码运行后，您可以看到一个绿色三角形在窗口中
-
-## 更多内容
-
-该库还有很多的方法供您使用，更多内容可参阅[帮助文档](./help.md)
