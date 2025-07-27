@@ -5,7 +5,6 @@ import PIL.Image
 import numpy as np
 from OpenGL.GL import *
 from OpenGL.GL.shaders import compileShader, compileProgram
-import glfw
 
 
 class Texture:
