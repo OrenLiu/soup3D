@@ -23,9 +23,9 @@ pip install pillow
 
 ```python
 import soup3D
-import soup3D.event
-import soup3D.shader
-from name import ON_CLOSE, TRIANGLE_B
+from soup3D.name import *
+from math import *
+from time import*
 
 
 def stop(event):  # 用于绑定窗口关闭事件的函数，每个事件绑定的函数都需要有一个参数。
@@ -51,6 +51,7 @@ if __name__ == '__main__':
     triangle.show()                            # 显示模型
     while running:  # 主循环
         soup3D.update()  # 更新画面
+
 ```
 
 这段代码运行后，您可以看到一个绿色三角形在窗口中
