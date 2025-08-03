@@ -3,16 +3,14 @@
 这是一个基于OpenGL和pygame开发的3D引擎，易于新手学习，可
 用于3D游戏开发、数据可视化、3D图形的绘制等开发。
 """
-import pygame
-from pygame.locals import *
 from OpenGL.GL import *
 from OpenGL.GLU import *
+from OpenGL.GLUT import *
 from PIL import Image
 from math import *
 import os
 
 import soup3D.shader
-import soup3D.event
 import soup3D.camera
 import soup3D.light
 import soup3D.ui
@@ -22,7 +20,11 @@ render_queue: list["Model"] = []  # 全局渲染队列
 stable_shapes = {}
 
 _current_fov = 45
+_current_near = 0.1
 _current_far = 1024
+
+_current_width = 1920
+_current_height = 1080
 
 
 class Face:
@@ -45,8 +47,8 @@ class Face:
         """
         # 初始化类成员
         self.shape_type = shape_type  # 绘制方式
-        self.surface = surface        # 表面着色单元
-        self.vertex = vertex          # 表面端点
+        self.surface = surface  # 表面着色单元
+        self.vertex = vertex  # 表面端点
 
         # 设置OpenGL绘制模式
         self.mode_map = {
@@ -242,7 +244,7 @@ class Model:
             stable_shapes.pop(id(self))
 
 
-def _get_channel_value(channel : soup3D.shader.Channel) -> float:
+def _get_channel_value(channel: soup3D.shader.Channel) -> float:
     """从Channel对象或浮点数获取通道值"""
     if isinstance(channel, soup3D.shader.Channel):
         # 对于纹理通道，我们不再使用平均值，而是使用纹理
@@ -252,73 +254,63 @@ def _get_channel_value(channel : soup3D.shader.Channel) -> float:
     return 1.0
 
 
-def init(width : int | float=1920, height : int | float=1080, fov : int | float=45, bg_color: tuple[float, float, float] = (0.0, 0.0, 0.0), far : int | float=1024) -> None:
+def init(width: int | float = 1920,
+         height: int | float = 1080,
+         fov: int | float = 45,
+         bg_color: tuple[float, float, float] = (0.0, 0.0, 0.0),
+         near: int | float = 0.1,
+         far: int | float = 1024) -> None:
     """
     初始化3D引擎
     :param width:    视网膜宽度
     :param height:   视网膜高度
     :param fov:      视野
     :param bg_color: 背景颜色
+    :param near:     最近渲染距离
     :param far:      最远渲染距离
     :return: None
     """
-    global _current_fov, _current_far
+    global _current_fov, _current_near, _current_far
+    global _current_width, _current_height
     _current_fov = fov
+    _current_near = near
     _current_far = far
 
-    pygame.init()  # 初始化pygame
-    pygame.display.set_caption("soup3D")
-    current_file = os.path.abspath(__file__)
-    package_dir = os.path.dirname(current_file)
-    soup3D.set_ico(os.path.join(package_dir, "osoup.png"))
-    pygame.display.set_mode((width, height), DOUBLEBUF | OPENGL)  # 创建OpenGL上下文
+    _current_width = width
+    _current_height = height
+
     glClearColor(*bg_color, 1)  # 在上下文创建后设置背景颜色
     glEnable(GL_DEPTH_TEST)  # 启用深度测试
     glEnable(GL_BLEND)  # 启用混合
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)  # 设置混合函数
     glMatrixMode(GL_PROJECTION)
     glLoadIdentity()
-    gluPerspective(fov, (width / height), 0.1, far)
+    gluPerspective(fov, (width / height), near, far)
     soup3D.camera.goto(0, 0, 0)
     soup3D.camera.turn(0, 0, 0)
 
 
-def resize(width : int | float, height : int | float) -> None:
+def resize(width: int | float, height: int | float) -> None:
     """
     重新定义窗口尺寸
     :param width:  窗口宽度
     :param height: 窗口高度
     :return: None
     """
-    pygame.display.set_mode((width, height), DOUBLEBUF | OPENGL)
+    global _current_width, _current_height
+
+    _current_width = width
+    _current_height = height
+
     glViewport(0, 0, width, height)
     glMatrixMode(GL_PROJECTION)
     glLoadIdentity()
     aspect_ratio = width / height
-    gluPerspective(_current_fov, aspect_ratio, 0.1, _current_far)
+    gluPerspective(_current_fov, aspect_ratio, _current_near, _current_far)
     glMatrixMode(GL_MODELVIEW)
 
 
-def set_title(title: str) -> None:
-    """
-    设置窗口标题
-    :param title: 窗口标题
-    :return: None
-    """
-    pygame.display.set_caption(title)
-
-
-def set_ico(path : str) -> None:
-    """
-    设置窗口图标
-    :param path: 图标所在位置
-    :return: None
-    """
-    icon = pygame.image.load(path)
-    pygame.display.set_icon(icon)
-
-
-def background_color(r : float, g : float, b : float) -> None:
+def background_color(r: float, g: float, b: float) -> None:
     """
     设定背景颜色
     :param r: 红色(0.0-1.0)
@@ -329,7 +321,7 @@ def background_color(r : float, g : float, b : float) -> None:
     glClearColor(r, g, b, 1)
 
 
-def _paint_ui(shape : soup3D.ui.Shape, x : int | float, y : int | float) -> None:
+def _paint_ui(shape: soup3D.ui.Shape, x: int | float, y: int | float) -> None:
     """在单帧渲染该图形"""
     type_menu = {
         "line_b": GL_LINES,
@@ -360,7 +352,7 @@ def _paint_ui(shape : soup3D.ui.Shape, x : int | float, y : int | float) -> None
 
     glBegin(type_menu[shape.type])
     for point in shape.vertex:
-        glTexCoord2f(point[2], 1-point[3])
+        glTexCoord2f(point[2], 1 - point[3])
         glVertex2f(point[0], point[1])
     glEnd()
 
@@ -373,19 +365,20 @@ def _paint_ui(shape : soup3D.ui.Shape, x : int | float, y : int | float) -> None
     shape._restore_projection()
 
 
-def update() -> None:
+def update() -> bytes:
     """
-    更新画布，包括处理渲染队列
+    更新画布，并产出图像
+    :return: 产出的二进制图像
     """
     global render_queue
+
+    # 清空画布
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
 
     # 将所有固定渲染场景加入全局渲染列队
     for shape_id in stable_shapes:
         shape = stable_shapes[shape_id]
         shape.paint()
-
-    # 处理事件
-    soup3D.event.check_event(pygame.event.get())
 
     # 渲染所有物体
     for model in render_queue:
@@ -419,13 +412,8 @@ def update() -> None:
     # 清空ui渲染列队
     soup3D.ui.render_queue = []
 
-    # 刷新显示
-    pygame.display.flip()
-    # 清空画布
-    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
 
-
-def open_obj(obj : str, mtl : str=None) -> Model:
+def open_obj(obj: str, mtl: str = None) -> Model:
     """
     从obj文件导入模型
     :param obj: *.obj模型文件路径
@@ -628,22 +616,6 @@ def open_obj(obj : str, mtl : str=None) -> Model:
     # 创建模型对象（原点设置为0,0,0）
     model = Model(0, 0, 0, *faces)
     return model
-
-
-def _rotated(Xa : int | float, Ya : int | float, Xb : int | float, Yb : int | float, degree : int | float) -> tuple[float, float]:
-    """
-    点A绕点B旋转特定角度后，点A的坐标
-    :param Xa:     环绕点(点A)X坐标
-    :param Ya:     环绕点(点A)Y坐标
-    :param Xb:     被环绕点(点B)X坐标
-    :param Yb:     被环绕点(点B)Y坐标
-    :param degree: 旋转角度
-    :return: 点A旋转后的X坐标, 点A旋转后的Y坐标
-    """
-    degree = degree * pi / 180
-    outx = (Xa - Xb) * cos(degree) - (Ya - Yb) * sin(degree) + Xb
-    outy = (Xa - Xb) * sin(degree) + (Ya - Yb) * cos(degree) + Yb
-    return outx, outy
 
 
 if __name__ == '__main__':
