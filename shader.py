@@ -23,12 +23,6 @@ class Texture:
 
         self.pil_pic = pil_pic
 
-        self.hash = None
-        self.update()
-
-    def update(self):
-        ...
-
 
 class Channel:
     def __init__(self, texture: "Texture | MixChannel", channelID: int):
@@ -48,8 +42,7 @@ class Channel:
 
         self.pil_band = None
 
-        self.hash = None
-        self.update()
+        self.get_pil_band()
 
     def get_pil_band(self) -> PIL.Image:
         """
@@ -64,9 +57,6 @@ class Channel:
         self.pil_band = bands[self.channelID]
 
         return self.pil_band
-
-    def update(self) -> None:
-        self.get_pil_band()
 
 
 class MixChannel:
@@ -108,14 +98,6 @@ class MixChannel:
 
         self.pil_pic = None  # 缓存混合通道后的图像，以便父着色单元提取
 
-        self.hash = None
-        self.update()
-
-    def update(self) -> None:
-        """
-        更新所有缓存项
-        :return: None
-        """
         # 创建目标尺寸的空图像（RGBA模式）
         result = PIL.Image.new('RGBA', self.resize)
 
@@ -177,8 +159,9 @@ class FPL:
 
         self.base_color_id = None
 
-        self.hash = None
-        self.update()
+        # 处理基础色材质
+        pil_img = self.base_color.pil_pic
+        self.base_color_id = _pil_to_texture(pil_img, texture_unit=0)
 
     def rend(self, mode, vertex):
         # 材质贴图
@@ -245,27 +228,69 @@ class FPL:
         if self.emission != 0.0:
             glMaterialfv(GL_FRONT, GL_EMISSION, (0.0, 0.0, 0.0, 1.0))
 
-    def update(self) -> None:
-        # 处理基础色材质
-        pil_img = self.base_color.pil_pic
-        self.base_color_id = _pil_to_texture(pil_img, texture_unit=0)
-
-
-type_group = Texture | Channel | MixChannel | FPL
+    def deep_del(self):
+        if self.base_color_id:
+            glDeleteTextures([self.base_color_id])
 
 
 class ShaderProgram:
     def __init__(self, vertex: str, fragment: str):
         """
-        着色程序
-        :param vertex:   顶点着色程序
-        :param fragment: 片段着色程序
+        代码着色器
+        :param vertex:   顶点着色程序代码
+        :param fragment: 片段着色程序代码
         """
         self.vertex = vertex
         self.fragment = fragment
 
         self.vertex_shader = compileShader(self.vertex, GL_VERTEX_SHADER)
         self.fragment_shader = compileShader(self.fragment, GL_FRAGMENT_SHADER)
+
+        self.shader = compileProgram(self.vertex_shader, self.fragment_shader)
+
+    def rend(self, mode, vertex):
+        glEnable(GL_DEPTH_TEST)
+
+        # 修复：正确生成buffer IDs
+        num_buffers = len(vertex)
+        vbo_ids = glGenBuffers(num_buffers)
+
+        # 修复：处理单buffer的情况
+        if num_buffers == 1:
+            vbo_ids = [vbo_ids]  # 包装为列表
+
+        vao = glGenVertexArrays(1)
+        glBindVertexArray(vao)
+
+        for i, vert_group in enumerate(vertex):
+            vbo_np = np.array(vert_group, dtype=np.float32)
+
+            # 修复：绑定正确的buffer ID
+            glBindBuffer(GL_ARRAY_BUFFER, vbo_ids[i])
+            glBufferData(GL_ARRAY_BUFFER, vbo_np.nbytes, vbo_np, GL_STATIC_DRAW)
+
+            # 计算每个顶点的元素个数
+            components = len(vert_group[0])
+
+            glVertexAttribPointer(i, components, GL_FLOAT, GL_FALSE, 0, None)
+            glEnableVertexAttribArray(i)
+
+        glBindBuffer(GL_ARRAY_BUFFER, 0)
+        glBindVertexArray(vao)
+
+        glUseProgram(self.shader)
+        glBindVertexArray(vao)
+
+        # 修复：正确计算顶点数量
+        total_vertices = sum(len(group) for group in vertex)
+        glDrawArrays(mode, 0, total_vertices)
+
+        glBindVertexArray(0)
+        glUseProgram(0)
+
+    def deep_del(self):
+        glDeleteProgram(self.shader)
+
 
 
 def _pil_to_texture(pil_img: PIL.Image.Image, texture_id: int | None = None, texture_unit: int = 0) -> int:

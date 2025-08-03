@@ -81,7 +81,13 @@ class Model:
         self.faces = list(face)
 
         self.list_id = glGenLists(1)
-        self._generate_display_list()
+
+        # 创建显示列表
+        glNewList(self.list_id, GL_COMPILE)
+        for face in self.faces:
+            face.surface.rend(face.mode, face.vertex)
+
+        glEndList()
 
     def paint(self) -> None:
         """
@@ -89,15 +95,6 @@ class Model:
         :return: None
         """
         render_queue.append(self)
-
-    def _generate_display_list(self) -> None:
-        """生成OpenGL显示列表，应用材质属性"""
-        # 创建显示列表
-        glNewList(self.list_id, GL_COMPILE)
-        for face in self.faces:
-            face.surface.rend(face.mode, face.vertex)
-
-        glEndList()
 
     def show(self) -> None:
         """
@@ -158,9 +155,7 @@ class Model:
 
         # 2. 清理所有面使用的纹理资源
         for face in self.faces:
-            # 清理基础色纹理
-            if face.surface.base_color_id:
-                glDeleteTextures([face.surface.base_color_id])
+            face.surface.deep_del()
 
         # 3. 从全局渲染队列中移除（如果存在）
         if self in render_queue:
