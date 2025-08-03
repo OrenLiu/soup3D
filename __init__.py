@@ -65,25 +65,6 @@ class Face:
 
         self.mode = self.mode_map[shape_type]  # 转换为OpenGL绘制模式
 
-        # 3. 计算平面法线方向
-        if len(vertex) >= 3:
-            v0 = vertex[0]
-            v1 = vertex[1]
-            v2 = vertex[2]
-
-            # 计算两个向量
-            u = (v1[0] - v0[0], v1[1] - v0[1], v1[2] - v0[2])
-            v = (v2[0] - v0[0], v2[1] - v0[1], v2[2] - v0[2])
-
-            # 叉乘得到法线
-            self.normal = (
-                u[1] * v[2] - u[2] * v[1],
-                u[2] * v[0] - u[0] * v[2],
-                u[0] * v[1] - u[1] * v[0]
-            )
-        else:
-            self.normal = (0, 0, 1)  # 默认Z轴正向
-
 
 class Model:
     def __init__(self, x: int | float, y: int | float, z: int | float, *face: Face) -> None:
@@ -114,61 +95,7 @@ class Model:
         # 创建显示列表
         glNewList(self.list_id, GL_COMPILE)
         for face in self.faces:
-
-            # 材质贴图
-            texture_id = face.surface.base_color_id
-
-            # 启用必要的OpenGL功能
-            glEnable(GL_DEPTH_TEST)
-
-            # 设置材质属性
-            if texture_id:
-                # 使用纹理时不设置颜色
-                glColor4f(1.0, 1.0, 1.0, 1.0)
-            else:
-                # 如果没有纹理，使用基色
-                if isinstance(face.surface.base_color, tuple):
-                    base_color = face.surface.base_color
-                else:
-                    base_color = (1.0, 1.0, 1.0)  # 默认白色
-                glColor4f(base_color[0], base_color[1], base_color[2], 1.0)
-
-            # 开启纹理
-            if texture_id:
-                glEnable(GL_TEXTURE_2D)
-
-            # 激活并绑定材质贴图（纹理单元0）
-            if texture_id:
-                glActiveTexture(GL_TEXTURE0)
-                glBindTexture(GL_TEXTURE_2D, texture_id)
-                glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE)
-
-            # 自发光处理
-            if face.surface.emission != 0.0:
-                emission = max(0.0, min(1.0, float(face.surface.emission)))
-                glMaterialfv(GL_FRONT, GL_EMISSION, (emission, emission, emission, 1.0))
-
-            # 绘制几何图形
-            glBegin(face.mode)
-            glNormal3f(face.normal[0], face.normal[1], face.normal[2])
-            for v in face.vertex:
-                if len(v) == 5:
-                    # 设置纹理坐标
-                    if texture_id:
-                        glMultiTexCoord2f(GL_TEXTURE0, v[3], v[4])  # base_color纹理
-                    glVertex3f(v[0], v[1], v[2])
-                else:
-                    # 没有纹理坐标的情况
-                    glVertex3f(v[0], v[1], v[2])
-            glEnd()
-
-            # 清理OpenGL状态
-            if texture_id:
-                glDisable(GL_TEXTURE_2D)
-                glActiveTexture(GL_TEXTURE0)
-
-            if face.surface.emission != 0.0:
-                glMaterialfv(GL_FRONT, GL_EMISSION, (0.0, 0.0, 0.0, 1.0))
+            face.surface.rend(face.mode, face.vertex)
 
         glEndList()
 

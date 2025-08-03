@@ -162,7 +162,7 @@ class FPL:
                  base_color: Texture | MixChannel,
                  emission: float | int = 0.0):
         """
-        Fixed pipeline固定管线式贴图
+        Fixed pipeline固定管线式着色器
         :param base_color: 主要颜色
         :param emission:   自发光度
         """
@@ -179,6 +179,71 @@ class FPL:
 
         self.hash = None
         self.update()
+
+    def rend(self, mode, vertex):
+        # 材质贴图
+        texture_id = self.base_color_id
+
+        # 启用必要的OpenGL功能
+        glEnable(GL_DEPTH_TEST)
+
+        # 设置材质属性
+        glColor4f(1.0, 1.0, 1.0, 1.0)
+
+        # 开启纹理
+        if texture_id:
+            glEnable(GL_TEXTURE_2D)
+
+        # 激活并绑定材质贴图（纹理单元0）
+        if texture_id:
+            glActiveTexture(GL_TEXTURE0)
+            glBindTexture(GL_TEXTURE_2D, texture_id)
+            glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE)
+
+        # 自发光处理
+        if self.emission != 0.0:
+            emission = max(0.0, min(1.0, float(self.emission)))
+            glMaterialfv(GL_FRONT, GL_EMISSION, (emission, emission, emission, 1.0))
+
+        # 绘制几何图形
+        glBegin(mode)
+        # 3. 计算平面法线方向
+        if len(vertex) >= 3:
+            v0 = vertex[0]
+            v1 = vertex[1]
+            v2 = vertex[2]
+
+            # 计算两个向量
+            u = (v1[0] - v0[0], v1[1] - v0[1], v1[2] - v0[2])
+            v = (v2[0] - v0[0], v2[1] - v0[1], v2[2] - v0[2])
+
+            # 叉乘得到法线
+            normal = (
+                u[1] * v[2] - u[2] * v[1],
+                u[2] * v[0] - u[0] * v[2],
+                u[0] * v[1] - u[1] * v[0]
+            )
+        else:
+            normal = (0, 0, 1)  # 默认Z轴正向
+        glNormal3f(normal[0], normal[1], normal[2])
+        for v in vertex:
+            if len(v) == 5:
+                # 设置纹理坐标
+                if texture_id:
+                    glMultiTexCoord2f(GL_TEXTURE0, v[3], v[4])  # base_color纹理
+                glVertex3f(v[0], v[1], v[2])
+            else:
+                # 没有纹理坐标的情况
+                glVertex3f(v[0], v[1], v[2])
+        glEnd()
+
+        # 清理OpenGL状态
+        if texture_id:
+            glDisable(GL_TEXTURE_2D)
+            glActiveTexture(GL_TEXTURE0)
+
+        if self.emission != 0.0:
+            glMaterialfv(GL_FRONT, GL_EMISSION, (0.0, 0.0, 0.0, 1.0))
 
     def update(self) -> None:
         # 处理基础色材质

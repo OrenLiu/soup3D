@@ -22,23 +22,24 @@ pip install pillow
 安装完成后，您可以试试这段代码：
 
 ```python
+"""
+这是一段最简单的soup3D使用案例，展示了如何用soup3D配合pygame显示出一个最简单的三角形
+"""
 import soup3D
 from soup3D.name import *
-from math import *
-from time import*
-
-
-def stop(event):  # 用于绑定窗口关闭事件的函数，每个事件绑定的函数都需要有一个参数。
-    global running
-    running = False
+from PIL import Image
+import pygame
 
 
 running = True
 
 
 if __name__ == '__main__':
-    soup3D.init(bg_color=(0.5, 0.75, 1))       # 初始化窗口
-    soup3D.event.bind(ON_CLOSE, stop)          # 绑定关闭窗口事件
+    width, height = 1920, 1080
+    pygame.init()                                                            # 初始化pygame
+    pygame.display.set_caption("soup3D")
+    pygame.display.set_mode((1920, 1080), pygame.DOUBLEBUF | pygame.OPENGL)  # 将pygame窗口作为OpenGL容器
+    soup3D.init(bg_color=(0.5, 0.75, 1), width=1920, height=1080)            # 初始化soup3D
 
     green = soup3D.shader.FPL(soup3D.shader.MixChannel((1, 1), 0, 1, 0))  # 创建绿色材质
     face = soup3D.Face(TRIANGLE_B, green, [                               # 创建面
@@ -50,7 +51,13 @@ if __name__ == '__main__':
     triangle = soup3D.Model(0, 0, -500, face)  # 将面加入模型
     triangle.show()                            # 显示模型
     while running:  # 主循环
-        soup3D.update()  # 更新画面
+        buffer = soup3D.update()  # 更新soup3D画面
+        pygame.display.flip()     # 更新pygame画面
+        # 接下来这些代码就不在我需要解释的范畴了awa
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                pygame.quit()  # 关闭窗口
+                running = False
 
 ```
 
