@@ -27,7 +27,6 @@ pip install pillow
 """
 import soup3D
 from soup3D.name import *
-from PIL import Image
 import pygame
 
 
@@ -37,7 +36,7 @@ running = True
 if __name__ == '__main__':
     width, height = 1920, 1080
     pygame.init()                                                            # 初始化pygame
-    pygame.display.set_caption("soup3D")
+    pygame.display.set_caption("soup3D")                                     # 设置pygame窗口标题
     pygame.display.set_mode((1920, 1080), pygame.DOUBLEBUF | pygame.OPENGL)  # 将pygame窗口作为OpenGL容器
     soup3D.init(bg_color=(0.5, 0.75, 1), width=1920, height=1080)            # 初始化soup3D
 
@@ -46,18 +45,17 @@ if __name__ == '__main__':
         (0, 0, 0, 0, 0),  # (X, Y, Z, U, V)
         (100, 0, 0, 0, 0),
         (0, 100, 0, 0, 0)
-    ])
+    ]*1000)
 
     triangle = soup3D.Model(0, 0, -500, face)  # 将面加入模型
     triangle.show()                            # 显示模型
     while running:  # 主循环
-        buffer = soup3D.update()  # 更新soup3D画面
-        pygame.display.flip()     # 更新pygame画面
-        # 接下来这些代码就不在我需要解释的范畴了awa
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT:
+        soup3D.update()  # 更新soup3D画面
+        pygame.display.flip()  # 更新pygame画面
+        for event in pygame.event.get():  # 遍历pygame事件
+            if event.type == pygame.QUIT:  # pygame窗口关闭事件
                 pygame.quit()  # 关闭窗口
-                running = False
+                running = False  # 退出循环
 
 ```
 

@@ -14,7 +14,7 @@ render_queue : list[tuple["Shape", float, float]] = []  # 全局渲染队列
 
 class Shape:
     def __init__(self, shape_type,
-                 texture: soup3D.shader.Texture | soup3D.shader.MixChannel,
+                 texture: soup3D.shader.Img,
                  vertex: list | tuple):
         """
         图形，可以批量生成线段、三角形

@@ -4,6 +4,7 @@
 """
 from OpenGL.GL import *
 from OpenGL.GLU import *
+from pyglm import glm
 
 from math import *
 
@@ -70,6 +71,32 @@ def update() -> None:
     upX, upZ = _rotated(upX, upZ, 0, 0, YAW)
 
     gluLookAt(X, Y, Z, centerX+X, centerY+Y, centerZ+Z, upX, upY, upZ)
+
+
+def get_view_mat() -> glm.mat4x4:
+    """
+    获取相机矩阵，可用于代码着色器
+    :return: 矩阵
+    """
+    centerX, centerY, centerZ = 0, 0, -1
+    upX, upY, upZ = 0, 1, 0
+    # 进行横滚旋转
+    centerX, centerY = _rotated(centerX, centerY, 0, 0, ROLL)
+    upX, upY = _rotated(upX, upY, 0, 0, ROLL)
+
+    # 进行俯仰旋转
+    centerY, centerZ = _rotated(centerY, centerZ, 0, 0, PITCH)
+    upY, upZ = _rotated(upY, upZ, 0, 0, PITCH)
+
+    # 进行偏行旋转
+    centerX, centerZ = _rotated(centerX, centerZ, 0, 0, YAW)
+    upX, upZ = _rotated(upX, upZ, 0, 0, YAW)
+
+    camera_pos = glm.vec3(X, Y, Z)
+    camera_target = glm.vec3(centerX+X, centerY+Y, centerZ+Z)
+    camera_up = glm.vec3(upX, upY, upZ)
+
+    return glm.lookAt(camera_pos, camera_target, camera_up)
 
 
 def _rotated(Xa : float, Ya : float, Xb : float, Yb : float, degree : float) -> tuple[float, float]:

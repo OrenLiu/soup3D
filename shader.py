@@ -3,8 +3,12 @@
 """
 import PIL.Image
 import numpy as np
+import soup3D
 from OpenGL.GL import *
 from OpenGL.GL.shaders import compileShader, compileProgram
+
+
+update_queue = []
 
 
 class Texture:
@@ -25,14 +29,14 @@ class Texture:
 
 
 class Channel:
-    def __init__(self, texture: "Texture | MixChannel", channelID: int):
+    def __init__(self, texture: "Img", channelID: int):
         """
         提取贴图中的单个通道
         :param texture:   提取通道的贴图
         :param channelID: 通道编号
         """
-        if not isinstance(texture, Texture | MixChannel):
-            raise TypeError(f"texture should be Texture | MixChannel not {type(texture)}")
+        if not isinstance(texture, Img):
+            raise TypeError(f"texture should be Img not {type(texture)}")
 
         if not isinstance(channelID, int):
             raise TypeError(f"channelID should be int not {type(channelID)}")
@@ -62,10 +66,10 @@ class Channel:
 class MixChannel:
     def __init__(self,
                  resize: tuple[int, int],
-                 R: int | float | Channel,
-                 G: int | float | Channel,
-                 B: int | float | Channel,
-                 A: int | float | Channel = 1.0):
+                 R: "int | float | GrayImg",
+                 G: "int | float | GrayImg",
+                 B: "int | float | GrayImg",
+                 A: "int | float | GrayImg" = 1.0):
         """
         混合通道成为一个贴图
         混合通道贴图(MixChannel)可通过类似贴图(Texture)的方式提取通道
@@ -78,16 +82,16 @@ class MixChannel:
         if not isinstance(resize, tuple):
             raise TypeError(f"resize should be tuple[int not {type(resize)}")
 
-        if not isinstance(R, int | float | Channel):
+        if not isinstance(R, int | float | GrayImg):
             raise TypeError(f"R should be int | float | Channel not {type(R)}")
 
-        if not isinstance(G, int | float | Channel):
+        if not isinstance(G, int | float | GrayImg):
             raise TypeError(f"G should be int | float | Channel not {type(G)}")
 
-        if not isinstance(B, int | float | Channel):
+        if not isinstance(B, int | float | GrayImg):
             raise TypeError(f"B should be int | float | Channel not {type(B)}")
 
-        if not isinstance(A, int | float | Channel):
+        if not isinstance(A, int | float | GrayImg):
             raise TypeError(f"A should be int | float | Channel not {type(A)}")
 
         self.resize = resize
@@ -112,7 +116,7 @@ class MixChannel:
                 band = PIL.Image.new('L', self.resize, value)
                 bands[channel_name] = band
 
-            elif isinstance(source, Channel):  # Channel对象
+            elif isinstance(source, GrayImg):  # Channel对象
                 texture_img = source.texture.pil_pic
 
                 # 转换为RGBA确保有四个通道
@@ -141,23 +145,21 @@ class MixChannel:
 
 class FPL:
     def __init__(self,
-                 base_color: Texture | MixChannel,
+                 base_color: "Img",
                  emission: float | int = 0.0):
         """
         Fixed pipeline固定管线式着色器
         :param base_color: 主要颜色
         :param emission:   自发光度
         """
-        if not isinstance(base_color, Texture | MixChannel):
-            raise TypeError(f"base_color should be Texture | MixChannel not {type(base_color)}")
+        if not isinstance(base_color, Img):
+            raise TypeError(f"base_color should be Img not {type(base_color)}")
 
         if not isinstance(emission, float | int):
             raise TypeError(f"emission should be float | int not {type(emission)}")
 
         self.base_color = base_color
         self.emission = emission
-
-        self.base_color_id = None
 
         # 处理基础色材质
         pil_img = self.base_color.pil_pic
@@ -228,34 +230,67 @@ class FPL:
         if self.emission != 0.0:
             glMaterialfv(GL_FRONT, GL_EMISSION, (0.0, 0.0, 0.0, 1.0))
 
+    def update(self):
+        ...
+
     def deep_del(self):
         if self.base_color_id:
             glDeleteTextures([self.base_color_id])
 
 
 class ShaderProgram:
-    def __init__(self, vertex: str, fragment: str):
+    def __init__(
+            self, vertex: str, fragment: str,
+            vbo_type: str | list[str] | tuple[str] = "float",
+            textures: list["Img"] | tuple["Img"] = ()
+        ):
         """
         代码着色器
         :param vertex:   顶点着色程序代码
         :param fragment: 片段着色程序代码
+        :param vbo_type: 定义传入着色器程序的顶点列表(vbo)的数据类型。如每个定点列表数据类型相同，可通过填写一个字符串定义所有的定点列表的
+                         数据类型；如果需要不同的数据类型，可通过填写一个列表来分别定义每个顶点列表的数据类型。
         """
         self.vertex = vertex
         self.fragment = fragment
+        self.vbo_type = vbo_type
+        self.textures = textures
 
         self.vertex_shader = compileShader(self.vertex, GL_VERTEX_SHADER)
         self.fragment_shader = compileShader(self.fragment, GL_FRAGMENT_SHADER)
 
         self.shader = compileProgram(self.vertex_shader, self.fragment_shader)
 
+        self.uniform_loc = {}
+        self.uniform_val = {}
+        self.uniform_type = {}
+
+
     def rend(self, mode, vertex):
+        type_map = {
+            soup3D.BYTE: GL_BYTE,
+            soup3D.BYTE_US: GL_UNSIGNED_BYTE,
+            soup3D.SHORT: GL_SHORT,
+            soup3D.SHORT_US: GL_UNSIGNED_SHORT,
+            soup3D.INT: GL_INT,
+            soup3D.INT_US: GL_UNSIGNED_INT,
+            soup3D.FLOAT_H: GL_HALF_FLOAT,
+            soup3D.FLOAT: GL_FLOAT,
+            soup3D.FLOAT_D: GL_DOUBLE,
+            soup3D.FIXED: GL_FIXED
+        }
+        if isinstance(self.vbo_type, str):
+            types = [type_map[self.vbo_type] for i in vertex]
+        else:
+            if len(self.vbo_type) != len(vertex):
+                raise TypeError(f"this ShaderProgram need {len(self.vbo_type)} vbo but {len(vertex)} were given")
+            types = [type_map[i] for i in self.vbo_type]
+
         glEnable(GL_DEPTH_TEST)
 
-        # 修复：正确生成buffer IDs
         num_buffers = len(vertex)
         vbo_ids = glGenBuffers(num_buffers)
 
-        # 修复：处理单buffer的情况
         if num_buffers == 1:
             vbo_ids = [vbo_ids]  # 包装为列表
 
@@ -265,14 +300,12 @@ class ShaderProgram:
         for i, vert_group in enumerate(vertex):
             vbo_np = np.array(vert_group, dtype=np.float32)
 
-            # 修复：绑定正确的buffer ID
             glBindBuffer(GL_ARRAY_BUFFER, vbo_ids[i])
             glBufferData(GL_ARRAY_BUFFER, vbo_np.nbytes, vbo_np, GL_STATIC_DRAW)
 
             # 计算每个顶点的元素个数
             components = len(vert_group[0])
-
-            glVertexAttribPointer(i, components, GL_FLOAT, GL_FALSE, 0, None)
+            glVertexAttribPointer(i, components, types[i], GL_FALSE, 0, ctypes.c_void_p(0))
             glEnableVertexAttribArray(i)
 
         glBindBuffer(GL_ARRAY_BUFFER, 0)
@@ -281,15 +314,83 @@ class ShaderProgram:
         glUseProgram(self.shader)
         glBindVertexArray(vao)
 
-        # 修复：正确计算顶点数量
         total_vertices = sum(len(group) for group in vertex)
         glDrawArrays(mode, 0, total_vertices)
 
         glBindVertexArray(0)
         glUseProgram(0)
 
+    def uniform(self, v_name: str, v_type: str, *value):
+        """
+        在下一帧向着色器传递数据
+        :param v_name: 在着色器内该数据对应的变量名
+        :param v_type: 指定数据类型
+        :param value:  传入着色器的数据
+        :return: None
+        """
+        # 确保在获取位置前着色器已激活
+        prev_program = glGetIntegerv(GL_CURRENT_PROGRAM)
+        glUseProgram(self.shader)
+
+        # 获取统一变量位置
+        loc = glGetUniformLocation(self.shader, v_name)
+        if loc == -1:
+            print(f"Warning: Uniform '{v_name}' not found in shader")
+            glUseProgram(prev_program)  # 恢复之前的程序
+            return
+
+        self.uniform_loc[v_name] = loc
+        self.uniform_val[v_name] = value
+        self.uniform_type[v_name] = v_type
+        glUseProgram(prev_program)  # 恢复之前的程序
+        update_queue.append(self)
+
+    def update(self):
+        type_map = {
+            soup3D.FLOAT_VEC1: glUniform1f,
+            soup3D.FLOAT_VEC2: glUniform2f,
+            soup3D.FLOAT_VEC3: glUniform3f,
+            soup3D.FLOAT_VEC4: glUniform4f,
+            soup3D.INT_VEC1: glUniform1i,
+            soup3D.INT_VEC2: glUniform2i,
+            soup3D.INT_VEC3: glUniform3i,
+            soup3D.INT_VEC4: glUniform4i,
+            soup3D.ARRAY_FLOAT_VEC1: glUniform1fv,
+            soup3D.ARRAY_FLOAT_VEC2: glUniform2fv,
+            soup3D.ARRAY_FLOAT_VEC3: glUniform3fv,
+            soup3D.ARRAY_FLOAT_VEC4: glUniform4fv,
+            soup3D.ARRAY_INT_VEC1: glUniform1iv,
+            soup3D.ARRAY_INT_VEC2: glUniform2iv,
+            soup3D.ARRAY_INT_VEC3: glUniform3iv,
+            soup3D.ARRAY_INT_VEC4: glUniform4iv,
+            soup3D.ARRAY_MATRIX_VEC2: glUniformMatrix2fv,
+            soup3D.ARRAY_MATRIX_VEC3: glUniformMatrix3fv,
+            soup3D.ARRAY_MATRIX_VEC4: glUniformMatrix4fv,
+        }
+
+        prev_program = glGetIntegerv(GL_CURRENT_PROGRAM)
+        glUseProgram(self.shader)
+
+        for key in self.uniform_val:
+            loc = self.uniform_loc.get(key, -1)
+            if loc == -1:
+                continue
+
+            v_type = self.uniform_type[key]
+            value = self.uniform_val[key]
+
+            type_map[v_type](loc, *value)
+
+
+        glUseProgram(prev_program)  # 恢复之前的程序
+
     def deep_del(self):
         glDeleteProgram(self.shader)
+
+
+Img = Texture | MixChannel
+GrayImg = Channel
+Surface = FPL | ShaderProgram
 
 
 

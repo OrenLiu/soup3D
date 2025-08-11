@@ -3,11 +3,9 @@
 这是一个基于OpenGL和pygame开发的3D引擎，易于新手学习，可
 用于3D游戏开发、数据可视化、3D图形的绘制等开发。
 """
-from OpenGL.GL import *
 from OpenGL.GLU import *
-from OpenGL.GLUT import *
+from pyglm import glm
 from PIL import Image
-from math import *
 import os
 
 import soup3D.shader
@@ -30,7 +28,7 @@ _current_height = 1080
 class Face:
     def __init__(self,
                  shape_type: str,
-                 surface: soup3D.shader.FPL | soup3D.shader.ShaderProgram,
+                 surface: soup3D.shader.Surface,
                  vertex: list | tuple) -> None:
         """
         表面，可用于创建模型(Model类)的线段和多边形
@@ -41,9 +39,8 @@ class Face:
                            "triangle_b": 不相连三角形
                            "triangle_s": 相连三角形
                            "triangle_l": 头尾相连的连续三角形
-        :param surface:    表面使用的BSDF着色器
-        :param vertex:     表面中所有的端点，格式为：
-                           [(x, y, z, u, v), ...]
+        :param surface:    表面使用的着色器
+        :param vertex:     表面中所有的端点
         """
         # 初始化类成员
         self.shape_type = shape_type  # 绘制方式
@@ -141,6 +138,30 @@ class Model:
         :return: None
         """
         self.width, self.height, self.length = width, height, length
+
+    def get_model_mat(self) -> glm.mat4:
+        """
+        获取模型矩阵，可用于代码着色器
+        :return: 模型变换矩阵
+        """
+        # 创建单位矩阵
+        model = glm.mat4(1.0)
+
+        # 应用平移变换
+        model = glm.translate(model, glm.vec3(self.x, self.y, self.z))
+
+        # 应用旋转变换
+        # Roll旋转（绕z轴）
+        model = glm.rotate(model, glm.radians(self.roll), glm.vec3(0.0, 0.0, 1.0))
+        # Pitch旋转（绕x轴）
+        model = glm.rotate(model, glm.radians(self.pitch), glm.vec3(1.0, 0.0, 0.0))
+        # Yaw旋转（绕y轴）
+        model = glm.rotate(model, glm.radians(self.yaw), glm.vec3(0.0, 1.0, 0.0))
+
+        # 应用缩放变换
+        model = glm.scale(model, glm.vec3(self.width, self.height, self.length))
+
+        return model
 
     def deep_del(self) -> None:
         """
@@ -287,15 +308,19 @@ def _paint_ui(shape: soup3D.ui.Shape, x: int | float, y: int | float) -> None:
     shape._restore_projection()
 
 
-def update() -> bytes:
+def update():
     """
-    更新画布，并产出图像
-    :return: 产出的二进制图像
+    更新画布
     """
     global render_queue
 
     # 清空画布
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
+
+    # 更新需要更新的着色器
+    for surface in soup3D.shader.update_queue:
+        surface.update()
+    soup3D.shader.update_queue = []
 
     # 将所有固定渲染场景加入全局渲染列队
     for shape_id in stable_shapes:
@@ -338,8 +363,8 @@ def update() -> bytes:
 def open_obj(obj: str, mtl: str = None) -> Model:
     """
     从obj文件导入模型
-    :param obj: *.obj模型文件路径
-    :param mtl: *.mtl纹理文件路径
+    :param obj:     *.obj模型文件路径
+    :param mtl:     *.mtl纹理文件路径
     :return: 生成出来的模型数据(Model类)
     """
     # 处理mtl文件
@@ -538,6 +563,19 @@ def open_obj(obj: str, mtl: str = None) -> Model:
     # 创建模型对象（原点设置为0,0,0）
     model = Model(0, 0, 0, *faces)
     return model
+
+
+def get_projection_mat() -> glm.fmat4x4:
+    """
+    获取透视矩阵，可用于代码着色器
+    :return: 矩阵
+    """
+    return glm.perspective(
+        glm.radians(_current_fov),
+        _current_width/_current_height,
+        _current_near,
+        _current_far
+    )
 
 
 if __name__ == '__main__':
