@@ -9,14 +9,6 @@
 pip install -i https://osoup.top/simple soup3D
 ```
 
-使用该库还需要`OpenGL`和`pygame`，可使用如下代码安装：
-
-```bash
-pip install pygame
-pip install pyopengl
-pip install pillow
-```
-
 ## 小试牛刀
 
 安装完成后，您可以试试这段代码：

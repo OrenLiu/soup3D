@@ -40,7 +40,7 @@ class Face:
                            "triangle_s": 相连三角形
                            "triangle_l": 头尾相连的连续三角形
         :param surface:    表面使用的着色器
-        :param vertex:     表面中所有的端点
+        :param vertex:     表面中所有的顶点，格式由surface参数指定的着色器决定
         """
         # 初始化类成员
         self.shape_type = shape_type  # 绘制方式

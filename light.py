@@ -135,8 +135,8 @@ class Cone:
         :return: None
         """
         glDisable(self.light_id)
-        self.light_id = None
         light_list.append(self.light_id)
+        self.light_id = None
 
 
 class Direct:
@@ -211,8 +211,8 @@ class Direct:
         :return: None
         """
         glDisable(self.light_id)
-        self.light_id = None
         light_list.append(self.light_id)
+        self.light_id = None
 
 
 def ambient(R : float, G : float, B : float) -> None:

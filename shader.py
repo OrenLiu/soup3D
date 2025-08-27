@@ -26,6 +26,62 @@ class Texture:
             raise TypeError(f"pil_pic should be PIL.Image.Image not {type(pil_pic)}")
 
         self.pil_pic = pil_pic
+        self.texture_id = None
+        
+    def gen_gl_texture(self, texture_unit: int = 0):
+        """
+        生成OpenGL纹理
+        :param texture_unit: 纹理单元编号（0表示GL_TEXTURE0，1表示GL_TEXTURE1等）
+        :return: None
+        """
+        # 激活指定纹理单元
+        glActiveTexture(GL_TEXTURE0 + texture_unit)
+
+        # 确定图像模式并转换为RGBA格式
+        mode = self.pil_pic.mode
+        if mode == '1':  # 黑白图像
+            self.pil_pic = self.pil_pic.convert('RGBA')
+            data = self.pil_pic.tobytes('raw', 'RGBA', 0, -1)
+        elif mode == 'L':  # 灰度图像
+            self.pil_pic = self.pil_pic.convert('RGBA')
+            data = self.pil_pic.tobytes('raw', 'RGBA', 0, -1)
+        elif mode == 'RGB':  # RGB图像
+            self.pil_pic = self.pil_pic.convert('RGBA')
+            data = self.pil_pic.tobytes('raw', 'RGBA', 0, -1)
+        elif mode == 'RGBA':  # RGBA图像
+            data = self.pil_pic.tobytes('raw', 'RGBA', 0, -1)
+        else:
+            # 其他格式转换为RGBA
+            self.pil_pic = self.pil_pic.convert('RGBA')
+            data = self.pil_pic.tobytes('raw', 'RGBA', 0, -1)
+
+        # 获取图像尺寸
+        width, height = self.pil_pic.size
+
+        # 创建或绑定纹理
+        texture_id = glGenTextures(1)
+
+        glBindTexture(GL_TEXTURE_2D, texture_id)
+
+        # 设置纹理参数
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT)
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT)
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR)
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR)
+
+        # 上传纹理数据
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, data)
+
+        # 生成mipmap（提高纹理在远距离的渲染质量）
+        glGenerateMipmap(GL_TEXTURE_2D)
+
+        self.texture_id = texture_id
+        return texture_id
+
+    def get_texture_id(self):
+        if self.texture_id is None:
+            self.gen_gl_texture()
+        return self.texture_id
 
 
 class Channel:
@@ -141,6 +197,62 @@ class MixChannel:
 
         # 合并为最终RGBA图像
         self.pil_pic = PIL.Image.merge('RGBA', final_bands)
+        self.texture_id = None
+
+    def gen_gl_texture(self, texture_unit: int = 0):
+        """
+        生成OpenGL纹理
+        :param texture_unit: 纹理单元编号（0表示GL_TEXTURE0，1表示GL_TEXTURE1等）
+        :return: None
+        """
+        # 激活指定纹理单元
+        glActiveTexture(GL_TEXTURE0 + texture_unit)
+
+        # 确定图像模式并转换为RGBA格式
+        mode = self.pil_pic.mode
+        if mode == '1':  # 黑白图像
+            self.pil_pic = self.pil_pic.convert('RGBA')
+            data = self.pil_pic.tobytes('raw', 'RGBA', 0, -1)
+        elif mode == 'L':  # 灰度图像
+            self.pil_pic = self.pil_pic.convert('RGBA')
+            data = self.pil_pic.tobytes('raw', 'RGBA', 0, -1)
+        elif mode == 'RGB':  # RGB图像
+            self.pil_pic = self.pil_pic.convert('RGBA')
+            data = self.pil_pic.tobytes('raw', 'RGBA', 0, -1)
+        elif mode == 'RGBA':  # RGBA图像
+            data = self.pil_pic.tobytes('raw', 'RGBA', 0, -1)
+        else:
+            # 其他格式转换为RGBA
+            self.pil_pic = self.pil_pic.convert('RGBA')
+            data = self.pil_pic.tobytes('raw', 'RGBA', 0, -1)
+
+        # 获取图像尺寸
+        width, height = self.pil_pic.size
+
+        # 创建或绑定纹理
+        texture_id = glGenTextures(1)
+
+        glBindTexture(GL_TEXTURE_2D, texture_id)
+
+        # 设置纹理参数
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT)
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT)
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR)
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR)
+
+        # 上传纹理数据
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, data)
+
+        # 生成mipmap（提高纹理在远距离的渲染质量）
+        glGenerateMipmap(GL_TEXTURE_2D)
+
+        self.texture_id = texture_id
+        return texture_id
+
+    def get_texture_id(self):
+        if self.texture_id is None:
+            self.gen_gl_texture()
+        return self.texture_id
 
 
 class FPL:
@@ -148,7 +260,11 @@ class FPL:
                  base_color: "Img",
                  emission: float | int = 0.0):
         """
-        Fixed pipeline固定管线式着色器
+        Fixed pipeline固定管线式着色器，作为表面着色器渲染时使用的顶点列表格式：
+        [
+            (x, y, z, u, v),
+            ...
+        ]
         :param base_color: 主要颜色
         :param emission:   自发光度
         """
@@ -162,10 +278,15 @@ class FPL:
         self.emission = emission
 
         # 处理基础色材质
-        pil_img = self.base_color.pil_pic
-        self.base_color_id = _pil_to_texture(pil_img, texture_unit=0)
+        self.base_color_id = self.base_color.gen_gl_texture(0)
 
     def rend(self, mode, vertex):
+        """
+        创建该着色器的渲染流程
+        :param mode:   绘制方式
+        :param vertex: 表面中所有的顶点
+        :return:
+        """
         # 材质贴图
         texture_id = self.base_color_id
 
@@ -241,20 +362,34 @@ class FPL:
 class ShaderProgram:
     def __init__(
             self, vertex: str, fragment: str,
-            vbo_type: str | list[str] | tuple[str] = "float",
-            textures: list["Img"] | tuple["Img"] = ()
+            vbo_type: str | list[str] | tuple[str] = "float"
         ):
         """
-        代码着色器
+        代码着色器，作为表面着色器渲染时使用的顶点列表格式：
+        [
+            [  # vbo0
+                (),  # vertex0
+                (),  # vertex1
+                (),  # vertex2
+            ],
+            [  # vbo1
+                (),  # vertex0
+                (),  # vertex1
+                (),  # vertex2
+            ]
+            ...
+        ]
+        在着色器代码中，vbo的读取编号取决于vbo处于列表的位置，例如列表中第0个，也就是首个vbo，着色器代码中可以通过
+        “layout (location = 0) in <type> <value_name>”这段代码读取。
         :param vertex:   顶点着色程序代码
         :param fragment: 片段着色程序代码
         :param vbo_type: 定义传入着色器程序的顶点列表(vbo)的数据类型。如每个定点列表数据类型相同，可通过填写一个字符串定义所有的定点列表的
-                         数据类型；如果需要不同的数据类型，可通过填写一个列表来分别定义每个顶点列表的数据类型。
+                         数据类型；如果需要不同的数据类型，可通过填写一个列表来分别定义每个顶点列表的数据类型。在同一vbo下，所有vertex的
+                         长度需一致，且长度范围在1-4个数据。
         """
         self.vertex = vertex
         self.fragment = fragment
         self.vbo_type = vbo_type
-        self.textures = textures
 
         self.vertex_shader = compileShader(self.vertex, GL_VERTEX_SHADER)
         self.fragment_shader = compileShader(self.fragment, GL_FRAGMENT_SHADER)
@@ -267,6 +402,12 @@ class ShaderProgram:
 
 
     def rend(self, mode, vertex):
+        """
+        创建该着色器的渲染流程
+        :param mode:   绘制方式
+        :param vertex: 表面中所有的顶点
+        :return:
+        """
         type_map = {
             soup3D.BYTE: GL_BYTE,
             soup3D.BYTE_US: GL_UNSIGNED_BYTE,
@@ -345,6 +486,30 @@ class ShaderProgram:
         glUseProgram(prev_program)  # 恢复之前的程序
         update_queue.append(self)
 
+    def uniform_tex(self, v_name: str, texture: "Img", texture_unit: int = 0):
+        """
+        在下一帧向着色器传递纹理
+        :param v_name:       在着色器内该纹理对应的变量名
+        :param texture:      贴图类
+        :param texture_unit: 纹理单元编号
+        :return: None
+        """
+        # 获取统一变量位置
+        prev_program = glGetIntegerv(GL_CURRENT_PROGRAM)
+        glUseProgram(self.shader)
+        loc = glGetUniformLocation(self.shader, v_name)
+        if loc == -1:
+            print(f"Warning: Uniform '{v_name}' not found in shader")
+            glUseProgram(prev_program)  # 恢复之前的程序
+            return
+
+        # 记录纹理信息
+        self.uniform_loc[v_name] = loc
+        self.uniform_val[v_name] = (texture, texture_unit)
+        self.uniform_type[v_name] = "texture"
+        glUseProgram(prev_program)  # 恢复之前的程序
+        update_queue.append(self)
+
     def update(self):
         type_map = {
             soup3D.FLOAT_VEC1: glUniform1f,
@@ -379,8 +544,16 @@ class ShaderProgram:
             v_type = self.uniform_type[key]
             value = self.uniform_val[key]
 
-            type_map[v_type](loc, *value)
-
+            if v_type == "texture":
+                # 处理纹理类型的uniform
+                texture, texture_unit = value
+                glActiveTexture(GL_TEXTURE0 + texture_unit)
+                glBindTexture(GL_TEXTURE_2D, texture.get_texture_id())
+                glUniform1i(loc, texture_unit)
+            else:
+                # 处理其他类型的uniform
+                if v_type in type_map:
+                    type_map[v_type](loc, *value)
 
         glUseProgram(prev_program)  # 恢复之前的程序
 
@@ -391,60 +564,6 @@ class ShaderProgram:
 Img = Texture | MixChannel
 GrayImg = Channel
 Surface = FPL | ShaderProgram
-
-
-
-def _pil_to_texture(pil_img: PIL.Image.Image, texture_id: int | None = None, texture_unit: int = 0) -> int:
-    """
-    将PIL图像转换为OpenGL纹理
-    :param pil_img: PIL图像对象
-    :param texture_id: 已有纹理ID（如None则创建新纹理）
-    :param texture_unit: 纹理单元编号（0表示GL_TEXTURE0，1表示GL_TEXTURE1等）
-    :return: 纹理ID
-    """
-    # 激活指定纹理单元
-    glActiveTexture(GL_TEXTURE0 + texture_unit)
-
-    # 确定图像模式并转换为RGBA格式
-    mode = pil_img.mode
-    if mode == '1':  # 黑白图像
-        pil_img = pil_img.convert('RGBA')
-        data = pil_img.tobytes('raw', 'RGBA', 0, -1)
-    elif mode == 'L':  # 灰度图像
-        pil_img = pil_img.convert('RGBA')
-        data = pil_img.tobytes('raw', 'RGBA', 0, -1)
-    elif mode == 'RGB':  # RGB图像
-        pil_img = pil_img.convert('RGBA')
-        data = pil_img.tobytes('raw', 'RGBA', 0, -1)
-    elif mode == 'RGBA':  # RGBA图像
-        data = pil_img.tobytes('raw', 'RGBA', 0, -1)
-    else:
-        # 其他格式转换为RGBA
-        pil_img = pil_img.convert('RGBA')
-        data = pil_img.tobytes('raw', 'RGBA', 0, -1)
-
-    # 获取图像尺寸
-    width, height = pil_img.size
-
-    # 创建或绑定纹理
-    if texture_id is None:
-        texture_id = glGenTextures(1)
-
-    glBindTexture(GL_TEXTURE_2D, texture_id)
-
-    # 设置纹理参数
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT)
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT)
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR)
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR)
-
-    # 上传纹理数据
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, data)
-
-    # 生成mipmap（提高纹理在远距离的渲染质量）
-    glGenerateMipmap(GL_TEXTURE_2D)
-
-    return texture_id
 
 
 if __name__ == '__main__':
