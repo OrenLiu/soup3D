@@ -79,6 +79,10 @@ class Texture:
         return texture_id
 
     def get_texture_id(self):
+        """
+        获取纹理id，若无纹理id，则创建纹理id。
+        :return: 纹理id
+        """
         if self.texture_id is None:
             self.gen_gl_texture()
         return self.texture_id
@@ -250,6 +254,10 @@ class MixChannel:
         return texture_id
 
     def get_texture_id(self):
+        """
+        获取纹理id，若无纹理id，则创建纹理id。
+        :return: 纹理id
+        """
         if self.texture_id is None:
             self.gen_gl_texture()
         return self.texture_id
@@ -352,9 +360,17 @@ class FPL:
             glMaterialfv(GL_FRONT, GL_EMISSION, (0.0, 0.0, 0.0, 1.0))
 
     def update(self):
+        """
+        占位方法，防止错误调用导致的崩溃
+        :return: None
+        """
         ...
 
     def deep_del(self):
+        """
+        深度清理着色器，清理该着色器本身及所有该着色器用到的元素。在确定不再使用该着色器时可使用该方法释放内存。
+        :return: None
+        """
         if self.base_color_id:
             glDeleteTextures([self.base_color_id])
 
@@ -511,6 +527,10 @@ class ShaderProgram:
         update_queue.append(self)
 
     def update(self):
+        """
+        更新着色器
+        :return: None
+        """
         type_map = {
             soup3D.FLOAT_VEC1: glUniform1f,
             soup3D.FLOAT_VEC2: glUniform2f,
@@ -558,6 +578,10 @@ class ShaderProgram:
         glUseProgram(prev_program)  # 恢复之前的程序
 
     def deep_del(self):
+        """
+        深度清理着色器，清理该着色器本身及所有该着色器用到的元素。在确定不再使用该着色器时可使用该方法释放内存。
+        :return: None
+        """
         glDeleteProgram(self.shader)
 
 
