@@ -14,8 +14,10 @@ import soup3D.light
 import soup3D.ui
 from soup3D.name import *
 
-render_queue: list["Model"] = []  # 全局渲染队列
-stable_shapes = {}
+render_queue: list["Model"] = []  # 单次渲染队列
+stable_shapes = {}                # 固定渲染列队
+EAU = []                          # 更新执行列队
+
 
 _current_fov = 45
 _current_near = 0.1
@@ -80,9 +82,19 @@ class Model:
         self.list_id = glGenLists(1)
 
         # 创建显示列表
+        self.surfaces = {}
         glNewList(self.list_id, GL_COMPILE)
         for face in self.faces:
-            face.surface.rend(face.mode, face.vertex)
+            surface = face.surface
+            if id(surface) not in self.surfaces:
+                self.surfaces[id(surface)] = surface
+            if hasattr(surface, "set_model_mat"):
+                surface.set_model_mat(self.get_model_mat())
+            if hasattr(surface, "set_projection_mat"):
+                surface.set_projection_mat(get_projection_mat())
+            if hasattr(surface, "set_view_mat"):
+                surface.set_view_mat(soup3D.camera.get_view_mat())
+            surface.rend(face.mode, face.vertex)
 
         glEndList()
 
@@ -118,6 +130,10 @@ class Model:
         :return: None
         """
         self.x, self.y, self.z = x, y, z
+        for surface_id in self.surfaces:
+            surface = self.surfaces[surface_id]
+            if hasattr(surface, "set_model_mat"):
+                surface.set_model_mat(self.get_model_mat())
 
     def turn(self, yaw: int | float, pitch: int | float, roll: int | float) -> None:
         """
@@ -128,6 +144,10 @@ class Model:
         :return: None
         """
         self.yaw, self.pitch, self.roll = yaw, pitch, roll
+        for surface_id in self.surfaces:
+            surface = self.surfaces[surface_id]
+            if hasattr(surface, "set_model_mat"):
+                surface.set_model_mat(self.get_model_mat())
 
     def size(self, width: int | float, height: int | float, length: int | float) -> None:
         """
@@ -138,6 +158,10 @@ class Model:
         :return: None
         """
         self.width, self.height, self.length = width, height, length
+        for surface_id in self.surfaces:
+            surface = self.surfaces[surface_id]
+            if hasattr(surface, "set_model_mat"):
+                surface.set_model_mat(self.get_model_mat())
 
     def get_model_mat(self) -> glm.mat4:
         """
@@ -171,18 +195,18 @@ class Model:
         global render_queue
         global stable_shapes
 
-        # 1. 清理顶点列表
+        # 清理顶点列表
         glDeleteLists(self.list_id, 1)
 
-        # 2. 清理所有面使用的纹理资源
+        # 清理所有面使用的纹理资源
         for face in self.faces:
             face.surface.deep_del()
 
-        # 3. 从全局渲染队列中移除（如果存在）
+        # 从全局渲染队列中移除（如果存在）
         if self in render_queue:
             render_queue.remove(self)
 
-        # 4. 从稳定形状中移除（如果存在）
+        # 从稳定形状中移除（如果存在）
         if id(self) in stable_shapes:
             stable_shapes.pop(id(self))
 
@@ -252,6 +276,11 @@ def resize(width: int | float, height: int | float) -> None:
     gluPerspective(_current_fov, aspect_ratio, _current_near, _current_far)
     glMatrixMode(GL_MODELVIEW)
 
+    for surface_id in soup3D.shader.set_mat_queue:
+        surface = soup3D.shader.set_mat_queue[surface_id]
+        if hasattr(surface, "set_projection_mat"):
+            surface.set_projection_mat(get_projection_mat())
+
 
 def background_color(r: float, g: float, b: float) -> None:
     """
@@ -312,15 +341,17 @@ def update():
     """
     更新画布
     """
-    global render_queue
+    global render_queue, EAU
 
     # 清空画布
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
 
-    # 更新需要更新的着色器
-    for surface in soup3D.shader.update_queue:
-        surface.update()
-    soup3D.shader.update_queue = []
+    # 执行更新执行列队
+    EAU += soup3D.shader.EAU
+    for args in EAU:
+        args[0](*args[1:])
+    EAU = []
+    shader.EAU = []
 
     # 将所有固定渲染场景加入全局渲染列队
     for shape_id in stable_shapes:
@@ -386,7 +417,7 @@ def open_obj(obj: str, mtl: str = None) -> Model:
             if len(args) > 0:
                 if args[0] == "newmtl":
                     if now_mtl is not None:
-                        mtl_dict[now_mtl] = soup3D.shader.FPL(
+                        mtl_dict[now_mtl] = soup3D.shader.AutoSP(
                             soup3D.shader.MixChannel((width, height), R, G, B, A),
                             emission=emission
                         )
@@ -432,13 +463,13 @@ def open_obj(obj: str, mtl: str = None) -> Model:
 
         # 添加最后一个材质
         if now_mtl is not None:
-            mtl_dict[now_mtl] = soup3D.shader.FPL(
+            mtl_dict[now_mtl] = soup3D.shader.AutoSP(
                 soup3D.shader.MixChannel((width, height), R, G, B, A),
                 emission=emission
             )
 
     # 创建默认材质（如果未提供MTL或材质未定义时使用）
-    default_material = soup3D.shader.FPL(
+    default_material = soup3D.shader.AutoSP(
         soup3D.shader.MixChannel((1, 1), 1.0, 1.0, 1.0, 1.0),
         emission=0.0
     )

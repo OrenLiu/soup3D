@@ -5,8 +5,9 @@
 from OpenGL.GL import *
 from OpenGL.GLU import *
 from pyglm import glm
-
 from math import *
+
+import soup3D.shader
 
 __all__ : list[str] = ["X", "Y", "Z", "YAW", "PITCH", "ROLL",
            "goto",
@@ -71,6 +72,11 @@ def update() -> None:
     upX, upZ = _rotated(upX, upZ, 0, 0, YAW)
 
     gluLookAt(X, Y, Z, centerX+X, centerY+Y, centerZ+Z, upX, upY, upZ)
+
+    for surface_id in soup3D.shader.set_mat_queue:
+        surface = soup3D.shader.set_mat_queue[surface_id]
+        if hasattr(surface, "set_view_mat"):
+            surface.set_view_mat(get_view_mat())
 
 
 def get_view_mat() -> glm.mat4x4:

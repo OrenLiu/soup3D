@@ -13,6 +13,7 @@ __all__ : list[str] = [
 ]
 
 light_list : list[int] = [GL_LIGHT0, GL_LIGHT1, GL_LIGHT2, GL_LIGHT3, GL_LIGHT4, GL_LIGHT5, GL_LIGHT6, GL_LIGHT7]
+light_queue = {}
 
 
 def init(ambientR : float =0, ambientG : float =0, ambientB : float =0):
@@ -45,12 +46,19 @@ class Cone:
         :param attenuation:  线性衰减率
         :param angle:        锥形光线锥角
         """
-        self.light_id = light_list.pop(0)
+        self.light_id = None
+        self.on = False
         self.place = place
         self.toward = toward
         self.color = color
         self.attenuation = attenuation
         self.angle = angle
+
+        light_queue[id(self)] = self
+
+    def gen_light_id(self):
+        self.light_id = light_list.pop(0)
+        return self.light_id
 
     def display(self) -> None:
         """更新光源参数到OpenGL"""
@@ -121,13 +129,17 @@ class Cone:
         :return: None
         """
         glDisable(self.light_id)
+        self.on = False
 
     def turn_on(self) -> None:
         """
         点亮光源
         :return: None
         """
+        if self.light_id is None and len(light_list) > 0:
+            self.gen_light_id()
         glEnable(self.light_id)
+        self.on = True
 
     def destroy(self) -> None:
         """
@@ -137,6 +149,7 @@ class Cone:
         glDisable(self.light_id)
         light_list.append(self.light_id)
         self.light_id = None
+        del light_queue[id(self)]
 
 
 class Direct:
@@ -148,9 +161,16 @@ class Direct:
         :param toward: 光源朝向(yaw, pitch, roll)
         :param color:  光源颜色(red, green, blue)
         """
-        self.light_id = light_list.pop(0)
+        self.light_id = None
+        self.on = False
         self.toward = toward
         self.color = color
+
+        light_queue[id(self)] = self
+
+    def gen_light_id(self):
+        self.light_id = light_list.pop(0)
+        return self.light_id
 
     def display(self) -> None:
         """更新方向光源参数"""
@@ -197,13 +217,17 @@ class Direct:
         :return: None
         """
         glDisable(self.light_id)
+        self.on = False
 
     def turn_on(self) -> None:
         """
         点亮光源
         :return: None
         """
+        if self.light_id is None and len(light_list) > 0:
+            self.gen_light_id()
         glEnable(self.light_id)
+        self.on = True
 
     def destroy(self) -> None:
         """
@@ -213,6 +237,8 @@ class Direct:
         glDisable(self.light_id)
         light_list.append(self.light_id)
         self.light_id = None
+
+        del light_queue[id(self)]
 
 
 def ambient(R : float, G : float, B : float) -> None:

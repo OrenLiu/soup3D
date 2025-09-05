@@ -3,12 +3,15 @@
 """
 import PIL.Image
 import numpy as np
+from pyglm import glm
+
 import soup3D
 from OpenGL.GL import *
 from OpenGL.GL.shaders import compileShader, compileProgram
 
 
-update_queue = []
+EAU = []
+set_mat_queue = {}
 
 
 class Texture:
@@ -27,7 +30,7 @@ class Texture:
 
         self.pil_pic = pil_pic
         self.texture_id = None
-        
+
     def gen_gl_texture(self, texture_unit: int = 0):
         """
         生成OpenGL纹理
@@ -359,13 +362,6 @@ class FPL:
         if self.emission != 0.0:
             glMaterialfv(GL_FRONT, GL_EMISSION, (0.0, 0.0, 0.0, 1.0))
 
-    def update(self):
-        """
-        占位方法，防止错误调用导致的崩溃
-        :return: None
-        """
-        ...
-
     def deep_del(self):
         """
         深度清理着色器，清理该着色器本身及所有该着色器用到的元素。在确定不再使用该着色器时可使用该方法释放内存。
@@ -482,7 +478,9 @@ class ShaderProgram:
         在下一帧向着色器传递数据
         :param v_name: 在着色器内该数据对应的变量名
         :param v_type: 指定数据类型
-        :param value:  传入着色器的数据
+        :param value:  其他填入glUniform方法的参数，当传入值为单独数据时(如v_name=soup3D.INT_VEC1),需在此项填写传入的数据，如果需传
+                       入数组(如v_name=soup3D.ARRAY_INT_VEC1)，则需要在此项填入(数组长度, 数组)，如果为矩阵，则需填入
+                       (矩阵数量, 是否转置矩阵, 传入的矩阵)
         :return: None
         """
         # 确保在获取位置前着色器已激活
@@ -500,7 +498,7 @@ class ShaderProgram:
         self.uniform_val[v_name] = value
         self.uniform_type[v_name] = v_type
         glUseProgram(prev_program)  # 恢复之前的程序
-        update_queue.append(self)
+        EAU.append((self.update, ))
 
     def uniform_tex(self, v_name: str, texture: "Img", texture_unit: int = 0):
         """
@@ -524,7 +522,7 @@ class ShaderProgram:
         self.uniform_val[v_name] = (texture, texture_unit)
         self.uniform_type[v_name] = "texture"
         glUseProgram(prev_program)  # 恢复之前的程序
-        update_queue.append(self)
+        EAU.append((self.update, ))
 
     def update(self):
         """
@@ -585,9 +583,156 @@ class ShaderProgram:
         glDeleteProgram(self.shader)
 
 
+class AutoSP:
+    def __init__(self,
+                 base_color: "Img",
+                 normal: "list | tuple | Img" = (0.5, 0.5, 1),
+                 smoothness: "float | int | GrayImg" = 0.0,
+                 emission: "float | int | GrayImg" = 0.0):
+        """
+        更具用户提供的参数自动生成ShaderProgram类，并在需要时自动调用ShaderProgram的类成员，作为表面着色器渲染时使用的顶点列表格式：
+        [
+            (x, y, z, u, v),
+            ...
+        ]
+        :param base_color: 主要颜色
+        :param normal:     法线贴图
+        :param smoothness: 光滑度，
+                           当该参数为数字时，0.0为最粗糙，1.0为最光滑；
+                           当该参数为灰度图时，黑色为最粗超，白色为最光滑
+        :param emission:   自发光度，
+                           当该参数为数字时，0.0为不发光，1.0为完全发光；
+                           当该参数为灰度图时，黑色为不发光，白色为完全发光
+        """
+        self.base_color = base_color
+        self.normal = normal
+        self.smoothness = smoothness
+        self.emission = emission
+
+        # 创建着色器程序
+        vertex_shader = """
+        #version 330 core
+        layout (location = 0) in vec3 aPos;
+        layout (location = 1) in vec2 aTexCoord;
+
+        out vec2 TexCoord;
+
+        uniform mat4 model;
+        uniform mat4 view;
+        uniform mat4 projection;
+
+        void main()
+        {
+            gl_Position = projection * view * model * vec4(aPos, 1.0);
+            TexCoord = aTexCoord;
+        }
+        """
+
+        fragment_shader = """
+        #version 330 core
+        in vec2 TexCoord;
+        out vec4 FragColor;
+
+        uniform sampler2D baseColor;
+
+        void main()
+        {
+            FragColor = texture(baseColor, TexCoord);
+        }
+        """
+
+        # 创建着色器程序
+        self.shader_program = ShaderProgram(vertex_shader, fragment_shader, ["float", "float"])
+
+        # 设置纹理
+        self.shader_program.uniform_tex("baseColor", self.base_color)
+
+        # 初始化矩阵
+        self.model_mat = glm.mat4(1.0)
+        self.view_mat = glm.mat4(1.0)
+        self.projection_mat = glm.mat4(1.0)
+
+        # 注册到矩阵更新队列
+        set_mat_queue[id(self)] = self
+
+    def set_model_mat(self, mat: glm.mat4):
+        """
+        设置模型矩阵，在变换矩阵时自动调用
+        :param mat: 模型矩阵
+        :return: None
+        """
+        self.model_mat = mat
+        self._update_matrices()
+
+    def set_view_mat(self, mat: glm.mat4):
+        """
+        设置投影矩阵，在变换矩阵时自动调用
+        :param mat: 投影矩阵
+        :return: None
+        """
+        self.view_mat = mat
+        self._update_matrices()
+
+    def set_projection_mat(self, mat: glm.mat4):
+        """
+        设置视图矩阵，在变换矩阵时自动调用
+        :param mat: 视图矩阵
+        :return: None
+        """
+        self.projection_mat = mat
+        self._update_matrices()
+
+    def _update_matrices(self):
+        """更新所有矩阵到着色器"""
+        # 将glm矩阵转换为列表
+        model_list = [self.model_mat[i][j] for i in range(4) for j in range(4)]
+        view_list = [self.view_mat[i][j] for i in range(4) for j in range(4)]
+        projection_list = [self.projection_mat[i][j] for i in range(4) for j in range(4)]
+
+        # 更新着色器中的矩阵
+        self.shader_program.uniform("model", soup3D.ARRAY_MATRIX_VEC4, 1, GL_FALSE, model_list)
+        self.shader_program.uniform("view", soup3D.ARRAY_MATRIX_VEC4, 1, GL_FALSE, view_list)
+        self.shader_program.uniform("projection", soup3D.ARRAY_MATRIX_VEC4, 1, GL_FALSE, projection_list)
+
+    def rend(self, mode, vertex):
+        """
+        创建该着色器的渲染流程
+        :param mode:   绘制方式
+        :param vertex: 表面中所有的顶点
+        :return: None
+        """
+        # 将顶点数据转换为两个VBO
+        positions = []
+        tex_coords = []
+
+        for v in vertex:
+            if len(v) == 5:  # (x, y, z, u, v)
+                positions.append((v[0], v[1], v[2]))
+                tex_coords.append((v[3], v[4]))
+            else:  # 如果没有纹理坐标，使用默认值
+                positions.append((v[0], v[1], v[2]))
+                tex_coords.append((0.0, 0.0))
+
+        # 调用着色器程序的渲染方法
+        self.shader_program.rend(mode, [positions, tex_coords])
+
+    def deep_del(self):
+        """
+        深度清理着色器，清理该着色器本身及所有该着色器用到的元素。在确定不再使用该着色器时可使用该方法释放内存。
+        :return: None
+        """
+        # 从矩阵更新队列中移除
+        if id(self) in set_mat_queue:
+            del set_mat_queue[id(self)]
+
+        # 清理着色器程序
+        if hasattr(self, 'shader_program'):
+            self.shader_program.deep_del()
+
+
 Img = Texture | MixChannel
 GrayImg = Channel
-Surface = FPL | ShaderProgram
+Surface = FPL | ShaderProgram | AutoSP
 
 
 if __name__ == '__main__':
