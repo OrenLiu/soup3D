@@ -412,6 +412,8 @@ class ShaderProgram:
         self.uniform_val = {}
         self.uniform_type = {}
 
+        self.texture_val = {}
+
 
     def rend(self, mode, vertex):
         """
@@ -438,6 +440,12 @@ class ShaderProgram:
             if len(self.vbo_type) != len(vertex):
                 raise TypeError(f"this ShaderProgram need {len(self.vbo_type)} vbo but {len(vertex)} were given")
             types = [type_map[i] for i in self.vbo_type]
+
+        for i in self.texture_val:
+            value = self.texture_val[i]
+            texture, texture_unit = value
+            glActiveTexture(GL_TEXTURE0 + texture_unit)
+            glBindTexture(GL_TEXTURE_2D, texture.get_texture_id())
 
         glEnable(GL_DEPTH_TEST)
 
@@ -519,10 +527,13 @@ class ShaderProgram:
 
         # 记录纹理信息
         self.uniform_loc[v_name] = loc
-        self.uniform_val[v_name] = (texture, texture_unit)
+        self.texture_val[v_name] = (texture, texture_unit)
         self.uniform_type[v_name] = "texture"
         glUseProgram(prev_program)  # 恢复之前的程序
         EAU.append((self.update, ))
+
+        # 处理纹理类型的uniform
+        texture.gen_gl_texture(texture_unit)
 
     def update(self):
         """
@@ -554,21 +565,20 @@ class ShaderProgram:
         prev_program = glGetIntegerv(GL_CURRENT_PROGRAM)
         glUseProgram(self.shader)
 
-        for key in self.uniform_val:
+        for key in self.uniform_loc:
             loc = self.uniform_loc.get(key, -1)
             if loc == -1:
                 continue
 
             v_type = self.uniform_type[key]
-            value = self.uniform_val[key]
 
             if v_type == "texture":
+                value = self.texture_val[key]
                 # 处理纹理类型的uniform
                 texture, texture_unit = value
-                glActiveTexture(GL_TEXTURE0 + texture_unit)
-                glBindTexture(GL_TEXTURE_2D, texture.get_texture_id())
                 glUniform1i(loc, texture_unit)
             else:
+                value = self.uniform_val[key]
                 # 处理其他类型的uniform
                 if v_type in type_map:
                     type_map[v_type](loc, *value)
