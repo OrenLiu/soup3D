@@ -9,10 +9,12 @@ from math import *
 
 import soup3D.shader
 
-__all__ : list[str] = ["X", "Y", "Z", "YAW", "PITCH", "ROLL",
-           "goto",
-           "turn",
-           "update",]
+__all__ : list[str] = [
+    "X", "Y", "Z", "YAW", "PITCH", "ROLL",
+    "goto",
+    "turn",
+    "update",
+]
 
 X : float = 0.0
 Y : float = 0.0

@@ -658,7 +658,7 @@ class AutoSP:
         void main()
         {
             gl_Position = projection * view * model * vec4(aPos, 1.0);
-            TexCoord = aTexCoord;
+            TexCoord = vec2(aTexCoord.x, 1-aTexCoord.y);
         }
         """
 
@@ -720,7 +720,11 @@ class AutoSP:
         :return: None
         """
         self.model_mat = mat
-        EAU.append((self._update_uniforms,))
+        EAU.append((self._update_model_mat,))
+
+    def _update_model_mat(self):
+        self.shader_program.uniform("model", soup3D.ARRAY_MATRIX_VEC4, 1, GL_FALSE, glm.value_ptr(self.model_mat))
+        self.shader_program.update()
 
     def set_view_mat(self, mat: glm.mat4):
         """
@@ -729,7 +733,11 @@ class AutoSP:
         :return: None
         """
         self.view_mat = mat
-        EAU.append((self._update_uniforms,))
+        EAU.append((self._update_view_mat,))
+
+    def _update_view_mat(self):
+        self.shader_program.uniform("view", soup3D.ARRAY_MATRIX_VEC4, 1, GL_FALSE, glm.value_ptr(self.view_mat))
+        self.shader_program.update()
 
     def set_projection_mat(self, mat: glm.mat4):
         """
@@ -738,7 +746,12 @@ class AutoSP:
         :return: None
         """
         self.projection_mat = mat
-        EAU.append((self._update_uniforms,))
+        EAU.append((self._update_projection_mat,))
+
+    def _update_projection_mat(self):
+        self.shader_program.uniform("projection", soup3D.ARRAY_MATRIX_VEC4, 1, GL_FALSE,
+                                    glm.value_ptr(self.projection_mat))
+        self.shader_program.update()
 
     def _update_uniforms(self):
         """更新着色器的uniform变量"""
