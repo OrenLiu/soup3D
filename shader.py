@@ -753,6 +753,14 @@ class AutoSP:
                                     glm.value_ptr(self.projection_mat))
         self.shader_program.update()
 
+    def set_light(self, light):
+        """
+        设置光照，在添加、减少光照时自动调用
+        :param light: 光照列队
+        :return: None
+        """
+        ...
+
     def _update_uniforms(self):
         """更新着色器的uniform变量"""
         # 修复：正确传递矩阵数据

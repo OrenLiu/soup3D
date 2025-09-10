@@ -4,8 +4,9 @@
 """
 from OpenGL.GL import *
 from OpenGL.GLU import *
-
 from math import *
+
+import soup3D
 
 
 __all__ : list[str] = [
@@ -55,6 +56,7 @@ class Cone:
         self.angle = angle
 
         light_queue[id(self)] = self
+        set_surface_light()
 
     def gen_light_id(self):
         self.light_id = light_list.pop(0)
@@ -102,6 +104,7 @@ class Cone:
         :return: None
         """
         self.place = (x, y, z)
+        set_surface_light()
 
     def turn(self, yaw : float, pitch : float, roll : float) -> None:
         """
@@ -112,6 +115,7 @@ class Cone:
         :return: None
         """
         self.toward = (yaw, pitch, roll)
+        set_surface_light()
 
     def dye(self, r : float, g : float, b : float) -> None:
         """
@@ -122,6 +126,7 @@ class Cone:
         :return: None
         """
         self.color = (r, g, b)
+        set_surface_light()
 
     def turn_off(self) -> None:
         """
@@ -130,6 +135,7 @@ class Cone:
         """
         glDisable(self.light_id)
         self.on = False
+        set_surface_light()
 
     def turn_on(self) -> None:
         """
@@ -140,6 +146,7 @@ class Cone:
             self.gen_light_id()
         glEnable(self.light_id)
         self.on = True
+        set_surface_light()
 
     def destroy(self) -> None:
         """
@@ -150,6 +157,7 @@ class Cone:
         light_list.append(self.light_id)
         self.light_id = None
         del light_queue[id(self)]
+        set_surface_light()
 
 
 class Direct:
@@ -167,6 +175,7 @@ class Direct:
         self.color = color
 
         light_queue[id(self)] = self
+        set_surface_light()
 
     def gen_light_id(self):
         self.light_id = light_list.pop(0)
@@ -200,6 +209,7 @@ class Direct:
         :return: None
         """
         self.toward = (yaw, pitch, roll)
+        set_surface_light()
 
     def dye(self, r : float, g : float, b : float) -> None:
         """
@@ -210,6 +220,7 @@ class Direct:
         :return: None
         """
         self.color = (r, g, b)
+        set_surface_light()
 
     def turn_off(self) -> None:
         """
@@ -218,6 +229,7 @@ class Direct:
         """
         glDisable(self.light_id)
         self.on = False
+        set_surface_light()
 
     def turn_on(self) -> None:
         """
@@ -228,6 +240,7 @@ class Direct:
             self.gen_light_id()
         glEnable(self.light_id)
         self.on = True
+        set_surface_light()
 
     def destroy(self) -> None:
         """
@@ -239,6 +252,14 @@ class Direct:
         self.light_id = None
 
         del light_queue[id(self)]
+        set_surface_light()
+
+
+def set_surface_light():
+    for surface_id in soup3D.shader.set_mat_queue:
+        surface = soup3D.shader.set_mat_queue[surface_id]
+        if hasattr(surface, "set_light"):
+            surface.set_light(light_queue)
 
 
 def ambient(R : float, G : float, B : float) -> None:
