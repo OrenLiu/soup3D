@@ -414,13 +414,19 @@ class ShaderProgram:
 
         self.texture_val = {}
 
+    def use(self):
+        """
+        使用该着色器，会在应用时自动调用
+        :return: None
+        """
+        glUseProgram(self.shader)
 
     def rend(self, mode, vertex):
         """
         创建该着色器的渲染流程
         :param mode:   绘制方式
         :param vertex: 表面中所有的顶点
-        :return:
+        :return: None
         """
         type_map = {
             soup3D.BYTE: GL_BYTE,
@@ -434,6 +440,7 @@ class ShaderProgram:
             soup3D.FLOAT_D: GL_DOUBLE,
             soup3D.FIXED: GL_FIXED
         }
+
         if isinstance(self.vbo_type, str):
             types = [type_map[self.vbo_type] for i in vertex]
         else:
@@ -459,6 +466,9 @@ class ShaderProgram:
         glBindVertexArray(vao)
 
         for i, vert_group in enumerate(vertex):
+            if not vert_group:  # 空顶点组跳过
+                continue
+
             vbo_np = np.array(vert_group, dtype=np.float32)
 
             glBindBuffer(GL_ARRAY_BUFFER, vbo_ids[i])
@@ -472,13 +482,24 @@ class ShaderProgram:
         glBindBuffer(GL_ARRAY_BUFFER, 0)
         glBindVertexArray(vao)
 
-        glUseProgram(self.shader)
-        glBindVertexArray(vao)
+        # 使用第一个顶点组的长度作为顶点数量
+        if vertex and vertex[0]:
+            total_vertices = len(vertex[0])
+        else:
+            total_vertices = 0
 
-        total_vertices = sum(len(group) for group in vertex)
         glDrawArrays(mode, 0, total_vertices)
 
+        # 清理资源
         glBindVertexArray(0)
+        glDeleteVertexArrays(1, [vao])
+        glDeleteBuffers(num_buffers, vbo_ids)
+
+    def unuse(self):
+        """
+        停用该着色器，会在结束应用时自动调用
+        :return: None
+        """
         glUseProgram(0)
 
     def uniform(self, v_name: str, v_type: str, *value):
@@ -491,21 +512,14 @@ class ShaderProgram:
                        (矩阵数量, 是否转置矩阵, 传入的矩阵)
         :return: None
         """
-        # 确保在获取位置前着色器已激活
-        prev_program = glGetIntegerv(GL_CURRENT_PROGRAM)
-        glUseProgram(self.shader)
-
         # 获取统一变量位置
         loc = glGetUniformLocation(self.shader, v_name)
         if loc == -1:
             print(f"Warning: Uniform '{v_name}' not found in shader")
-            glUseProgram(prev_program)  # 恢复之前的程序
             return
-
         self.uniform_loc[v_name] = loc
         self.uniform_val[v_name] = value
         self.uniform_type[v_name] = v_type
-        glUseProgram(prev_program)  # 恢复之前的程序
         EAU.append((self.update, ))
 
     def uniform_tex(self, v_name: str, texture: "Img", texture_unit: int = 0):
@@ -518,18 +532,15 @@ class ShaderProgram:
         """
         # 获取统一变量位置
         prev_program = glGetIntegerv(GL_CURRENT_PROGRAM)
-        glUseProgram(self.shader)
         loc = glGetUniformLocation(self.shader, v_name)
         if loc == -1:
             print(f"Warning: Uniform '{v_name}' not found in shader")
-            glUseProgram(prev_program)  # 恢复之前的程序
             return
 
         # 记录纹理信息
         self.uniform_loc[v_name] = loc
         self.texture_val[v_name] = (texture, texture_unit)
         self.uniform_type[v_name] = "texture"
-        glUseProgram(prev_program)  # 恢复之前的程序
         EAU.append((self.update, ))
 
         # 处理纹理类型的uniform
@@ -619,11 +630,24 @@ class AutoSP:
         self.smoothness = smoothness
         self.emission = emission
 
-        # 创建着色器程序
+        # 生成着色器程序
+        self.shader_program = self._create_shader_program()
+
+        # 存储矩阵
+        self.model_mat = glm.mat4(1.0)
+        self.view_mat = glm.mat4(1.0)
+        self.projection_mat = glm.mat4(1.0)
+
+        # 注册到矩阵更新队列
+        set_mat_queue[id(self)] = self
+        EAU.append((self._update_uniforms,))
+
+    def _create_shader_program(self) -> ShaderProgram:
+        """根据参数创建着色器程序"""
         vertex_shader = """
         #version 330 core
-        layout (location = 0) in vec3 aPos;
-        layout (location = 1) in vec2 aTexCoord;
+        layout(location = 0) in vec3 aPos;
+        layout(location = 1) in vec2 aTexCoord;
 
         out vec2 TexCoord;
 
@@ -638,32 +662,56 @@ class AutoSP:
         }
         """
 
+        # 修复片段着色器：只使用必要的uniform变量
         fragment_shader = """
         #version 330 core
         in vec2 TexCoord;
         out vec4 FragColor;
 
         uniform sampler2D baseColor;
+        uniform vec3 defaultNormal;
+        uniform float defaultEmission;
 
         void main()
         {
-            FragColor = texture(baseColor, TexCoord);
+            // 基础颜色
+            vec4 base = texture(baseColor, TexCoord);
+
+            // 简化光照计算 - 确保基础颜色可见
+            vec3 lightDir = normalize(vec3(0.5, 0.5, -1.0));
+            vec3 normal = normalize(defaultNormal);
+            float diff = max(dot(normal, lightDir), 0.2);  // 添加环境光
+
+            // 最终颜色 = 基础颜色 * 光照 + 自发光
+            vec3 result = base.rgb * diff + base.rgb * defaultEmission;
+            FragColor = vec4(result, base.a);
         }
         """
 
         # 创建着色器程序
-        self.shader_program = ShaderProgram(vertex_shader, fragment_shader, ["float", "float"])
+        shader_program = ShaderProgram(
+            vertex_shader,
+            fragment_shader,
+            vbo_type=[soup3D.FLOAT, soup3D.FLOAT]  # 位置和纹理坐标
+        )
 
         # 设置纹理
-        self.shader_program.uniform_tex("baseColor", self.base_color)
+        shader_program.uniform_tex("baseColor", self.base_color, 0)
 
-        # 初始化矩阵
-        self.model_mat = glm.mat4(1.0)
-        self.view_mat = glm.mat4(1.0)
-        self.projection_mat = glm.mat4(1.0)
+        # 设置法线贴图
+        if isinstance(self.normal, (list, tuple)):
+            shader_program.uniform("defaultNormal", soup3D.FLOAT_VEC3, *self.normal)
+        else:
+            # 使用默认法线 (0,0,1)
+            shader_program.uniform("defaultNormal", soup3D.FLOAT_VEC3, 0.0, 0.0, 1.0)
 
-        # 注册到矩阵更新队列
-        set_mat_queue[id(self)] = self
+        # 设置自发光 - 只在着色器中声明时才设置
+        if isinstance(self.emission, (float, int)):
+            shader_program.uniform("defaultEmission", soup3D.FLOAT_VEC1, float(self.emission))
+        else:
+            shader_program.uniform("defaultEmission", soup3D.FLOAT_VEC1, 0.0)
+
+        return shader_program
 
     def set_model_mat(self, mat: glm.mat4):
         """
@@ -672,7 +720,7 @@ class AutoSP:
         :return: None
         """
         self.model_mat = mat
-        self._update_matrices()
+        EAU.append((self._update_uniforms,))
 
     def set_view_mat(self, mat: glm.mat4):
         """
@@ -681,7 +729,7 @@ class AutoSP:
         :return: None
         """
         self.view_mat = mat
-        self._update_matrices()
+        EAU.append((self._update_uniforms,))
 
     def set_projection_mat(self, mat: glm.mat4):
         """
@@ -690,19 +738,22 @@ class AutoSP:
         :return: None
         """
         self.projection_mat = mat
-        self._update_matrices()
+        EAU.append((self._update_uniforms,))
 
-    def _update_matrices(self):
-        """更新所有矩阵到着色器"""
-        # 将glm矩阵转换为列表
-        model_list = [self.model_mat[i][j] for i in range(4) for j in range(4)]
-        view_list = [self.view_mat[i][j] for i in range(4) for j in range(4)]
-        projection_list = [self.projection_mat[i][j] for i in range(4) for j in range(4)]
+    def _update_uniforms(self):
+        """更新着色器的uniform变量"""
+        # 修复：正确传递矩阵数据
+        self.shader_program.uniform("model", soup3D.ARRAY_MATRIX_VEC4, 1, GL_FALSE, glm.value_ptr(self.model_mat))
+        self.shader_program.uniform("view", soup3D.ARRAY_MATRIX_VEC4, 1, GL_FALSE, glm.value_ptr(self.view_mat))
+        self.shader_program.uniform("projection", soup3D.ARRAY_MATRIX_VEC4, 1, GL_FALSE, glm.value_ptr(self.projection_mat))
+        self.shader_program.update()
 
-        # 更新着色器中的矩阵
-        self.shader_program.uniform("model", soup3D.ARRAY_MATRIX_VEC4, 1, GL_FALSE, model_list)
-        self.shader_program.uniform("view", soup3D.ARRAY_MATRIX_VEC4, 1, GL_FALSE, view_list)
-        self.shader_program.uniform("projection", soup3D.ARRAY_MATRIX_VEC4, 1, GL_FALSE, projection_list)
+    def use(self):
+        """
+        使用该着色器，会在应用时自动调用
+        :return: None
+        """
+        self.shader_program.use()
 
     def rend(self, mode, vertex):
         """
@@ -711,33 +762,54 @@ class AutoSP:
         :param vertex: 表面中所有的顶点
         :return: None
         """
-        # 将顶点数据转换为两个VBO
+        # 将顶点数据拆分为位置和纹理坐标
         positions = []
         tex_coords = []
 
+        # 修复：确保顶点数据格式正确
         for v in vertex:
-            if len(v) == 5:  # (x, y, z, u, v)
-                positions.append((v[0], v[1], v[2]))
-                tex_coords.append((v[3], v[4]))
-            else:  # 如果没有纹理坐标，使用默认值
-                positions.append((v[0], v[1], v[2]))
+            # 确保顶点至少有3个元素（位置）
+            if len(v) >= 3:
+                positions.append(v[0:3])
+            else:
+                # 如果位置数据不足，填充默认值
+                positions.append((0.0, 0.0, 0.0))
+
+            # 处理纹理坐标
+            if len(v) >= 5:
+                # 修复：翻转纹理坐标的Y轴
+                tex_coords.append((v[3], 1.0 - v[4]))
+            else:
                 tex_coords.append((0.0, 0.0))
 
-        # 调用着色器程序的渲染方法
+        # 确保位置和纹理坐标数量一致
+        if len(positions) != len(tex_coords):
+            # 如果数量不一致，取最小长度
+            min_len = min(len(positions), len(tex_coords))
+            positions = positions[:min_len]
+            tex_coords = tex_coords[:min_len]
+
+        # 渲染
         self.shader_program.rend(mode, [positions, tex_coords])
+
+    def unuse(self):
+        """
+        停用该着色器，会在结束应用时自动调用
+        :return: None
+        """
+        self.shader_program.unuse()
 
     def deep_del(self):
         """
         深度清理着色器，清理该着色器本身及所有该着色器用到的元素。在确定不再使用该着色器时可使用该方法释放内存。
         :return: None
         """
-        # 从矩阵更新队列中移除
+        # 从全局队列中移除
         if id(self) in set_mat_queue:
             del set_mat_queue[id(self)]
 
         # 清理着色器程序
-        if hasattr(self, 'shader_program'):
-            self.shader_program.deep_del()
+        self.shader_program.deep_del()
 
 
 Img = Texture | MixChannel

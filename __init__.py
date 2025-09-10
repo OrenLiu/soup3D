@@ -79,22 +79,36 @@ class Model:
         self.width, self.height, self.length = 1, 1, 1
         self.faces = list(face)
 
-        self.list_id = glGenLists(1)
-
-        # 创建显示列表
-        self.surfaces = {}
-        glNewList(self.list_id, GL_COMPILE)
+        # 将表面按照表面着色器分类
+        self.face_groups = {}
         for face in self.faces:
             surface = face.surface
-            if id(surface) not in self.surfaces:
-                self.surfaces[id(surface)] = surface
+            if id(surface) not in self.face_groups:
+                self.face_groups[id(surface)] = []
+            self.face_groups[id(surface)].append(face)
             if hasattr(surface, "set_model_mat"):
                 surface.set_model_mat(self.get_model_mat())
             if hasattr(surface, "set_projection_mat"):
                 surface.set_projection_mat(get_projection_mat())
             if hasattr(surface, "set_view_mat"):
                 surface.set_view_mat(soup3D.camera.get_view_mat())
-            surface.rend(face.mode, face.vertex)
+
+        self.list_id = glGenLists(1)
+
+        # 创建显示列表
+        self.surfaces = {}
+        glNewList(self.list_id, GL_COMPILE)
+        for surface_id in self.face_groups:
+            faces = self.face_groups[surface_id]
+            for i, face in enumerate(faces):
+                surface = face.surface
+                if id(surface) not in self.surfaces:
+                    self.surfaces[id(surface)] = surface
+                if i == 0 and hasattr(surface, "use"):
+                    surface.use()
+                surface.rend(face.mode, face.vertex)
+                if i == len(faces)-1 and hasattr(surface, "unuse"):
+                    surface.unuse()
 
         glEndList()
 
