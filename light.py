@@ -59,11 +59,18 @@ class Cone:
         set_surface_light()
 
     def gen_light_id(self):
+        """
+        创建并应用光源id
+        :return: 光源id
+        """
         self.light_id = light_list.pop(0)
         return self.light_id
 
     def display(self) -> None:
-        """更新光源参数到OpenGL"""
+        """
+        更新光源参数到OpenGL
+        :return: None
+        """
         # 位置和方向计算
         direction = self._calc_direction()
 
@@ -178,11 +185,18 @@ class Direct:
         set_surface_light()
 
     def gen_light_id(self):
+        """
+        创建并应用光源id
+        :return: 光源id
+        """
         self.light_id = light_list.pop(0)
         return self.light_id
 
     def display(self) -> None:
-        """更新方向光源参数"""
+        """
+        更新方向光源参数
+        :return:
+        """
         direction = self._calc_direction()
         glLightfv(self.light_id, GL_POSITION, (*direction, 0.0))
         glLightfv(self.light_id, GL_DIFFUSE, (*self.color, 1.0))
@@ -256,6 +270,10 @@ class Direct:
 
 
 def set_surface_light():
+    """
+    为所有需要光源支持的着色器应用光源
+    :return: None
+    """
     for surface_id in soup3D.shader.set_mat_queue:
         surface = soup3D.shader.set_mat_queue[surface_id]
         if hasattr(surface, "set_light"):

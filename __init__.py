@@ -226,7 +226,9 @@ class Model:
 
 
 def _get_channel_value(channel: soup3D.shader.Channel) -> float:
-    """从Channel对象或浮点数获取通道值"""
+    """
+    从Channel对象或浮点数获取通道值
+    """
     if isinstance(channel, soup3D.shader.Channel):
         # 对于纹理通道，我们不再使用平均值，而是使用纹理
         return 0.5  # 返回中间值，实际值将由纹理提供
