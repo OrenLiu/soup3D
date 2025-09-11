@@ -4,6 +4,7 @@
 import PIL.Image
 import numpy as np
 from pyglm import glm
+import math
 
 import soup3D
 from OpenGL.GL import *
@@ -607,7 +608,6 @@ class ShaderProgram:
 class AutoSP:
     def __init__(self,
                  base_color: "Img",
-                 normal: "list | tuple | Img" = (0.5, 0.5, 1),
                  smoothness: "float | int | GrayImg" = 0.0,
                  emission: "float | int | GrayImg" = 0.0):
         """
@@ -617,7 +617,6 @@ class AutoSP:
             ...
         ]
         :param base_color: 主要颜色
-        :param normal:     法线贴图
         :param smoothness: 光滑度，
                            当该参数为数字时，0.0为最粗糙，1.0为最光滑；
                            当该参数为灰度图时，黑色为最粗超，白色为最光滑
@@ -626,7 +625,6 @@ class AutoSP:
                            当该参数为灰度图时，黑色为不发光，白色为完全发光
         """
         self.base_color = base_color
-        self.normal = normal
         self.smoothness = smoothness
         self.emission = emission
 
@@ -637,6 +635,7 @@ class AutoSP:
         self.model_mat = glm.mat4(1.0)
         self.view_mat = glm.mat4(1.0)
         self.projection_mat = glm.mat4(1.0)
+        self.lights = {}  # 存储光源信息
 
         # 注册到矩阵更新队列
         set_mat_queue[id(self)] = self
@@ -648,8 +647,11 @@ class AutoSP:
         #version 330 core
         layout(location = 0) in vec3 aPos;
         layout(location = 1) in vec2 aTexCoord;
+        layout(location = 2) in vec3 aNormal;  // 添加法线输入
 
         out vec2 TexCoord;
+        out vec3 FragPos;
+        out vec3 Normal;
 
         uniform mat4 model;
         uniform mat4 view;
@@ -657,33 +659,115 @@ class AutoSP:
 
         void main()
         {
-            gl_Position = projection * view * model * vec4(aPos, 1.0);
+            FragPos = vec3(model * vec4(aPos, 1.0));
+            // 法线变换使用模型矩阵的逆转置矩阵
+            mat3 normalMatrix = transpose(inverse(mat3(model)));
+            Normal = normalMatrix * aNormal;
+
+            gl_Position = projection * view * vec4(FragPos, 1.0);
             TexCoord = vec2(aTexCoord.x, 1-aTexCoord.y);
         }
         """
 
-        # 修复片段着色器：只使用必要的uniform变量
         fragment_shader = """
         #version 330 core
         in vec2 TexCoord;
+        in vec3 FragPos;
+        in vec3 Normal;
         out vec4 FragColor;
 
+        // 材质属性
         uniform sampler2D baseColor;
-        uniform vec3 defaultNormal;
-        uniform float defaultEmission;
+        uniform sampler2D normalMap;  // 法线贴图
+        uniform float emission;
+        uniform float smoothness;
+
+        // 光照属性
+        struct Light {
+            vec3 position;
+            vec3 direction;
+            vec3 color;
+            float attenuation;
+            float angle; // 锥角（弧度）
+            float cosAngle; // 锥角的余弦值
+            int type; // 0 = point (spotlight), 1 = directional
+        };
+
+        uniform Light lights[8]; // 支持最多8个光源
+        uniform int lightCount;
+        uniform vec3 ambientLight;
 
         void main()
         {
             // 基础颜色
             vec4 base = texture(baseColor, TexCoord);
+            if (base.a < 0.1) discard;  // 透明度低于0.1时丢弃
 
-            // 简化光照计算 - 确保基础颜色可见
-            vec3 lightDir = normalize(vec3(0.5, 0.5, -1.0));
-            vec3 normal = normalize(defaultNormal);
-            float diff = max(dot(normal, lightDir), 0.2);  // 添加环境光
+            // 法线处理 - 首先使用顶点法线
+            vec3 norm = normalize(Normal);
 
-            // 最终颜色 = 基础颜色 * 光照 + 自发光
-            vec3 result = base.rgb * diff + base.rgb * defaultEmission;
+            // 如果有法线贴图，使用法线贴图修改法线
+            #ifdef HAS_NORMAL_MAP
+            vec3 normalMapValue = texture(normalMap, TexCoord).rgb;
+            normalMapValue = normalMapValue * 2.0 - 1.0;  // 从[0,1]映射到[-1,1]
+            norm = normalize(norm + normalMapValue);
+            #endif
+
+            // 环境光贡献
+            vec3 ambient = ambientLight * base.rgb;
+
+            // 漫反射贡献
+            vec3 diffuse = vec3(0.0);
+
+            // 镜面反射贡献
+            vec3 specular = vec3(0.0);
+
+            // 遍历所有光源
+            for (int i = 0; i < lightCount; i++) {
+                vec3 lightDir;
+                float attenuation = 1.0;
+                float spotFactor = 1.0; // 聚光灯因子
+
+                if (lights[i].type == 0) { // 点光源（聚光灯）
+                    lightDir = normalize(lights[i].position - FragPos);
+
+                    // 计算衰减
+                    float distance = length(lights[i].position - FragPos);
+                    attenuation = 1.0 / (1.0 + lights[i].attenuation * distance);
+
+                    // 计算聚光灯效果
+                    vec3 spotDir = normalize(-lights[i].direction);
+                    float cosTheta = dot(lightDir, spotDir);
+
+                    // 检查是否在聚光灯锥角内
+                    if (cosTheta > lights[i].cosAngle) {
+                        // 计算聚光灯衰减（边缘平滑过渡）
+                        float epsilon = lights[i].cosAngle - lights[i].cosAngle * 0.9;
+                        spotFactor = clamp((cosTheta - lights[i].cosAngle) / epsilon, 0.0, 1.0);
+                    } else {
+                        spotFactor = 0.0;
+                    }
+
+                    attenuation *= spotFactor;
+                } else { // 方向光
+                    lightDir = normalize(lights[i].direction);
+                }
+
+                // 漫反射计算
+                float diff = max(dot(norm, lightDir), 0.0);
+                diffuse += lights[i].color * diff * attenuation;
+
+                // 镜面反射计算
+                if (smoothness > 0.0) {
+                    vec3 viewDir = normalize(-FragPos); // 简化：假设相机在原点
+                    vec3 reflectDir = reflect(-lightDir, norm);
+                    float spec = pow(max(dot(viewDir, reflectDir), 0.0), 32.0);
+                    specular += lights[i].color * spec * smoothness * attenuation;
+                }
+            }
+
+            // 最终颜色 = (环境光 + 漫反射 + 镜面反射) * 基础颜色 + 自发光
+            vec3 result = (ambient + diffuse + specular) * base.rgb + base.rgb * emission;
             FragColor = vec4(result, base.a);
         }
         """
@@ -692,24 +776,26 @@ class AutoSP:
         shader_program = ShaderProgram(
             vertex_shader,
             fragment_shader,
-            vbo_type=[soup3D.FLOAT, soup3D.FLOAT]  # 位置和纹理坐标
+            vbo_type=[soup3D.FLOAT, soup3D.FLOAT, soup3D.FLOAT]  # 位置、纹理坐标、法线
         )
 
-        # 设置纹理
+        # 设置基础颜色纹理
         shader_program.uniform_tex("baseColor", self.base_color, 0)
 
-        # 设置法线贴图
-        if isinstance(self.normal, (list, tuple)):
-            shader_program.uniform("defaultNormal", soup3D.FLOAT_VEC3, *self.normal)
-        else:
-            # 使用默认法线 (0,0,1)
-            shader_program.uniform("defaultNormal", soup3D.FLOAT_VEC3, 0.0, 0.0, 1.0)
+        # 添加定义以启用法线贴图处理
+        fragment_shader = "#define HAS_NORMAL_MAP\n" + fragment_shader
 
-        # 设置自发光 - 只在着色器中声明时才设置
+        # 设置自发光
         if isinstance(self.emission, (float, int)):
-            shader_program.uniform("defaultEmission", soup3D.FLOAT_VEC1, float(self.emission))
+            shader_program.uniform("emission", soup3D.FLOAT_VEC1, float(self.emission))
         else:
-            shader_program.uniform("defaultEmission", soup3D.FLOAT_VEC1, 0.0)
+            shader_program.uniform("emission", soup3D.FLOAT_VEC1, 0.0)
+
+        # 设置光滑度
+        if isinstance(self.smoothness, (float, int)):
+            shader_program.uniform("smoothness", soup3D.FLOAT_VEC1, float(self.smoothness))
+        else:
+            shader_program.uniform("smoothness", soup3D.FLOAT_VEC1, 0.0)
 
         return shader_program
 
@@ -724,7 +810,7 @@ class AutoSP:
 
     def _update_model_mat(self):
         self.shader_program.uniform("model", soup3D.ARRAY_MATRIX_VEC4, 1, GL_FALSE, glm.value_ptr(self.model_mat))
-        self.shader_program.update()
+        soup3D.EAU.append([self.shader_program.update])
 
     def set_view_mat(self, mat: glm.mat4):
         """
@@ -737,7 +823,7 @@ class AutoSP:
 
     def _update_view_mat(self):
         self.shader_program.uniform("view", soup3D.ARRAY_MATRIX_VEC4, 1, GL_FALSE, glm.value_ptr(self.view_mat))
-        self.shader_program.update()
+        soup3D.EAU.append([self.shader_program.update])
 
     def set_projection_mat(self, mat: glm.mat4):
         """
@@ -751,23 +837,67 @@ class AutoSP:
     def _update_projection_mat(self):
         self.shader_program.uniform("projection", soup3D.ARRAY_MATRIX_VEC4, 1, GL_FALSE,
                                     glm.value_ptr(self.projection_mat))
-        self.shader_program.update()
+        soup3D.EAU.append([self.shader_program.update])
 
-    def set_light(self, light):
+    def set_light(self, light_queue):
         """
         设置光照，在添加、减少光照时自动调用
-        :param light: 光照列队
+        :param light_queue: 光照列队
         :return: None
         """
-        ...
+        self.lights = light_queue
+        EAU.append((self._update_lights,))
+
+    def _update_lights(self):
+        """更新光源信息到着色器"""
+        ambient = glGetFloatv(GL_LIGHT_MODEL_AMBIENT)[:3]
+        self.shader_program.uniform("ambientLight", soup3D.FLOAT_VEC3, *ambient)
+
+        # 收集有效光源
+        light_count = 0
+        for light_id, light in self.lights.items():
+            if light.on and light_count < 8:
+                if isinstance(light, soup3D.light.Cone):
+                    # 点光源（聚光灯）
+                    direction = light._calc_direction()
+                    # 计算锥角的余弦值
+                    cos_angle = math.cos(math.radians(light.angle / 2))
+
+                    self.shader_program.uniform(f"lights[{light_count}].position", soup3D.FLOAT_VEC3, *light.place)
+                    self.shader_program.uniform(f"lights[{light_count}].direction", soup3D.FLOAT_VEC3, *direction)
+                    self.shader_program.uniform(f"lights[{light_count}].color", soup3D.FLOAT_VEC3, *light.color)
+                    self.shader_program.uniform(f"lights[{light_count}].attenuation", soup3D.FLOAT_VEC1,
+                                                light.attenuation)
+                    self.shader_program.uniform(f"lights[{light_count}].cosAngle", soup3D.FLOAT_VEC1, cos_angle)
+                    self.shader_program.uniform(f"lights[{light_count}].type", soup3D.INT_VEC1, 0)
+                    light_count += 1
+                elif isinstance(light, soup3D.light.Direct):
+                    # 方向光
+                    direction = light._calc_direction()
+                    self.shader_program.uniform(f"lights[{light_count}].position", soup3D.FLOAT_VEC3, 0, 0, 0)
+                    self.shader_program.uniform(f"lights[{light_count}].direction", soup3D.FLOAT_VEC3, *direction)
+                    self.shader_program.uniform(f"lights[{light_count}].color", soup3D.FLOAT_VEC3, *light.color)
+                    self.shader_program.uniform(f"lights[{light_count}].attenuation", soup3D.FLOAT_VEC1, 0.0)
+                    self.shader_program.uniform(f"lights[{light_count}].cosAngle", soup3D.FLOAT_VEC1, 0.0)
+                    self.shader_program.uniform(f"lights[{light_count}].type", soup3D.INT_VEC1, 1)
+                    light_count += 1
+
+        # 设置光源数量
+        self.shader_program.uniform("lightCount", soup3D.INT_VEC1, light_count)
+
+        # 填充剩余光源槽位
+        for i in range(light_count, 8):
+            self.shader_program.uniform(f"lights[{i}].color", soup3D.FLOAT_VEC3, 0.0, 0.0, 0.0)
+
+        soup3D.EAU.append([self.shader_program.update])
 
     def _update_uniforms(self):
         """更新着色器的uniform变量"""
-        # 修复：正确传递矩阵数据
         self.shader_program.uniform("model", soup3D.ARRAY_MATRIX_VEC4, 1, GL_FALSE, glm.value_ptr(self.model_mat))
         self.shader_program.uniform("view", soup3D.ARRAY_MATRIX_VEC4, 1, GL_FALSE, glm.value_ptr(self.view_mat))
-        self.shader_program.uniform("projection", soup3D.ARRAY_MATRIX_VEC4, 1, GL_FALSE, glm.value_ptr(self.projection_mat))
-        self.shader_program.update()
+        self.shader_program.uniform("projection", soup3D.ARRAY_MATRIX_VEC4, 1, GL_FALSE,
+                                    glm.value_ptr(self.projection_mat))
+        soup3D.EAU.append([self.shader_program.update])
 
     def use(self):
         """
@@ -783,35 +913,60 @@ class AutoSP:
         :param vertex: 表面中所有的顶点
         :return: None
         """
-        # 将顶点数据拆分为位置和纹理坐标
+        # 计算面法线（使用前三个顶点）
+        normal = [0.0, 0.0, 1.0]  # 默认法线
+        if len(vertex) >= 3:
+            v0 = vertex[0]
+            v1 = vertex[1]
+            v2 = vertex[2]
+
+            # 确保顶点有足够的数据
+            if len(v0) >= 3 and len(v1) >= 3 and len(v2) >= 3:
+                # 计算两个向量
+                u = [v1[0] - v0[0], v1[1] - v0[1], v1[2] - v0[2]]
+                v = [v2[0] - v0[0], v2[1] - v0[1], v2[2] - v0[2]]
+
+                # 叉积得到法线
+                normal = [
+                    u[1] * v[2] - u[2] * v[1],
+                    u[2] * v[0] - u[0] * v[2],
+                    u[0] * v[1] - u[1] * v[0]
+                ]
+
+                # 归一化
+                length = (normal[0] ** 2 + normal[1] ** 2 + normal[2] ** 2) ** 0.5
+                if length > 0:
+                    normal = [n / length for n in normal]
+
+        # 将顶点数据拆分为位置、纹理坐标和法线
         positions = []
         tex_coords = []
+        normals = []  # 法线数据
 
-        # 修复：确保顶点数据格式正确
         for v in vertex:
-            # 确保顶点至少有3个元素（位置）
+            # 位置数据
             if len(v) >= 3:
                 positions.append(v[0:3])
             else:
-                # 如果位置数据不足，填充默认值
                 positions.append((0.0, 0.0, 0.0))
 
-            # 处理纹理坐标
+            # 纹理坐标
             if len(v) >= 5:
-                # 修复：翻转纹理坐标的Y轴
-                tex_coords.append((v[3], 1.0 - v[4]))
+                tex_coords.append((v[3], 1.0 - v[4]))  # 翻转纹理坐标的Y轴
             else:
                 tex_coords.append((0.0, 0.0))
 
-        # 确保位置和纹理坐标数量一致
-        if len(positions) != len(tex_coords):
-            # 如果数量不一致，取最小长度
-            min_len = min(len(positions), len(tex_coords))
-            positions = positions[:min_len]
-            tex_coords = tex_coords[:min_len]
+            # 法线数据 - 使用计算的面法线
+            normals.append(normal)
+
+        # 确保所有数据长度一致
+        min_len = min(len(positions), len(tex_coords), len(normals))
+        positions = positions[:min_len]
+        tex_coords = tex_coords[:min_len]
+        normals = normals[:min_len]
 
         # 渲染
-        self.shader_program.rend(mode, [positions, tex_coords])
+        self.shader_program.rend(mode, [positions, tex_coords, normals])
 
     def unuse(self):
         """
