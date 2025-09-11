@@ -608,8 +608,8 @@ class ShaderProgram:
 class AutoSP:
     def __init__(self,
                  base_color: "Img",
-                 smoothness: "float | int | GrayImg" = 0.0,
-                 emission: "float | int | GrayImg" = 0.0):
+                 normal: "list | tuple | Img" = (0.5, 0.5, 1),
+                 emission: "list | tuple | Img" = (0, 0, 0)):
         """
         更具用户提供的参数自动生成ShaderProgram类，并在需要时自动调用ShaderProgram的类成员，作为表面着色器渲染时使用的顶点列表格式：
         [
@@ -617,15 +617,13 @@ class AutoSP:
             ...
         ]
         :param base_color: 主要颜色
-        :param smoothness: 光滑度，
-                           当该参数为数字时，0.0为最粗糙，1.0为最光滑；
-                           当该参数为灰度图时，黑色为最粗超，白色为最光滑
+        :param normal:     自定义法线或法线贴图
         :param emission:   自发光度，
                            当该参数为数字时，0.0为不发光，1.0为完全发光；
                            当该参数为灰度图时，黑色为不发光，白色为完全发光
         """
         self.base_color = base_color
-        self.smoothness = smoothness
+        self.normal = normal
         self.emission = emission
 
         # 生成着色器程序
@@ -675,70 +673,62 @@ class AutoSP:
         in vec3 FragPos;
         in vec3 Normal;
         out vec4 FragColor;
-
+        
         // 材质属性
         uniform sampler2D baseColor;
-        uniform sampler2D normalMap;  // 法线贴图
-        uniform float emission;
-        uniform float smoothness;
-
+        uniform sampler2D normal;
+        uniform sampler2D emission;
+        
         // 光照属性
         struct Light {
             vec3 position;
             vec3 direction;
             vec3 color;
             float attenuation;
-            float angle; // 锥角（弧度）
-            float cosAngle; // 锥角的余弦值
-            int type; // 0 = point (spotlight), 1 = directional
+            float angle;
+            float cosAngle;
+            int type;
         };
-
-        uniform Light lights[8]; // 支持最多8个光源
+        
+        uniform Light lights[8];
         uniform int lightCount;
         uniform vec3 ambientLight;
-
+        
         void main()
         {
             // 基础颜色
             vec4 base = texture(baseColor, TexCoord);
-            if (base.a < 0.1) discard;  // 透明度低于0.1时丢弃
-
-            // 法线处理 - 首先使用顶点法线
-            vec3 norm = normalize(Normal);
-
-            // 如果有法线贴图，使用法线贴图修改法线
-            #ifdef HAS_NORMAL_MAP
-            vec3 normalMapValue = texture(normalMap, TexCoord).rgb;
-            normalMapValue = normalMapValue * 2.0 - 1.0;  // 从[0,1]映射到[-1,1]
-            norm = normalize(norm + normalMapValue);
-            #endif
-
+        
+            // 法线处理
+            vec4 norm_tex = texture(normal, TexCoord);
+            vec3 norm = normalize(Normal) + vec3(norm_tex.rg*2-1, norm_tex.b-1);
+        
+            // 自发光
+            vec4 emi = texture(emission, TexCoord);
+        
             // 环境光贡献
             vec3 ambient = ambientLight * base.rgb;
-
+        
             // 漫反射贡献
             vec3 diffuse = vec3(0.0);
-
-            // 镜面反射贡献
-            vec3 specular = vec3(0.0);
-
+        
             // 遍历所有光源
             for (int i = 0; i < lightCount; i++) {
                 vec3 lightDir;
                 float attenuation = 1.0;
-                float spotFactor = 1.0; // 聚光灯因子
-
-                if (lights[i].type == 0) { // 点光源（聚光灯）
+                float spotFactor = 1.0;
+        
+                if (lights[i].type == 0) {
                     lightDir = normalize(lights[i].position - FragPos);
-
+        
                     // 计算衰减
                     float distance = length(lights[i].position - FragPos);
                     attenuation = 1.0 / (1.0 + lights[i].attenuation * distance);
-
+        
                     // 计算聚光灯效果
                     vec3 spotDir = normalize(-lights[i].direction);
                     float cosTheta = dot(lightDir, spotDir);
-
+        
                     // 检查是否在聚光灯锥角内
                     if (cosTheta > lights[i].cosAngle) {
                         // 计算聚光灯衰减（边缘平滑过渡）
@@ -747,27 +737,18 @@ class AutoSP:
                     } else {
                         spotFactor = 0.0;
                     }
-
                     attenuation *= spotFactor;
                 } else { // 方向光
                     lightDir = normalize(lights[i].direction);
                 }
-
+        
                 // 漫反射计算
                 float diff = max(dot(norm, lightDir), 0.0);
                 diffuse += lights[i].color * diff * attenuation;
-
-                // 镜面反射计算
-                if (smoothness > 0.0) {
-                    vec3 viewDir = normalize(-FragPos); // 简化：假设相机在原点
-                    vec3 reflectDir = reflect(-lightDir, norm);
-                    float spec = pow(max(dot(viewDir, reflectDir), 0.0), 32.0);
-                    specular += lights[i].color * spec * smoothness * attenuation;
-                }
             }
-
-            // 最终颜色 = (环境光 + 漫反射 + 镜面反射) * 基础颜色 + 自发光
-            vec3 result = (ambient + diffuse + specular) * base.rgb + base.rgb * emission;
+        
+            // 最终颜色 = (环境光 + 漫反射) * 基础颜色 + 自发光
+            vec3 result = (ambient + diffuse) * base.rgb + base.rgb * emi.rgb;
             FragColor = vec4(result, base.a);
         }
         """
@@ -782,20 +763,25 @@ class AutoSP:
         # 设置基础颜色纹理
         shader_program.uniform_tex("baseColor", self.base_color, 0)
 
-        # 添加定义以启用法线贴图处理
-        fragment_shader = "#define HAS_NORMAL_MAP\n" + fragment_shader
+        # 设置法线
+        if isinstance(self.normal, (list | tuple)):
+            shader_program.uniform_tex("normal",
+                                       MixChannel((1, 1), *self.normal),
+                                       1)
+        else:
+            shader_program.uniform_tex("normal",
+                                       self.normal,
+                                       1)
 
         # 设置自发光
-        if isinstance(self.emission, (float, int)):
-            shader_program.uniform("emission", soup3D.FLOAT_VEC1, float(self.emission))
+        if isinstance(self.emission, (list | tuple)):
+            shader_program.uniform_tex("emission",
+                                       MixChannel((1, 1), *self.emission),
+                                       3)
         else:
-            shader_program.uniform("emission", soup3D.FLOAT_VEC1, 0.0)
-
-        # 设置光滑度
-        if isinstance(self.smoothness, (float, int)):
-            shader_program.uniform("smoothness", soup3D.FLOAT_VEC1, float(self.smoothness))
-        else:
-            shader_program.uniform("smoothness", soup3D.FLOAT_VEC1, 0.0)
+            shader_program.uniform_tex("emission",
+                                       self.emission,
+                                       3)
 
         return shader_program
 

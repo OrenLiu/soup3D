@@ -426,7 +426,8 @@ def open_obj(obj: str, mtl: str = None) -> Model:
 
         R, G, B, A = 1.0, 1.0, 1.0, 1.0
         width, height = 1, 1
-        emission = 0
+        emission = 0, 0, 0
+        bump_texture = None  # 新增：用于存储法线贴图
         for row in command_lines:
             command = row.split("#")[0]
             args = command.split()
@@ -435,20 +436,21 @@ def open_obj(obj: str, mtl: str = None) -> Model:
                     if now_mtl is not None:
                         mtl_dict[now_mtl] = soup3D.shader.AutoSP(
                             soup3D.shader.MixChannel((width, height), R, G, B, A),
-                            emission=emission
+                            emission=emission,
+                            normal=bump_texture if bump_texture else (0.5, 0.5, 1)  # 新增：添加法线贴图
                         )
 
                         R, G, B, A = 1.0, 1.0, 1.0, 1.0
                         width, height = 1, 1
                         emission = 0
+                        bump_texture = None  # 重置法线贴图
                     now_mtl = args[1]
                 if args[0] == "Kd":
                     R, G, B = float(args[1]), float(args[2]), float(args[3])
                 if args[0] == "d":
                     A = float(args[1])
                 if args[0] == "Ke":
-                    # 使用RGB中的最大值作为自发光强度
-                    emission = max(float(args[1]), float(args[2]), float(args[3]))
+                    emission = (float(args[1]), float(args[2]), float(args[3]))
                 if args[0] == "map_Kd":
                     # 处理带空格的纹理路径：获取命令后的全部字符串作为路径
                     tex_path = command.split()[1:]  # 获取文件名部分(可能包含空格)
@@ -475,19 +477,50 @@ def open_obj(obj: str, mtl: str = None) -> Model:
                     tex_path = os.path.join(base_dir, tex_path)
                     texture = soup3D.shader.Texture(Image.open(tex_path))
                     A = soup3D.shader.Channel(texture, 3)
+                if args[0] == "map_Ke":
+                    tex_path = command.split()[1:]
+                    tex_path = " ".join(tex_path)
+                    if tex_path.startswith('"') and tex_path.endswith('"'):
+                        tex_path = tex_path[1:-1]
+                    base_dir = os.path.dirname(mtl)
+                    tex_path = os.path.join(base_dir, tex_path)
+                    emission = soup3D.shader.Texture(Image.open(tex_path))
+                # 新增：处理map_Bump命令
+                if args[0] == "map_Bump":
+                    # 查找纹理路径 - 可能是最后一个参数或带引号的参数
+                    tex_path = ""
+                    if '"' in command:
+                        # 处理带引号的路径
+                        start = command.find('"')
+                        end = command.rfind('"')
+                        if start != -1 and end != -1 and start != end:
+                            tex_path = command[start + 1:end]
+                    else:
+                        # 没有引号，取最后一个参数
+                        tex_path = args[-1]
+
+                    if tex_path:
+                        base_dir = os.path.dirname(mtl)
+                        full_path = os.path.join(base_dir, tex_path)
+                        try:
+                            bump_texture = soup3D.shader.Texture(Image.open(full_path))
+                        except Exception as e:
+                            print(f"Warning: Failed to load bump texture: {full_path}, {e}")
             line_count += 1
 
         # 添加最后一个材质
         if now_mtl is not None:
             mtl_dict[now_mtl] = soup3D.shader.AutoSP(
                 soup3D.shader.MixChannel((width, height), R, G, B, A),
-                emission=emission
+                emission=emission,
+                normal=bump_texture if bump_texture else (0.5, 0.5, 1)  # 新增：添加法线贴图
             )
 
     # 创建默认材质（如果未提供MTL或材质未定义时使用）
     default_material = soup3D.shader.AutoSP(
         soup3D.shader.MixChannel((1, 1), 1.0, 1.0, 1.0, 1.0),
-        emission=0.0
+        emission=(0, 0, 0),
+        normal=(0.5, 0.5, 1)  # 新增：添加默认法线
     )
 
     # 处理obj文件
