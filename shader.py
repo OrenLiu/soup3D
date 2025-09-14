@@ -575,7 +575,8 @@ class ShaderProgram:
         }
 
         prev_program = glGetIntegerv(GL_CURRENT_PROGRAM)
-        glUseProgram(self.shader)
+        if prev_program != self.shader:
+            glUseProgram(self.shader)
 
         for key in self.uniform_loc:
             loc = self.uniform_loc.get(key, -1)
@@ -595,7 +596,7 @@ class ShaderProgram:
                 if v_type in type_map:
                     type_map[v_type](loc, *value)
 
-        glUseProgram(prev_program)  # 恢复之前的程序
+        self.uniform_loc = {}
 
     def deep_del(self):
         """
