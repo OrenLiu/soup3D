@@ -365,10 +365,12 @@ def update():
 
     # 执行更新执行列队
     EAU += soup3D.shader.EAU
+    EAU += soup3D.light.EAU
     for args in EAU:
         args[0](*args[1:])
     EAU = []
     shader.EAU = []
+    light.EAU = []
 
     # 将所有固定渲染场景加入全局渲染列队
     for shape_id in stable_shapes:

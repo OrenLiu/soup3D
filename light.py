@@ -13,6 +13,9 @@ __all__ : list[str] = [
     "init", "Cone", "Direct"
 ]
 
+dirty = False
+EAU = []
+
 light_list : list[int] = [GL_LIGHT0, GL_LIGHT1, GL_LIGHT2, GL_LIGHT3, GL_LIGHT4, GL_LIGHT5, GL_LIGHT6, GL_LIGHT7]
 light_queue = {}
 
@@ -47,6 +50,8 @@ class Cone:
         :param attenuation:  线性衰减率
         :param angle:        锥形光线锥角
         """
+        global dirty
+
         self.light_id = None
         self.on = False
         self.place = place
@@ -56,7 +61,9 @@ class Cone:
         self.angle = angle
 
         light_queue[id(self)] = self
-        set_surface_light()
+        if not dirty:
+            dirty = True
+            EAU.append((set_surface_light, ))
 
     def gen_light_id(self):
         """
@@ -110,8 +117,12 @@ class Cone:
         :param z: 光源z坐标
         :return: None
         """
+        global dirty
+
         self.place = (x, y, z)
-        set_surface_light()
+        if not dirty:
+            dirty = True
+            EAU.append((set_surface_light, ))
 
     def turn(self, yaw : float, pitch : float, roll : float) -> None:
         """
@@ -121,8 +132,12 @@ class Cone:
         :param roll:  光线横滚角度
         :return: None
         """
+        global dirty
+
         self.toward = (yaw, pitch, roll)
-        set_surface_light()
+        if not dirty:
+            dirty = True
+            EAU.append((set_surface_light, ))
 
     def dye(self, r : float, g : float, b : float) -> None:
         """
@@ -132,39 +147,55 @@ class Cone:
         :param b: 蓝色
         :return: None
         """
+        global dirty
+
         self.color = (r, g, b)
-        set_surface_light()
+        if not dirty:
+            dirty = True
+            EAU.append((set_surface_light, ))
 
     def turn_off(self) -> None:
         """
         熄灭光源
         :return: None
         """
+        global dirty
+
         glDisable(self.light_id)
         self.on = False
-        set_surface_light()
+        if not dirty:
+            dirty = True
+            EAU.append((set_surface_light, ))
 
     def turn_on(self) -> None:
         """
         点亮光源
         :return: None
         """
+        global dirty
+
         if self.light_id is None and len(light_list) > 0:
             self.gen_light_id()
         glEnable(self.light_id)
         self.on = True
-        set_surface_light()
+        if not dirty:
+            dirty = True
+            EAU.append((set_surface_light, ))
 
     def destroy(self) -> None:
         """
         摧毁光源，并归还光源编号
         :return: None
         """
+        global dirty
+
         glDisable(self.light_id)
         light_list.append(self.light_id)
         self.light_id = None
         del light_queue[id(self)]
-        set_surface_light()
+        if not dirty:
+            dirty = True
+            EAU.append((set_surface_light, ))
 
 
 class Direct:
@@ -176,13 +207,17 @@ class Direct:
         :param toward: 光源朝向(yaw, pitch, roll)
         :param color:  光源颜色(red, green, blue)
         """
+        global dirty
+
         self.light_id = None
         self.on = False
         self.toward = toward
         self.color = color
 
         light_queue[id(self)] = self
-        set_surface_light()
+        if not dirty:
+            dirty = True
+            EAU.append((set_surface_light, ))
 
     def gen_light_id(self):
         """
@@ -222,8 +257,12 @@ class Direct:
         :param roll:  光线横滚角度
         :return: None
         """
+        global dirty
+
         self.toward = (yaw, pitch, roll)
-        set_surface_light()
+        if not dirty:
+            dirty = True
+            EAU.append((set_surface_light, ))
 
     def dye(self, r : float, g : float, b : float) -> None:
         """
@@ -233,40 +272,56 @@ class Direct:
         :param b: 蓝色
         :return: None
         """
+        global dirty
+
         self.color = (r, g, b)
-        set_surface_light()
+        if not dirty:
+            dirty = True
+            EAU.append((set_surface_light, ))
 
     def turn_off(self) -> None:
         """
         熄灭光源
         :return: None
         """
+        global dirty
+
         glDisable(self.light_id)
         self.on = False
-        set_surface_light()
+        if not dirty:
+            dirty = True
+            EAU.append((set_surface_light, ))
 
     def turn_on(self) -> None:
         """
         点亮光源
         :return: None
         """
+        global dirty
+
         if self.light_id is None and len(light_list) > 0:
             self.gen_light_id()
         glEnable(self.light_id)
         self.on = True
-        set_surface_light()
+        if not dirty:
+            dirty = True
+            EAU.append((set_surface_light, ))
 
     def destroy(self) -> None:
         """
         摧毁光源，并归还光源编号
         :return: None
         """
+        global dirty
+
         glDisable(self.light_id)
         light_list.append(self.light_id)
         self.light_id = None
 
         del light_queue[id(self)]
-        set_surface_light()
+        if not dirty:
+            dirty = True
+            EAU.append((set_surface_light, ))
 
 
 def set_surface_light():
@@ -274,6 +329,9 @@ def set_surface_light():
     为所有需要光源支持的着色器应用光源
     :return: None
     """
+    global dirty
+
+    dirty = False
     for surface_id in soup3D.shader.set_mat_queue:
         surface = soup3D.shader.set_mat_queue[surface_id]
         if hasattr(surface, "set_light"):

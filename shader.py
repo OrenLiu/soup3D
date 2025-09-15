@@ -634,7 +634,6 @@ class AutoSP:
         self.model_mat = glm.mat4(1.0)
         self.view_mat = glm.mat4(1.0)
         self.projection_mat = glm.mat4(1.0)
-        self.lights = {}  # 存储光源信息
 
         # 注册到矩阵更新队列
         set_mat_queue[id(self)] = self
@@ -832,17 +831,12 @@ class AutoSP:
         :param light_queue: 光照列队
         :return: None
         """
-        self.lights = light_queue
-        EAU.append((self._update_lights,))
-
-    def _update_lights(self):
-        """更新光源信息到着色器"""
         ambient = glGetFloatv(GL_LIGHT_MODEL_AMBIENT)[:3]
         self.shader_program.uniform("ambientLight", soup3D.FLOAT_VEC3, *ambient)
 
         # 收集有效光源
         light_count = 0
-        for light_id, light in self.lights.items():
+        for light_id, light in light_queue.items():
             if light.on and light_count < 8:
                 if isinstance(light, soup3D.light.Cone):
                     # 点光源（聚光灯）
