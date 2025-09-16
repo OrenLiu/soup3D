@@ -241,7 +241,7 @@ def _get_channel_value(channel: soup3D.shader.Channel) -> float:
 def init(width: int | float = 1920,
          height: int | float = 1080,
          fov: int | float = 45,
-         bg_color: tuple[float, float, float] = (0.0, 0.0, 0.0),
+         bg_color: tuple[int | float, int | float, int | float] = (0.0, 0.0, 0.0),
          near: int | float = 0.1,
          far: int | float = 1024) -> None:
     """
@@ -299,7 +299,7 @@ def resize(width: int | float, height: int | float) -> None:
             surface.set_projection_mat(get_projection_mat())
 
 
-def background_color(r: float, g: float, b: float) -> None:
+def background_color(r: int | float, g: int | float, b: int | float) -> None:
     """
     设定背景颜色
     :param r: 红色(0.0-1.0)
@@ -379,25 +379,7 @@ def update():
 
     # 渲染所有物体
     for model in render_queue:
-        # 获取位置
-        x, y, z = model.x, model.y, model.z
-        yaw, pitch, roll = model.yaw, model.pitch, model.roll
-        width, height, length = model.width, model.height, model.length
-
-        # 实际渲染
-        glPushMatrix()
-
-        # 应用模型位置
-        glTranslatef(x, y, z)
-        # 应用模型旋转
-        glRotatef(roll, 1, 0, 0)
-        glRotatef(pitch, 0, 0, 1)
-        glRotatef(yaw, 0, 1, 0)
-        # 应用模型缩放
-        glScalef(width, height, length)
-
         glCallList(model.list_id)
-        glPopMatrix()
 
     # 清空渲染队列
     render_queue = []

@@ -3,7 +3,6 @@
 光源处理方法库，可在soup3D空间中添加7个光源
 """
 from OpenGL.GL import *
-from OpenGL.GLU import *
 from math import *
 
 import soup3D
@@ -16,11 +15,10 @@ __all__ : list[str] = [
 dirty = False
 EAU = []
 
-light_list : list[int] = [GL_LIGHT0, GL_LIGHT1, GL_LIGHT2, GL_LIGHT3, GL_LIGHT4, GL_LIGHT5, GL_LIGHT6, GL_LIGHT7]
 light_queue = {}
 
 
-def init(ambientR : float =0, ambientG : float =0, ambientB : float =0):
+def init(ambientR : int | float = 0, ambientG : int | float = 0, ambientB : int | float = 0):
     """
     初始化光源，启用全局光照
     :param ambientR: 红环境光亮度
@@ -38,9 +36,9 @@ def init(ambientR : float =0, ambientG : float =0, ambientB : float =0):
 
 class Cone:
     def __init__(self,
-                 place: tuple[float, float, float],
-                 toward: tuple[float, float, float],
-                 color: tuple[float, float, float],
+                 place: tuple[int | float, int | float, int | float],
+                 toward: tuple[int | float, int | float, int | float],
+                 color: tuple[int | float, int | float, int | float],
                  attenuation: float, angle=180):
         """
         锥形光线，类似灯泡光线
@@ -52,7 +50,6 @@ class Cone:
         """
         global dirty
 
-        self.light_id = None
         self.on = False
         self.place = place
         self.toward = toward
@@ -65,37 +62,7 @@ class Cone:
             dirty = True
             EAU.append((set_surface_light, ))
 
-    def gen_light_id(self):
-        """
-        创建并应用光源id
-        :return: 光源id
-        """
-        self.light_id = light_list.pop(0)
-        return self.light_id
-
-    def display(self) -> None:
-        """
-        更新光源参数到OpenGL
-        :return: None
-        """
-        # 位置和方向计算
-        direction = self._calc_direction()
-
-        glLightfv(self.light_id, GL_POSITION, (*self.place, 1.0))
-        glLightfv(self.light_id, GL_SPOT_DIRECTION, direction)
-
-        # 颜色参数
-        glLightfv(self.light_id, GL_DIFFUSE, (*self.color, 1.0))
-        glLightfv(self.light_id, GL_SPECULAR, (*self.color, 1.0))
-
-        # 聚光灯参数
-        glLightf(self.light_id, GL_SPOT_CUTOFF, self.angle / 2)
-        glLightf(self.light_id, GL_SPOT_EXPONENT, 10.0)
-
-        # 衰减参数
-        glLightf(self.light_id, GL_LINEAR_ATTENUATION, self.attenuation)
-
-    def _calc_direction(self) -> tuple[float, float, float]:
+    def _calc_direction(self) -> tuple[int | float, int | float, int | float]:
         """根据欧拉角计算方向向量"""
         x, y, z = 0, 0, -1  # 初始Z轴负方向
         yaw, pitch, roll = self.toward
@@ -109,7 +76,7 @@ class Cone:
         length = sqrt(x ** 2 + y ** 2 + z ** 2)
         return (x / length, y / length, z / length) if length != 0 else (0, 0, 1)
 
-    def goto(self, x : float, y : float, z : float) -> None:
+    def goto(self, x : int | float, y : int | float, z : int | float) -> None:
         """
         更改光源位置
         :param x: 光源x坐标
@@ -124,7 +91,7 @@ class Cone:
             dirty = True
             EAU.append((set_surface_light, ))
 
-    def turn(self, yaw : float, pitch : float, roll : float) -> None:
+    def turn(self, yaw : int | float, pitch : int | float, roll : int | float) -> None:
         """
         更改光线朝向
         :param yaw:   光线偏移角度
@@ -139,7 +106,7 @@ class Cone:
             dirty = True
             EAU.append((set_surface_light, ))
 
-    def dye(self, r : float, g : float, b : float) -> None:
+    def dye(self, r : int | float, g : int | float, b : int | float) -> None:
         """
         更改光线颜色
         :param r: 红色
@@ -161,7 +128,6 @@ class Cone:
         """
         global dirty
 
-        glDisable(self.light_id)
         self.on = False
         if not dirty:
             dirty = True
@@ -174,9 +140,6 @@ class Cone:
         """
         global dirty
 
-        if self.light_id is None and len(light_list) > 0:
-            self.gen_light_id()
-        glEnable(self.light_id)
         self.on = True
         if not dirty:
             dirty = True
@@ -189,9 +152,6 @@ class Cone:
         """
         global dirty
 
-        glDisable(self.light_id)
-        light_list.append(self.light_id)
-        self.light_id = None
         del light_queue[id(self)]
         if not dirty:
             dirty = True
@@ -200,8 +160,8 @@ class Cone:
 
 class Direct:
     def __init__(self,
-                 toward: tuple[float, float, float],
-                 color: tuple[float, float, float]) -> None:
+                 toward: tuple[int | float, int | float, int | float],
+                 color: tuple[int | float, int | float, int | float]) -> None:
         """
         方向光线，类似太阳光线
         :param toward: 光源朝向(yaw, pitch, roll)
@@ -209,7 +169,6 @@ class Direct:
         """
         global dirty
 
-        self.light_id = None
         self.on = False
         self.toward = toward
         self.color = color
@@ -219,25 +178,7 @@ class Direct:
             dirty = True
             EAU.append((set_surface_light, ))
 
-    def gen_light_id(self):
-        """
-        创建并应用光源id
-        :return: 光源id
-        """
-        self.light_id = light_list.pop(0)
-        return self.light_id
-
-    def display(self) -> None:
-        """
-        更新方向光源参数
-        :return:
-        """
-        direction = self._calc_direction()
-        glLightfv(self.light_id, GL_POSITION, (*direction, 0.0))
-        glLightfv(self.light_id, GL_DIFFUSE, (*self.color, 1.0))
-        glLightfv(self.light_id, GL_SPECULAR, (*self.color, 1.0))
-
-    def _calc_direction(self) -> tuple[float, float, float]:
+    def _calc_direction(self) -> tuple[int | float, int | float, int | float]:
         """计算逆向方向向量"""
         x, y, z = 0, 0, -1  # OpenGL方向光约定方向
         yaw, pitch, roll = self.toward
@@ -249,7 +190,7 @@ class Direct:
         length = sqrt(x ** 2 + y ** 2 + z ** 2)
         return (-x / length, -y / length, -z / length) if length != 0 else (0, 0, 1)
 
-    def turn(self, yaw : float, pitch : float, roll : float) -> None:
+    def turn(self, yaw : int | float, pitch : int | float, roll : int | float) -> None:
         """
         更改光线朝向
         :param yaw:   光线偏移角度
@@ -264,7 +205,7 @@ class Direct:
             dirty = True
             EAU.append((set_surface_light, ))
 
-    def dye(self, r : float, g : float, b : float) -> None:
+    def dye(self, r : int | float, g : int | float, b : int | float) -> None:
         """
         更改光线颜色
         :param r: 红色
@@ -286,7 +227,6 @@ class Direct:
         """
         global dirty
 
-        glDisable(self.light_id)
         self.on = False
         if not dirty:
             dirty = True
@@ -299,9 +239,6 @@ class Direct:
         """
         global dirty
 
-        if self.light_id is None and len(light_list) > 0:
-            self.gen_light_id()
-        glEnable(self.light_id)
         self.on = True
         if not dirty:
             dirty = True
@@ -313,10 +250,6 @@ class Direct:
         :return: None
         """
         global dirty
-
-        glDisable(self.light_id)
-        light_list.append(self.light_id)
-        self.light_id = None
 
         del light_queue[id(self)]
         if not dirty:
@@ -338,7 +271,7 @@ def set_surface_light():
             surface.set_light(light_queue)
 
 
-def ambient(R : float, G : float, B : float) -> None:
+def ambient(R : int | float, G : int | float, B : int | float) -> None:
     """
     更改环境光亮度
     :param R: 红色环境光
@@ -349,7 +282,9 @@ def ambient(R : float, G : float, B : float) -> None:
     glLightModelfv(GL_LIGHT_MODEL_AMBIENT, (R, G, B, 1))
 
 
-def rotated(Xa: float, Ya: float, Xb: float, Yb: float, degree: float) -> tuple[float, float]:
+def rotated(Xa: int | float, Ya: int | float,
+            Xb: int | float, Yb: int | float,
+            degree: int | float) -> tuple[float, float]:
     """
     点A绕点B旋转特定角度后，点A的坐标
     :param Xa:     环绕点(点A)X坐标

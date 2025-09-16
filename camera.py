@@ -16,15 +16,15 @@ __all__ : list[str] = [
     "update",
 ]
 
-X : float = 0.0
-Y : float = 0.0
-Z : float = 0.0
-YAW : float = 0.0
-PITCH : float = 0.0
-ROLL : float = 0.0
+X : int | float = 0.0
+Y : int | float = 0.0
+Z : int | float = 0.0
+YAW : int | float = 0.0
+PITCH : int | float = 0.0
+ROLL : int | float = 0.0
 
 
-def goto(x: float, y: float, z: float) -> None:
+def goto(x: int | float, y: int | float, z: int | float) -> None:
     """
     移动相机位置
     :param x: 相机x坐标位置
@@ -39,7 +39,7 @@ def goto(x: float, y: float, z: float) -> None:
     update()
 
 
-def turn(yaw: float, pitch: float, roll: float) -> None:
+def turn(yaw: int | float, pitch: int | float, roll: int | float) -> None:
     """
     旋转相机
     :param yaw:   相机旋转偏移角
@@ -107,7 +107,7 @@ def get_view_mat() -> glm.mat4x4:
     return glm.lookAt(camera_pos, camera_target, camera_up)
 
 
-def _rotated(Xa : float, Ya : float, Xb : float, Yb : float, degree : float) -> tuple[float, float]:
+def _rotated(Xa : int | float, Ya : int | float, Xb : int | float, Yb : int | float, degree : int | float) -> tuple[int | float, int | float]:
     """
     点A绕点B旋转特定角度后，点A的坐标
     :param Xa:     环绕点(点A)X坐标

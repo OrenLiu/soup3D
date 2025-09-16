@@ -26,9 +26,6 @@ class Texture:
         通道3: 透明度(如无该通道，则统一返回1)
         :param pil_pic: pillow图像
         """
-        if not isinstance(pil_pic, PIL.Image.Image):
-            raise TypeError(f"pil_pic should be PIL.Image.Image not {type(pil_pic)}")
-
         self.pil_pic = pil_pic
         self.texture_id = None
 
@@ -99,12 +96,6 @@ class Channel:
         :param texture:   提取通道的贴图
         :param channelID: 通道编号
         """
-        if not isinstance(texture, Img):
-            raise TypeError(f"texture should be Img not {type(texture)}")
-
-        if not isinstance(channelID, int):
-            raise TypeError(f"channelID should be int not {type(channelID)}")
-
         self.texture = texture
         self.channelID = channelID
 
@@ -143,21 +134,6 @@ class MixChannel:
         :param B: 蓝色通道，可直接通过0.0~1.0的小数定义通道亮度，也可以引入Channel通道实现引入贴图通道
         :param A: 透明度通道，可直接通过0.0~1.0的小数定义通道亮度，也可以引入Channel通道实现引入贴图通道
         """
-        if not isinstance(resize, tuple):
-            raise TypeError(f"resize should be tuple[int not {type(resize)}")
-
-        if not isinstance(R, int | float | GrayImg):
-            raise TypeError(f"R should be int | float | Channel not {type(R)}")
-
-        if not isinstance(G, int | float | GrayImg):
-            raise TypeError(f"G should be int | float | Channel not {type(G)}")
-
-        if not isinstance(B, int | float | GrayImg):
-            raise TypeError(f"B should be int | float | Channel not {type(B)}")
-
-        if not isinstance(A, int | float | GrayImg):
-            raise TypeError(f"A should be int | float | Channel not {type(A)}")
-
         self.resize = resize
         self.R = R
         self.G = G
@@ -265,111 +241,6 @@ class MixChannel:
         if self.texture_id is None:
             self.gen_gl_texture()
         return self.texture_id
-
-
-class FPL:
-    def __init__(self,
-                 base_color: "Img",
-                 emission: float | int = 0.0):
-        """
-        Fixed pipeline固定管线式着色器，作为表面着色器渲染时使用的顶点列表格式：
-        [
-            (x, y, z, u, v),
-            ...
-        ]
-        :param base_color: 主要颜色
-        :param emission:   自发光度
-        """
-        if not isinstance(base_color, Img):
-            raise TypeError(f"base_color should be Img not {type(base_color)}")
-
-        if not isinstance(emission, float | int):
-            raise TypeError(f"emission should be float | int not {type(emission)}")
-
-        self.base_color = base_color
-        self.emission = emission
-
-        # 处理基础色材质
-        self.base_color_id = self.base_color.gen_gl_texture(0)
-
-    def rend(self, mode, vertex):
-        """
-        创建该着色器的渲染流程
-        :param mode:   绘制方式
-        :param vertex: 表面中所有的顶点
-        :return:
-        """
-        # 材质贴图
-        texture_id = self.base_color_id
-
-        # 启用必要的OpenGL功能
-        glEnable(GL_DEPTH_TEST)
-
-        # 设置材质属性
-        glColor4f(1.0, 1.0, 1.0, 1.0)
-
-        # 开启纹理
-        if texture_id:
-            glEnable(GL_TEXTURE_2D)
-
-        # 激活并绑定材质贴图（纹理单元0）
-        if texture_id:
-            glActiveTexture(GL_TEXTURE0)
-            glBindTexture(GL_TEXTURE_2D, texture_id)
-            glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE)
-
-        # 自发光处理
-        if self.emission != 0.0:
-            emission = max(0.0, min(1.0, float(self.emission)))
-            glMaterialfv(GL_FRONT, GL_EMISSION, (emission, emission, emission, 1.0))
-
-        # 绘制几何图形
-        glBegin(mode)
-        # 3. 计算平面法线方向
-        if len(vertex) >= 3:
-            v0 = vertex[0]
-            v1 = vertex[1]
-            v2 = vertex[2]
-
-            # 计算两个向量
-            u = (v1[0] - v0[0], v1[1] - v0[1], v1[2] - v0[2])
-            v = (v2[0] - v0[0], v2[1] - v0[1], v2[2] - v0[2])
-
-            # 叉乘得到法线
-            normal = (
-                u[1] * v[2] - u[2] * v[1],
-                u[2] * v[0] - u[0] * v[2],
-                u[0] * v[1] - u[1] * v[0]
-            )
-        else:
-            normal = (0, 0, 1)  # 默认Z轴正向
-        glNormal3f(normal[0], normal[1], normal[2])
-        for v in vertex:
-            if len(v) == 5:
-                # 设置纹理坐标
-                if texture_id:
-                    glMultiTexCoord2f(GL_TEXTURE0, v[3], v[4])  # base_color纹理
-                glVertex3f(v[0], v[1], v[2])
-            else:
-                # 没有纹理坐标的情况
-                glVertex3f(v[0], v[1], v[2])
-        glEnd()
-
-        # 清理OpenGL状态
-        if texture_id:
-            glDisable(GL_TEXTURE_2D)
-            glActiveTexture(GL_TEXTURE0)
-
-        if self.emission != 0.0:
-            glMaterialfv(GL_FRONT, GL_EMISSION, (0.0, 0.0, 0.0, 1.0))
-
-    def deep_del(self):
-        """
-        深度清理着色器，清理该着色器本身及所有该着色器用到的元素。在确定不再使用该着色器时可使用该方法释放内存。
-        :return: None
-        """
-        if self.base_color_id:
-            glDeleteTextures([self.base_color_id])
 
 
 class ShaderProgram:
@@ -971,7 +842,7 @@ class AutoSP:
 
 Img = Texture | MixChannel
 GrayImg = Channel
-Surface = FPL | ShaderProgram | AutoSP
+Surface = ShaderProgram | AutoSP
 
 
 if __name__ == '__main__':
