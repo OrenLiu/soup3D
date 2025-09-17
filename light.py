@@ -9,29 +9,13 @@ import soup3D
 
 
 __all__ : list[str] = [
-    "init", "Cone", "Direct"
+    "Cone", "Direct", "ambient"
 ]
 
 dirty = False
 EAU = []
 
 light_queue = {}
-
-
-def init(ambientR : int | float = 0, ambientG : int | float = 0, ambientB : int | float = 0):
-    """
-    初始化光源，启用全局光照
-    :param ambientR: 红环境光亮度
-    :param ambientG: 绿环境光亮度
-    :param ambientB: 蓝环境光亮度
-    :return:
-    """
-    glEnable(GL_LIGHTING)  # 启用光照
-    glLightModeli(GL_LIGHT_MODEL_TWO_SIDE, GL_TRUE)  # 启用双面光照
-    glEnable(GL_NORMALIZE)
-    glLightModelfv(GL_LIGHT_MODEL_AMBIENT, (ambientR, ambientG, ambientB, 1))
-    glEnable(GL_COLOR_MATERIAL)
-    glColorMaterial(GL_FRONT_AND_BACK, GL_AMBIENT_AND_DIFFUSE)
 
 
 class Cone:

@@ -481,22 +481,25 @@ class AutoSP:
     def __init__(self,
                  base_color: "Img",
                  normal: "list | tuple | Img" = (0.5, 0.5, 1),
-                 emission: "list | tuple | Img" = (0, 0, 0)):
+                 emission: "list | tuple | Img" = (0, 0, 0),
+                 double_side: bool = True):
         """
         更具用户提供的参数自动生成ShaderProgram类，并在需要时自动调用ShaderProgram的类成员，作为表面着色器渲染时使用的顶点列表格式：
         [
             (x, y, z, u, v),
             ...
         ]
-        :param base_color: 主要颜色
-        :param normal:     自定义法线或法线贴图
-        :param emission:   自发光度，
-                           当该参数为数字时，0.0为不发光，1.0为完全发光；
-                           当该参数为灰度图时，黑色为不发光，白色为完全发光
+        :param base_color:  主要颜色
+        :param normal:      自定义法线或法线贴图
+        :param emission:    自发光度，
+                            当该参数为数字时，0.0为不发光，1.0为完全发光；
+                            当该参数为灰度图时，黑色为不发光，白色为完全发光
+        :param double_side: 是否启用双面渲染
         """
         self.base_color = base_color
         self.normal = normal
         self.emission = emission
+        self.double_side = double_side
 
         # 生成着色器程序
         self.shader_program = self._create_shader_program()
@@ -567,12 +570,15 @@ class AutoSP:
         
         void main()
         {
+            vec3 SideNormal = Normal;
+            %s
+
             // 基础颜色
             vec4 base = texture(baseColor, TexCoord);
         
             // 法线处理
             vec4 norm_tex = texture(normal, TexCoord);
-            vec3 norm = normalize(Normal) + vec3(norm_tex.rg*2-1, norm_tex.b-1);
+            vec3 norm = normalize(SideNormal) + vec3(norm_tex.rg*2-1, norm_tex.b-1);
         
             // 自发光
             vec4 emi = texture(emission, TexCoord);
@@ -623,6 +629,19 @@ class AutoSP:
             FragColor = vec4(result, base.a);
         }
         """
+
+        if self.double_side:
+            fragment_shader = fragment_shader % """
+                if (!gl_FrontFacing) {
+                    SideNormal = -Normal;
+                }
+            """
+        else:
+            fragment_shader = fragment_shader % """
+                if (!gl_FrontFacing) {
+                    discard;
+                }
+            """
 
         # 创建着色器程序
         shader_program = ShaderProgram(

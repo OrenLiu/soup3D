@@ -392,11 +392,12 @@ def update():
     soup3D.ui.render_queue = []
 
 
-def open_obj(obj: str, mtl: str = None) -> Model:
+def open_obj(obj: str, mtl: str = None, double_side: bool = True) -> Model:
     """
     从obj文件导入模型
-    :param obj:     *.obj模型文件路径
-    :param mtl:     *.mtl纹理文件路径
+    :param obj:         *.obj模型文件路径
+    :param mtl:         *.mtl纹理文件路径
+    :param double_side: 是否启用双面渲染
     :return: 生成出来的模型数据(Model类)
     """
     # 处理mtl文件
@@ -422,7 +423,8 @@ def open_obj(obj: str, mtl: str = None) -> Model:
                         mtl_dict[now_mtl] = soup3D.shader.AutoSP(
                             soup3D.shader.MixChannel((width, height), R, G, B, A),
                             emission=emission,
-                            normal=bump_texture if bump_texture else (0.5, 0.5, 1)  # 新增：添加法线贴图
+                            normal=bump_texture if bump_texture else (0.5, 0.5, 1),
+                            double_side=double_side
                         )
 
                         R, G, B, A = 1.0, 1.0, 1.0, 1.0
@@ -477,14 +479,16 @@ def open_obj(obj: str, mtl: str = None) -> Model:
             mtl_dict[now_mtl] = soup3D.shader.AutoSP(
                 soup3D.shader.MixChannel((width, height), R, G, B, A),
                 emission=emission,
-                normal=bump_texture if bump_texture else (0.5, 0.5, 1)  # 新增：添加法线贴图
+                normal=bump_texture if bump_texture else (0.5, 0.5, 1),
+                double_side=double_side
             )
 
     # 创建默认材质（如果未提供MTL或材质未定义时使用）
     default_material = soup3D.shader.AutoSP(
         soup3D.shader.MixChannel((1, 1), 1.0, 1.0, 1.0, 1.0),
         emission=(0, 0, 0),
-        normal=(0.5, 0.5, 1)  # 新增：添加默认法线
+        normal=(0.5, 0.5, 1),
+        double_side=double_side
     )
 
     # 处理obj文件
