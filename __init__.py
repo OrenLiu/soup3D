@@ -16,8 +16,8 @@ import soup3D.ui
 from soup3D.name import *
 
 render_queue: list["Model"] = []  # 单次渲染队列
-stable_shapes = {}                # 固定渲染列队
-EAU = []                          # 更新执行列队
+stable_shapes = {}                # 固定渲染队列
+EAU = []                          # 更新执行队列
 
 
 _current_fov = 45
@@ -366,8 +366,13 @@ def update():
     # 执行更新执行列队
     EAU += soup3D.shader.EAU
     EAU += soup3D.light.EAU
+
+    EAU_len = len(EAU)  # 调用列队前列队的长度
     for args in EAU:
         args[0](*args[1:])
+        if EAU_len != len(EAU):
+            raise Exception(f"EAU length changed while running: {args[0].__name__}{(*args[1:],)}")
+
     EAU = []
     shader.EAU = []
     light.EAU = []

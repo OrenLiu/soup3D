@@ -44,7 +44,8 @@ class Cone:
         light_queue[id(self)] = self
         if not dirty:
             dirty = True
-            EAU.append((set_surface_light, ))
+            set_surface_light()
+            EAU.append((clean_dirty,))
 
     def _calc_direction(self) -> tuple[int | float, int | float, int | float]:
         """根据欧拉角计算方向向量"""
@@ -73,7 +74,8 @@ class Cone:
         self.place = (x, y, z)
         if not dirty:
             dirty = True
-            EAU.append((set_surface_light, ))
+            set_surface_light()
+            EAU.append((clean_dirty,))
 
     def turn(self, yaw : int | float, pitch : int | float, roll : int | float) -> None:
         """
@@ -88,7 +90,8 @@ class Cone:
         self.toward = (yaw, pitch, roll)
         if not dirty:
             dirty = True
-            EAU.append((set_surface_light, ))
+            set_surface_light()
+            EAU.append((clean_dirty,))
 
     def dye(self, r : int | float, g : int | float, b : int | float) -> None:
         """
@@ -103,7 +106,8 @@ class Cone:
         self.color = (r, g, b)
         if not dirty:
             dirty = True
-            EAU.append((set_surface_light, ))
+            set_surface_light()
+            EAU.append((clean_dirty,))
 
     def turn_off(self) -> None:
         """
@@ -115,7 +119,8 @@ class Cone:
         self.on = False
         if not dirty:
             dirty = True
-            EAU.append((set_surface_light, ))
+            set_surface_light()
+            EAU.append((clean_dirty,))
 
     def turn_on(self) -> None:
         """
@@ -127,7 +132,8 @@ class Cone:
         self.on = True
         if not dirty:
             dirty = True
-            EAU.append((set_surface_light, ))
+            set_surface_light()
+            EAU.append((clean_dirty,))
 
     def destroy(self) -> None:
         """
@@ -139,7 +145,8 @@ class Cone:
         del light_queue[id(self)]
         if not dirty:
             dirty = True
-            EAU.append((set_surface_light, ))
+            set_surface_light()
+            EAU.append((clean_dirty,))
 
 
 class Direct:
@@ -160,7 +167,8 @@ class Direct:
         light_queue[id(self)] = self
         if not dirty:
             dirty = True
-            EAU.append((set_surface_light, ))
+            set_surface_light()
+            EAU.append((clean_dirty,))
 
     def _calc_direction(self) -> tuple[int | float, int | float, int | float]:
         """计算逆向方向向量"""
@@ -187,7 +195,8 @@ class Direct:
         self.toward = (yaw, pitch, roll)
         if not dirty:
             dirty = True
-            EAU.append((set_surface_light, ))
+            set_surface_light()
+            EAU.append((clean_dirty,))
 
     def dye(self, r : int | float, g : int | float, b : int | float) -> None:
         """
@@ -202,7 +211,8 @@ class Direct:
         self.color = (r, g, b)
         if not dirty:
             dirty = True
-            EAU.append((set_surface_light, ))
+            set_surface_light()
+            EAU.append((clean_dirty,))
 
     def turn_off(self) -> None:
         """
@@ -214,7 +224,8 @@ class Direct:
         self.on = False
         if not dirty:
             dirty = True
-            EAU.append((set_surface_light, ))
+            set_surface_light()
+            EAU.append((clean_dirty,))
 
     def turn_on(self) -> None:
         """
@@ -226,7 +237,8 @@ class Direct:
         self.on = True
         if not dirty:
             dirty = True
-            EAU.append((set_surface_light, ))
+            set_surface_light()
+            EAU.append((clean_dirty,))
 
     def destroy(self) -> None:
         """
@@ -238,21 +250,24 @@ class Direct:
         del light_queue[id(self)]
         if not dirty:
             dirty = True
-            EAU.append((set_surface_light, ))
+            set_surface_light()
+            EAU.append((clean_dirty,))
 
 
 def set_surface_light():
+    for surface_id in soup3D.shader.set_mat_queue:
+        surface = soup3D.shader.set_mat_queue[surface_id]
+        if hasattr(surface, "set_light"):
+            surface.set_light(light_queue)
+
+
+def clean_dirty():
     """
     为所有需要光源支持的着色器应用光源
     :return: None
     """
     global dirty
-
     dirty = False
-    for surface_id in soup3D.shader.set_mat_queue:
-        surface = soup3D.shader.set_mat_queue[surface_id]
-        if hasattr(surface, "set_light"):
-            surface.set_light(light_queue)
 
 
 def ambient(R : int | float, G : int | float, B : int | float) -> None:

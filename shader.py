@@ -286,6 +286,8 @@ class ShaderProgram:
 
         self.texture_val = {}
 
+        self.dirty = False
+
     def use(self):
         """
         使用该着色器，会在应用时自动调用
@@ -392,7 +394,8 @@ class ShaderProgram:
         self.uniform_loc[v_name] = loc
         self.uniform_val[v_name] = value
         self.uniform_type[v_name] = v_type
-        EAU.append((self.update, ))
+
+        self.dirty_update()
 
     def uniform_tex(self, v_name: str, texture: "Img", texture_unit: int = 0):
         """
@@ -413,10 +416,20 @@ class ShaderProgram:
         self.uniform_loc[v_name] = loc
         self.texture_val[v_name] = (texture, texture_unit)
         self.uniform_type[v_name] = "texture"
-        EAU.append((self.update, ))
 
         # 处理纹理类型的uniform
         texture.gen_gl_texture(texture_unit)
+
+        self.dirty_update()
+
+    def dirty_update(self):
+        """
+        标记该着色器为需要更新
+        :return: None
+        """
+        if not self.dirty:
+            self.dirty = True
+            EAU.append((self.update,))
 
     def update(self):
         """
@@ -468,6 +481,7 @@ class ShaderProgram:
                     type_map[v_type](loc, *value)
 
         self.uniform_loc = {}
+        self.dirty = False
 
     def deep_del(self):
         """
@@ -511,7 +525,7 @@ class AutoSP:
 
         # 注册到矩阵更新队列
         set_mat_queue[id(self)] = self
-        EAU.append((self._update_uniforms,))
+        self._update_uniforms()
 
     def _create_shader_program(self) -> ShaderProgram:
         """根据参数创建着色器程序"""
@@ -682,11 +696,7 @@ class AutoSP:
         :return: None
         """
         self.model_mat = mat
-        EAU.append((self._update_model_mat,))
-
-    def _update_model_mat(self):
         self.shader_program.uniform("model", soup3D.ARRAY_MATRIX_VEC4, 1, GL_FALSE, glm.value_ptr(self.model_mat))
-        soup3D.EAU.append([self.shader_program.update])
 
     def set_view_mat(self, mat: glm.mat4):
         """
@@ -695,11 +705,7 @@ class AutoSP:
         :return: None
         """
         self.view_mat = mat
-        EAU.append((self._update_view_mat,))
-
-    def _update_view_mat(self):
         self.shader_program.uniform("view", soup3D.ARRAY_MATRIX_VEC4, 1, GL_FALSE, glm.value_ptr(self.view_mat))
-        soup3D.EAU.append([self.shader_program.update])
 
     def set_projection_mat(self, mat: glm.mat4):
         """
@@ -708,12 +714,8 @@ class AutoSP:
         :return: None
         """
         self.projection_mat = mat
-        EAU.append((self._update_projection_mat,))
-
-    def _update_projection_mat(self):
         self.shader_program.uniform("projection", soup3D.ARRAY_MATRIX_VEC4, 1, GL_FALSE,
                                     glm.value_ptr(self.projection_mat))
-        soup3D.EAU.append([self.shader_program.update])
 
     def set_light(self, light_queue):
         """
@@ -760,15 +762,12 @@ class AutoSP:
         for i in range(light_count, 8):
             self.shader_program.uniform(f"lights[{i}].color", soup3D.FLOAT_VEC3, 0.0, 0.0, 0.0)
 
-        soup3D.EAU.append([self.shader_program.update])
-
     def _update_uniforms(self):
         """更新着色器的uniform变量"""
         self.shader_program.uniform("model", soup3D.ARRAY_MATRIX_VEC4, 1, GL_FALSE, glm.value_ptr(self.model_mat))
         self.shader_program.uniform("view", soup3D.ARRAY_MATRIX_VEC4, 1, GL_FALSE, glm.value_ptr(self.view_mat))
         self.shader_program.uniform("projection", soup3D.ARRAY_MATRIX_VEC4, 1, GL_FALSE,
                                     glm.value_ptr(self.projection_mat))
-        soup3D.EAU.append([self.shader_program.update])
 
     def use(self):
         """
