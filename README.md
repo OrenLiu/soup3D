@@ -14,44 +14,42 @@ pip install -i https://osoup.top/simple soup3D
 安装完成后，您可以试试这段代码：
 
 ```python
-"""
-这是一段最简单的soup3D使用案例，展示了如何用soup3D配合pygame显示出一个最简单的三角形
-"""
-import soup3D
-from soup3D.name import *
-import pygame
-
-
-running = True
-
+import soup3D  # 3D图像渲染库
+import pygame  # pygame游戏窗口库，用于展示soup3D渲染的图像
 
 if __name__ == '__main__':
-    width, height = 1920, 1080
     pygame.init()                                                            # 初始化pygame
     pygame.display.set_caption("soup3D")                                     # 设置pygame窗口标题
-    pygame.display.set_mode((1920, 1080), pygame.DOUBLEBUF | pygame.OPENGL)  # 将pygame窗口作为OpenGL容器
-    soup3D.init(bg_color=(0.5, 0.75, 1), width=1920, height=1080)            # 初始化soup3D
+    pygame.display.set_mode((1920, 1080), pygame.DOUBLEBUF | pygame.OPENGL)  # 配置窗口模式
+    soup3D.init(bg_color=(1, 1, 1), width=1920, height=1080)                 # 初始化soup3D
 
-    green = soup3D.shader.FPL(soup3D.shader.MixChannel((1, 1), 0, 1, 0))  # 创建绿色材质
-    face = soup3D.Face(TRIANGLE_B, green, [                               # 创建面
-        (0, 0, 0, 0, 0),  # (X, Y, Z, U, V)
-        (100, 0, 0, 0, 0),
-        (0, 100, 0, 0, 0)
-    ]*1000)
+    soup3D.light.ambient(1, 1, 1)  # 设置环境光照为最亮
 
-    triangle = soup3D.Model(0, 0, -500, face)  # 将面加入模型
-    triangle.show()                            # 显示模型
+    surface = soup3D.shader.AutoSP(soup3D.shader.MixChannel((1, 1), 1, 0.75, 0))  # 创建橙色表面着色器
+    face = soup3D.Face(  # 创建直角三角形
+        soup3D.TRIANGLE_L,
+        surface,
+        (
+            (0, 0, 0, 0, 0),  # (x, y, z, u, v)
+            (1, 0, 0, 0, 0),
+            (0, 1, 0, 0, 0)
+        )
+    )
+    model = soup3D.Model(0, 0, -5, face)  # 将三角形加入模型
+    model.show()  # 显示模型
+
+    running = True  # 运行状态
     while running:  # 主循环
-        soup3D.update()  # 更新soup3D画面
-        pygame.display.flip()  # 更新pygame画面
-        for event in pygame.event.get():  # 遍历pygame事件
-            if event.type == pygame.QUIT:  # pygame窗口关闭事件
+        soup3D.update()  # 更新soup3D
+        pygame.display.flip()  # 刷新pygame画面
+        for event in pygame.event.get():  # 便利所有事件
+            if event.type == pygame.QUIT:  # 检测退出窗口事件
                 pygame.quit()  # 关闭窗口
-                running = False  # 退出循环
+                running = False  # 结束循环
 
 ```
 
-这段代码运行后，您可以看到一个绿色三角形在窗口中
+如果环境配置完整，这段代码运行后，您可以看到一个橙色三角形在窗口中
 
 ## 协作开发
 
