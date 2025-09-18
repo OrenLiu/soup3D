@@ -363,6 +363,10 @@ def update():
     # 清空画布
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
 
+    # 设置光源
+    if soup3D.light.dirty:
+        soup3D.light.set_surface_light()
+
     # 执行更新执行列队
     EAU += soup3D.shader.EAU
     EAU += soup3D.light.EAU
