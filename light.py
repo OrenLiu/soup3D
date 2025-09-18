@@ -228,6 +228,20 @@ class Direct:
             dirty = True
 
 
+def ambient(R: int | float, G: int | float, B: int | float) -> None:
+    """
+    更改环境光亮度
+    :param R: 红色环境光
+    :param G: 绿色环境光
+    :param B: 蓝色环境光
+    :return: None
+    """
+    global dirty
+
+    glLightModelfv(GL_LIGHT_MODEL_AMBIENT, (R, G, B, 1))
+    dirty = True
+
+
 def set_surface_light():
     global dirty
 
@@ -236,17 +250,6 @@ def set_surface_light():
         if hasattr(surface, "set_light"):
             surface.set_light(light_queue)
     dirty = False
-
-
-def ambient(R : int | float, G : int | float, B : int | float) -> None:
-    """
-    更改环境光亮度
-    :param R: 红色环境光
-    :param G: 绿色环境光
-    :param B: 蓝色环境光
-    :return: None
-    """
-    glLightModelfv(GL_LIGHT_MODEL_AMBIENT, (R, G, B, 1))
 
 
 def rotated(Xa: int | float, Ya: int | float,
