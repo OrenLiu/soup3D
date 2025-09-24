@@ -401,96 +401,110 @@ def update():
     soup3D.ui.render_queue = []
 
 
-def open_obj(obj: str, mtl: str = None, double_side: bool = True) -> Model:
+def open_obj(obj: str, mtl: str = None, double_side: bool = True, roll_funk = None, encoding: str = "utf-8") -> Model:
     """
     从obj文件导入模型
     :param obj:         *.obj模型文件路径
     :param mtl:         *.mtl纹理文件路径
     :param double_side: 是否启用双面渲染
+    :param roll_funk:   每当读取一行时调用一次，方法需有，且仅有1个参数，用于接收已读取的行数
+    :param encoding:      读取obj或mtl文件时使用的字符集
     :return: 生成出来的模型数据(Model类)
     """
     # 处理mtl文件
     mtl_dict = {}
+
+    mtl_str = ""
+
     if mtl is not None:
-        mtl_file = open(mtl, "r")
+        mtl_file = open(mtl, "r", encoding=encoding)
         mtl_str = mtl_file.read()
         mtl_file.close()
-        command_lines = mtl_str.split("\n")
-        line_count = 1
-        now_mtl = None
 
-        R, G, B, A = 1.0, 1.0, 1.0, 1.0
-        width, height = 1, 1
-        emission = 0, 0, 0
-        bump_texture = None  # 新增：用于存储法线贴图
-        for row in command_lines:
-            command = row.split("#")[0]
-            args = shlex.split(command)
-            if len(args) > 0:
-                if args[0] == "newmtl":
-                    if now_mtl is not None:
-                        mtl_dict[now_mtl] = soup3D.shader.AutoSP(
-                            soup3D.shader.MixChannel((width, height), R, G, B, A),
-                            emission=emission,
-                            normal=bump_texture if bump_texture else (0.5, 0.5, 1),
-                            double_side=double_side
-                        )
+    obj_file = open(obj, 'r', encoding=encoding)
+    obj_str = obj_file.read()
+    obj_file.close()
 
-                        R, G, B, A = 1.0, 1.0, 1.0, 1.0
-                        width, height = 1, 1
-                        emission = 0
-                        bump_texture = None  # 重置法线贴图
-                    now_mtl = args[1]
-                if args[0] == "Kd":
-                    R, G, B = float(args[1]), float(args[2]), float(args[3])
-                if args[0] == "d":
-                    A = float(args[1])
-                if args[0] == "Ke":
-                    emission = (float(args[1]), float(args[2]), float(args[3]))
-                if args[0] == "map_Kd":
-                    base_dir = os.path.dirname(mtl)
-                    tex_path = (os.path.join(base_dir, args[1]))
-                    pil_pic = Image.open(tex_path)
-                    width, height = pil_pic.width, pil_pic.height
-                    texture = soup3D.shader.Texture(pil_pic)
-                    R = soup3D.shader.Channel(texture, 0)
-                    G = soup3D.shader.Channel(texture, 1)
-                    B = soup3D.shader.Channel(texture, 2)
-                if args[0] == "map_d":
-                    base_dir = os.path.dirname(mtl)
-                    tex_path = (os.path.join(base_dir, args[1]))
-                    texture = soup3D.shader.Texture(Image.open(tex_path))
-                    A = soup3D.shader.Channel(texture, 3)
-                if args[0] == "map_Ke":
-                    base_dir = os.path.dirname(mtl)
-                    tex_path = (os.path.join(base_dir, args[1]))
-                    emission = soup3D.shader.Texture(Image.open(tex_path))
-                # 新增：处理map_Bump命令
-                if args[0] == "map_Bump":
-                    tex_path = None
-                    arg_name = None
-                    for arg in args[1:]:
-                        if arg.startswith("-"):
-                            arg_name = arg
-                            continue
-                        if arg_name is None:
-                            base_dir = os.path.dirname(mtl)
-                            tex_path = (os.path.join(base_dir, arg))
-                        else:
-                            # 处理选项(“-”或“--”开头)，目前没有任何支持的选项需要处理，直接恢复默认
-                            arg_name = None
-                            continue
-                    bump_texture = soup3D.shader.Texture(Image.open(tex_path))
-            line_count += 1
+    command_lines = mtl_str.split("\n")
+    line_count = 1
+    now_mtl = None
 
-        # 添加最后一个材质
-        if now_mtl is not None:
-            mtl_dict[now_mtl] = soup3D.shader.AutoSP(
-                soup3D.shader.MixChannel((width, height), R, G, B, A),
-                emission=emission,
-                normal=bump_texture if bump_texture else (0.5, 0.5, 1),
-                double_side=double_side
-            )
+    R, G, B, A = 1.0, 1.0, 1.0, 1.0
+    width, height = 1, 1
+    emission = 0, 0, 0
+    bump_texture = None  # 新增：用于存储法线贴图
+    roll_count = 0
+    for row in command_lines:
+        if roll_count is not None:
+            roll_funk(roll_count)
+            roll_count += 1
+        command = row.split("#")[0]
+        args = shlex.split(command)
+        if len(args) > 0:
+            if args[0] == "newmtl":
+                if now_mtl is not None:
+                    mtl_dict[now_mtl] = soup3D.shader.AutoSP(
+                        soup3D.shader.MixChannel((width, height), R, G, B, A),
+                        emission=emission,
+                        normal=bump_texture if bump_texture else (0.5, 0.5, 1),
+                        double_side=double_side
+                    )
+
+                    R, G, B, A = 1.0, 1.0, 1.0, 1.0
+                    width, height = 1, 1
+                    emission = 0
+                    bump_texture = None  # 重置法线贴图
+                now_mtl = args[1]
+            if args[0] == "Kd":
+                R, G, B = float(args[1]), float(args[2]), float(args[3])
+            if args[0] == "d":
+                A = float(args[1])
+            if args[0] == "Ke":
+                emission = (float(args[1]), float(args[2]), float(args[3]))
+            if args[0] == "map_Kd":
+                base_dir = os.path.dirname(mtl)
+                tex_path = (os.path.join(base_dir, args[1]))
+                pil_pic = Image.open(tex_path)
+                width, height = pil_pic.width, pil_pic.height
+                texture = soup3D.shader.Texture(pil_pic)
+                R = soup3D.shader.Channel(texture, 0)
+                G = soup3D.shader.Channel(texture, 1)
+                B = soup3D.shader.Channel(texture, 2)
+            if args[0] == "map_d":
+                base_dir = os.path.dirname(mtl)
+                tex_path = (os.path.join(base_dir, args[1]))
+                texture = soup3D.shader.Texture(Image.open(tex_path))
+                A = soup3D.shader.Channel(texture, 3)
+            if args[0] == "map_Ke":
+                base_dir = os.path.dirname(mtl)
+                tex_path = (os.path.join(base_dir, args[1]))
+                emission = soup3D.shader.Texture(Image.open(tex_path))
+            # 新增：处理map_Bump命令
+            if args[0] == "map_Bump":
+                tex_path = None
+                arg_name = None
+                for arg in args[1:]:
+                    if arg.startswith("-"):
+                        arg_name = arg
+                        continue
+                    if arg_name is None:
+                        base_dir = os.path.dirname(mtl)
+                        tex_path = (os.path.join(base_dir, arg))
+                    else:
+                        # 处理选项(“-”或“--”开头)，目前没有任何支持的选项需要处理，直接恢复默认
+                        arg_name = None
+                        continue
+                bump_texture = soup3D.shader.Texture(Image.open(tex_path))
+        line_count += 1
+
+    # 添加最后一个材质
+    if now_mtl is not None:
+        mtl_dict[now_mtl] = soup3D.shader.AutoSP(
+            soup3D.shader.MixChannel((width, height), R, G, B, A),
+            emission=emission,
+            normal=bump_texture if bump_texture else (0.5, 0.5, 1),
+            double_side=double_side
+        )
 
     # 创建默认材质（如果未提供MTL或材质未定义时使用）
     default_material = soup3D.shader.AutoSP(
@@ -509,114 +523,118 @@ def open_obj(obj: str, mtl: str = None, double_side: bool = True) -> Model:
     # 当前使用的材质
     current_material = None
 
-    with open(obj, 'r') as obj_file:
-        for line in obj_file:
-            line = line.strip()
-            if not line or line.startswith('#'):
-                continue
+    command_lines = obj_str.split("\n")
+    for row in command_lines:
+        if roll_count is not None:
+            roll_funk(roll_count)
+            roll_count += 1
 
-            # 使用shlex.split分割命令，正确处理带引号的字符串
-            tokens = shlex.split(line)
-            if not tokens:
-                continue
+        row = row.strip()
+        if not row or row.startswith('#'):
+            continue
 
-            prefix = tokens[0]
-            data = tokens[1:]
+        # 使用shlex.split分割命令，正确处理带引号的字符串
+        tokens = shlex.split(row)
+        if not tokens:
+            continue
 
-            # 处理顶点数据
-            if prefix == 'v':
-                # 顶点坐标 (x, y, z [, w])
-                if len(data) >= 3:
-                    x, y, z = map(float, data[:3])
-                    vertices.append((x, y, z))
+        prefix = tokens[0]
+        data = tokens[1:]
 
-            # 处理纹理坐标
-            elif prefix == 'vt':
-                # 纹理坐标 (u, v [, w])
-                if len(data) >= 2:
-                    u, v = map(float, data[:2])
-                    tex_coords.append((u, v))
+        # 处理顶点数据
+        if prefix == 'v':
+            # 顶点坐标 (x, y, z [, w])
+            if len(data) >= 3:
+                x, y, z = map(float, data[:3])
+                vertices.append((x, y, z))
 
-            # 处理法线
-            elif prefix == 'vn':
-                # 法线向量 (x, y, z)
-                if len(data) >= 3:
-                    nx, ny, nz = map(float, data[:3])
-                    normals.append((nx, ny, nz))
+        # 处理纹理坐标
+        elif prefix == 'vt':
+            # 纹理坐标 (u, v [, w])
+            if len(data) >= 2:
+                u, v = map(float, data[:2])
+                tex_coords.append((u, v))
 
-            # 处理材质库引用
-            elif prefix == 'mtllib':
-                # 已在外部处理，无需二次处理
-                pass
+        # 处理法线
+        elif prefix == 'vn':
+            # 法线向量 (x, y, z)
+            if len(data) >= 3:
+                nx, ny, nz = map(float, data[:3])
+                normals.append((nx, ny, nz))
 
-            # 处理材质使用
-            elif prefix == 'usemtl':
-                # 切换当前使用的材质
-                if data:
-                    material_name = data[0]
-                    # 如果材质在库中未定义，使用默认材质
-                    current_material = mtl_dict.get(material_name, default_material)
+        # 处理材质库引用
+        elif prefix == 'mtllib':
+            # 已在外部处理，无需二次处理
+            pass
 
-            # 处理面定义
-            elif prefix == 'f':
-                if len(data) < 3:
-                    continue  # 至少需要3个顶点构成面
+        # 处理材质使用
+        elif prefix == 'usemtl':
+            # 切换当前使用的材质
+            if data:
+                material_name = data[0]
+                # 如果材质在库中未定义，使用默认材质
+                current_material = mtl_dict.get(material_name, default_material)
 
-                face_vertices = []
+        # 处理面定义
+        elif prefix == 'f':
+            if len(data) < 3:
+                continue  # 至少需要3个顶点构成面
 
-                # 多边形三角剖分（简单实现，适合凸多边形）
-                base_indexes = []
-                for vertex_def in data:
-                    # 解析顶点/纹理/法线索引（格式如：v/vt/vn 或 v//vn 等）
-                    indexes = vertex_def.split('/')
+            face_vertices = []
 
-                    # 处理缺少纹理坐标的情况（填充空值）
-                    while len(indexes) < 3:
-                        indexes.append('')
+            # 多边形三角剖分（简单实现，适合凸多边形）
+            base_indexes = []
+            for vertex_def in data:
+                # 解析顶点/纹理/法线索引（格式如：v/vt/vn 或 v//vn 等）
+                indexes = vertex_def.split('/')
 
-                    # 转换索引为整数（索引从1开始，需要转为0开始）
-                    # 支持负数索引（从末尾开始计数）
-                    v_idx = int(indexes[0]) - 1 if indexes[0] else -1
-                    vt_idx = int(indexes[1]) - 1 if indexes[1] else -1
-                    vn_idx = int(indexes[2]) - 1 if indexes[2] else -1
+                # 处理缺少纹理坐标的情况（填充空值）
+                while len(indexes) < 3:
+                    indexes.append('')
 
-                    # 处理负索引（相对索引）
-                    if v_idx < 0: v_idx = len(vertices) + v_idx
-                    if vt_idx < 0: vt_idx = len(tex_coords) + vt_idx
-                    if vn_idx < 0: vn_idx = len(normals) + vn_idx
+                # 转换索引为整数（索引从1开始，需要转为0开始）
+                # 支持负数索引（从末尾开始计数）
+                v_idx = int(indexes[0]) - 1 if indexes[0] else -1
+                vt_idx = int(indexes[1]) - 1 if indexes[1] else -1
+                vn_idx = int(indexes[2]) - 1 if indexes[2] else -1
 
-                    # 获取顶点数据（确保索引在有效范围内）
-                    vert = list(vertices[v_idx])
+                # 处理负索引（相对索引）
+                if v_idx < 0: v_idx = len(vertices) + v_idx
+                if vt_idx < 0: vt_idx = len(tex_coords) + vt_idx
+                if vn_idx < 0: vn_idx = len(normals) + vn_idx
 
-                    # 如果有纹理坐标，添加纹理坐标
-                    if 0 <= vt_idx < len(tex_coords):
-                        u, v = tex_coords[vt_idx]
-                        vert.extend([u, v])
+                # 获取顶点数据（确保索引在有效范围内）
+                vert = list(vertices[v_idx])
 
-                    base_indexes.append(tuple(vert))
+                # 如果有纹理坐标，添加纹理坐标
+                if 0 <= vt_idx < len(tex_coords):
+                    u, v = tex_coords[vt_idx]
+                    vert.extend([u, v])
 
-                # 简单三角剖分：使用第一个顶点为基准，连接其他顶点形成三角形
-                for i in range(1, len(base_indexes) - 1):
-                    # 每个三角形由第一个顶点和连续的两个顶点组成
-                    triangle = [
-                        base_indexes[0],
-                        base_indexes[i],
-                        base_indexes[i + 1]
-                    ]
-                    # 添加到面的顶点列表
-                    face_vertices.append(triangle)
+                base_indexes.append(tuple(vert))
 
-                # 创建面对象（使用当前材质）
-                material = current_material if current_material else default_material
+            # 简单三角剖分：使用第一个顶点为基准，连接其他顶点形成三角形
+            for i in range(1, len(base_indexes) - 1):
+                # 每个三角形由第一个顶点和连续的两个顶点组成
+                triangle = [
+                    base_indexes[0],
+                    base_indexes[i],
+                    base_indexes[i + 1]
+                ]
+                # 添加到面的顶点列表
+                face_vertices.append(triangle)
 
-                # 将三角剖分后的所有三角形面加入列表
-                for tri_vertices in face_vertices:
-                    face = Face(
-                        shape_type="triangle_b",  # 分离的三角形
-                        surface=material,
-                        vertex=tri_vertices
-                    )
-                    faces.append(face)
+            # 创建面对象（使用当前材质）
+            material = current_material if current_material else default_material
+
+            # 将三角剖分后的所有三角形面加入列表
+            for tri_vertices in face_vertices:
+                face = Face(
+                    shape_type="triangle_b",  # 分离的三角形
+                    surface=material,
+                    vertex=tri_vertices
+                )
+                faces.append(face)
 
     # 创建模型对象（原点设置为0,0,0）
     model = Model(0, 0, 0, *faces)

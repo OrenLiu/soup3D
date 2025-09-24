@@ -1,18 +1,52 @@
 """
 处理soup3D中的着色系统
 """
+from OpenGL.GL import *
+from OpenGL.GL.shaders import compileShader, compileProgram
 import PIL.Image
 import numpy as np
 from pyglm import glm
 import math
 
-import soup3D
-from OpenGL.GL import *
-from OpenGL.GL.shaders import compileShader, compileProgram
+import soup3D.name
 
 
 EAU = []
 set_mat_queue = {}
+
+
+type_map = {
+    soup3D.name.FLOAT_VEC1: glUniform1f,
+    soup3D.name.FLOAT_VEC2: glUniform2f,
+    soup3D.name.FLOAT_VEC3: glUniform3f,
+    soup3D.name.FLOAT_VEC4: glUniform4f,
+    soup3D.name.INT_VEC1: glUniform1i,
+    soup3D.name.INT_VEC2: glUniform2i,
+    soup3D.name.INT_VEC3: glUniform3i,
+    soup3D.name.INT_VEC4: glUniform4i,
+    soup3D.name.ARRAY_FLOAT_VEC1: glUniform1fv,
+    soup3D.name.ARRAY_FLOAT_VEC2: glUniform2fv,
+    soup3D.name.ARRAY_FLOAT_VEC3: glUniform3fv,
+    soup3D.name.ARRAY_FLOAT_VEC4: glUniform4fv,
+    soup3D.name.ARRAY_INT_VEC1: glUniform1iv,
+    soup3D.name.ARRAY_INT_VEC2: glUniform2iv,
+    soup3D.name.ARRAY_INT_VEC3: glUniform3iv,
+    soup3D.name.ARRAY_INT_VEC4: glUniform4iv,
+    soup3D.name.ARRAY_MATRIX_VEC2: glUniformMatrix2fv,
+    soup3D.name.ARRAY_MATRIX_VEC3: glUniformMatrix3fv,
+    soup3D.name.ARRAY_MATRIX_VEC4: glUniformMatrix4fv,
+
+    soup3D.name.BYTE: GL_BYTE,
+    soup3D.name.BYTE_US: GL_UNSIGNED_BYTE,
+    soup3D.name.SHORT: GL_SHORT,
+    soup3D.name.SHORT_US: GL_UNSIGNED_SHORT,
+    soup3D.name.INT: GL_INT,
+    soup3D.name.INT_US: GL_UNSIGNED_INT,
+    soup3D.name.FLOAT_H: GL_HALF_FLOAT,
+    soup3D.name.FLOAT: GL_FLOAT,
+    soup3D.name.FLOAT_D: GL_DOUBLE,
+    soup3D.name.FIXED: GL_FIXED
+}
 
 
 class Texture:
@@ -302,19 +336,6 @@ class ShaderProgram:
         :param vertex: 表面中所有的顶点
         :return: None
         """
-        type_map = {
-            soup3D.BYTE: GL_BYTE,
-            soup3D.BYTE_US: GL_UNSIGNED_BYTE,
-            soup3D.SHORT: GL_SHORT,
-            soup3D.SHORT_US: GL_UNSIGNED_SHORT,
-            soup3D.INT: GL_INT,
-            soup3D.INT_US: GL_UNSIGNED_INT,
-            soup3D.FLOAT_H: GL_HALF_FLOAT,
-            soup3D.FLOAT: GL_FLOAT,
-            soup3D.FLOAT_D: GL_DOUBLE,
-            soup3D.FIXED: GL_FIXED
-        }
-
         if isinstance(self.vbo_type, str):
             types = [type_map[self.vbo_type] for i in vertex]
         else:
@@ -436,28 +457,6 @@ class ShaderProgram:
         更新着色器
         :return: None
         """
-        type_map = {
-            soup3D.FLOAT_VEC1: glUniform1f,
-            soup3D.FLOAT_VEC2: glUniform2f,
-            soup3D.FLOAT_VEC3: glUniform3f,
-            soup3D.FLOAT_VEC4: glUniform4f,
-            soup3D.INT_VEC1: glUniform1i,
-            soup3D.INT_VEC2: glUniform2i,
-            soup3D.INT_VEC3: glUniform3i,
-            soup3D.INT_VEC4: glUniform4i,
-            soup3D.ARRAY_FLOAT_VEC1: glUniform1fv,
-            soup3D.ARRAY_FLOAT_VEC2: glUniform2fv,
-            soup3D.ARRAY_FLOAT_VEC3: glUniform3fv,
-            soup3D.ARRAY_FLOAT_VEC4: glUniform4fv,
-            soup3D.ARRAY_INT_VEC1: glUniform1iv,
-            soup3D.ARRAY_INT_VEC2: glUniform2iv,
-            soup3D.ARRAY_INT_VEC3: glUniform3iv,
-            soup3D.ARRAY_INT_VEC4: glUniform4iv,
-            soup3D.ARRAY_MATRIX_VEC2: glUniformMatrix2fv,
-            soup3D.ARRAY_MATRIX_VEC3: glUniformMatrix3fv,
-            soup3D.ARRAY_MATRIX_VEC4: glUniformMatrix4fv,
-        }
-
         prev_program = glGetIntegerv(GL_CURRENT_PROGRAM)
         if prev_program != self.shader:
             glUseProgram(self.shader)
