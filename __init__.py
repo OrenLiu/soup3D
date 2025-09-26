@@ -190,12 +190,12 @@ class Model:
         model = glm.translate(model, glm.vec3(self.x, self.y, self.z))
 
         # 应用旋转变换
-        # Roll旋转（绕z轴）
-        model = glm.rotate(model, glm.radians(self.roll), glm.vec3(0.0, 0.0, 1.0))
+        # Yaw旋转（绕y轴）
+        model = glm.rotate(model, glm.radians(-self.yaw), glm.vec3(0.0, 1.0, 0.0))
         # Pitch旋转（绕x轴）
         model = glm.rotate(model, glm.radians(self.pitch), glm.vec3(1.0, 0.0, 0.0))
-        # Yaw旋转（绕y轴）
-        model = glm.rotate(model, glm.radians(self.yaw), glm.vec3(0.0, 1.0, 0.0))
+        # Roll旋转（绕z轴）
+        model = glm.rotate(model, glm.radians(self.roll), glm.vec3(0.0, 0.0, 1.0))
 
         # 应用缩放变换
         model = glm.scale(model, glm.vec3(self.width, self.height, self.length))
@@ -224,18 +224,6 @@ class Model:
         # 从稳定形状中移除（如果存在）
         if id(self) in stable_shapes:
             stable_shapes.pop(id(self))
-
-
-def _get_channel_value(channel: soup3D.shader.Channel) -> float:
-    """
-    从Channel对象或浮点数获取通道值
-    """
-    if isinstance(channel, soup3D.shader.Channel):
-        # 对于纹理通道，我们不再使用平均值，而是使用纹理
-        return 0.5  # 返回中间值，实际值将由纹理提供
-    elif isinstance(channel, float) or isinstance(channel, int):
-        return float(channel)
-    return 1.0
 
 
 def init(width: int | float = 1920,
@@ -435,7 +423,7 @@ def open_obj(obj: str, mtl: str = None, double_side: bool = True, roll_funk = No
     bump_texture = None  # 新增：用于存储法线贴图
     roll_count = 0
     for row in command_lines:
-        if roll_count is not None:
+        if roll_funk is not None:
             roll_funk(roll_count)
             roll_count += 1
         command = row.split("#")[0]
@@ -525,7 +513,7 @@ def open_obj(obj: str, mtl: str = None, double_side: bool = True, roll_funk = No
 
     command_lines = obj_str.split("\n")
     for row in command_lines:
-        if roll_count is not None:
+        if roll_funk is not None:
             roll_funk(roll_count)
             roll_count += 1
 
