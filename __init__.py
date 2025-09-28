@@ -389,14 +389,20 @@ def update():
     soup3D.ui.render_queue = []
 
 
-def open_obj(obj: str, mtl: str = None, double_side: bool = True, roll_funk = None, encoding: str = "utf-8") -> Model:
+def open_obj(obj: str,
+             mtl: str = None,
+             double_side: bool = True,
+             roll_funk = None,
+             encoding: str = "utf-8",
+             max_light_count: int = 8) -> Model:
     """
     从obj文件导入模型
-    :param obj:         *.obj模型文件路径
-    :param mtl:         *.mtl纹理文件路径
-    :param double_side: 是否启用双面渲染
-    :param roll_funk:   每当读取一行时调用一次，方法需有，且仅有1个参数，用于接收已读取的行数
-    :param encoding:      读取obj或mtl文件时使用的字符集
+    :param obj:             *.obj模型文件路径
+    :param mtl:             *.mtl纹理文件路径
+    :param double_side:     是否启用双面渲染
+    :param roll_funk:       每当读取一行时调用一次，方法需有，且仅有1个参数，用于接收已读取的行数
+    :param encoding:        读取obj或mtl文件时使用的字符集
+    :param max_light_count: 该模型出现时会同时出现的最多的光源数量
     :return: 生成出来的模型数据(Model类)
     """
     # 处理mtl文件
@@ -435,7 +441,8 @@ def open_obj(obj: str, mtl: str = None, double_side: bool = True, roll_funk = No
                         soup3D.shader.MixChannel((width, height), R, G, B, A),
                         emission=emission,
                         normal=bump_texture if bump_texture else (0.5, 0.5, 1),
-                        double_side=double_side
+                        double_side=double_side,
+                        max_light_count=max_light_count
                     )
 
                     R, G, B, A = 1.0, 1.0, 1.0, 1.0
@@ -491,7 +498,8 @@ def open_obj(obj: str, mtl: str = None, double_side: bool = True, roll_funk = No
             soup3D.shader.MixChannel((width, height), R, G, B, A),
             emission=emission,
             normal=bump_texture if bump_texture else (0.5, 0.5, 1),
-            double_side=double_side
+            double_side=double_side,
+            max_light_count=max_light_count
         )
 
     # 创建默认材质（如果未提供MTL或材质未定义时使用）
@@ -499,7 +507,8 @@ def open_obj(obj: str, mtl: str = None, double_side: bool = True, roll_funk = No
         soup3D.shader.MixChannel((1, 1), 1.0, 1.0, 1.0, 1.0),
         emission=(0, 0, 0),
         normal=(0.5, 0.5, 1),
-        double_side=double_side
+        double_side=double_side,
+        max_light_count=max_light_count
     )
 
     # 处理obj文件

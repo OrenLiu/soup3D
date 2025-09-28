@@ -25,7 +25,7 @@ if __name__ == '__main__':
 
     soup3D.light.ambient(1, 1, 1)  # 设置环境光照为最亮
 
-    surface = soup3D.shader.AutoSP(soup3D.shader.MixChannel((1, 1), 1, 0.75, 0))  # 创建橙色表面着色器
+    surface = soup3D.shader.AutoSP(soup3D.shader.MixChannel((1, 1), 1, 0.5, 0))  # 创建橙色表面着色器
     face = soup3D.Face(  # 创建直角三角形
         soup3D.TRIANGLE_L,
         surface,

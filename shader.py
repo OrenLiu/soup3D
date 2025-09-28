@@ -495,24 +495,27 @@ class AutoSP:
                  base_color: "Img",
                  normal: "list | tuple | Img" = (0.5, 0.5, 1),
                  emission: "list | tuple | Img" = (0, 0, 0),
-                 double_side: bool = True):
+                 double_side: bool = True,
+                 max_light_count: int = 8,):
         """
         更具用户提供的参数自动生成ShaderProgram类，并在需要时自动调用ShaderProgram的类成员，作为表面着色器渲染时使用的顶点列表格式：
         [
             (x, y, z, u, v),
             ...
         ]
-        :param base_color:  主要颜色
-        :param normal:      自定义法线或法线贴图
-        :param emission:    自发光度，
-                            当该参数为数字时，0.0为不发光，1.0为完全发光；
-                            当该参数为灰度图时，黑色为不发光，白色为完全发光
-        :param double_side: 是否启用双面渲染
+        :param base_color:      主要颜色
+        :param normal:          自定义法线或法线贴图
+        :param emission:        自发光度，
+                                当该参数为数字时，0.0为不发光，1.0为完全发光；
+                                当该参数为灰度图时，黑色为不发光，白色为完全发光
+        :param double_side:     是否启用双面渲染
+        :param max_light_count: 该着色器使用时会同时出现的最多的光源数量
         """
         self.base_color = base_color
         self.normal = normal
         self.emission = emission
         self.double_side = double_side
+        self.max_light_count = max_light_count
 
         # 生成着色器程序
         self.shader_program = self._create_shader_program()
@@ -530,28 +533,29 @@ class AutoSP:
         """根据参数创建着色器程序"""
         vertex_shader = """
         #version 330 core
-        layout(location = 0) in vec3 aPos;
-        layout(location = 1) in vec2 aTexCoord;
-        layout(location = 2) in vec3 aNormal;  // 添加法线输入
-
+        layout(location = 0) in vec3 VertPos;
+        layout(location = 1) in vec2 VertUV;
+        layout(location = 2) in vec3 VertNormal;
+        
         out vec2 TexCoord;
         out vec3 FragPos;
         out vec3 Normal;
-
-        uniform mat4 model;
-        uniform mat4 view;
-        uniform mat4 projection;
-
+        
+        uniform mat4 model;       // 模型矩阵
+        uniform mat4 view;        // 相机矩阵
+        uniform mat4 projection;  // 透视矩阵
+        
         void main()
         {
-            FragPos = vec3(model * vec4(aPos, 1.0));
-            // 法线变换使用模型矩阵的逆转置矩阵
+            FragPos = vec3(model * vec4(VertPos, 1.0));
             mat3 normalMatrix = transpose(inverse(mat3(model)));
-            Normal = normalMatrix * aNormal;
-
+            Normal = normalMatrix * VertNormal;
+        
             gl_Position = projection * view * vec4(FragPos, 1.0);
-            TexCoord = vec2(aTexCoord.x, 1-aTexCoord.y);
+            TexCoord = vec2(VertUV.x, 1-VertUV.y);
         }
+        
+        
         """
 
         fragment_shader = """
@@ -577,15 +581,15 @@ class AutoSP:
             int type;
         };
         
-        uniform Light lights[8];
+        uniform Light lights[%i];
         uniform int lightCount;
-        uniform vec3 ambientLight;
+        uniform vec3 ambient;
         
         void main()
         {
             vec3 SideNormal = Normal;
             %s
-
+        
             // 基础颜色
             vec4 base = texture(baseColor, TexCoord);
         
@@ -595,9 +599,6 @@ class AutoSP:
         
             // 自发光
             vec4 emi = texture(emission, TexCoord);
-        
-            // 环境光贡献
-            vec3 ambient = ambientLight * base.rgb;
         
             // 漫反射贡献
             vec3 diffuse = vec3(0.0);
@@ -644,17 +645,23 @@ class AutoSP:
         """
 
         if self.double_side:
-            fragment_shader = fragment_shader % """
+            fragment_shader = fragment_shader % (
+                self.max_light_count,
+                """
                 if (!gl_FrontFacing) {
                     SideNormal = -Normal;
                 }
-            """
+                """
+            )
         else:
-            fragment_shader = fragment_shader % """
+            fragment_shader = fragment_shader % (
+                self.max_light_count,
+                """
                 if (!gl_FrontFacing) {
                     discard;
                 }
-            """
+                """
+            )
 
         # 创建着色器程序
         shader_program = ShaderProgram(
@@ -723,12 +730,12 @@ class AutoSP:
         :return: None
         """
         ambient = glGetFloatv(GL_LIGHT_MODEL_AMBIENT)[:3]
-        self.shader_program.uniform("ambientLight", soup3D.FLOAT_VEC3, *ambient)
+        self.shader_program.uniform("ambient", soup3D.FLOAT_VEC3, *ambient)
 
         # 收集有效光源
         light_count = 0
         for light_id, light in light_queue.items():
-            if light.on and light_count < 8:
+            if light.on and light_count < self.max_light_count:
                 if isinstance(light, soup3D.light.Cone):
                     # 点光源（聚光灯）
                     direction = light._calc_direction()
@@ -758,7 +765,7 @@ class AutoSP:
         self.shader_program.uniform("lightCount", soup3D.INT_VEC1, light_count)
 
         # 填充剩余光源槽位
-        for i in range(light_count, 8):
+        for i in range(light_count, self.max_light_count):
             self.shader_program.uniform(f"lights[{i}].color", soup3D.FLOAT_VEC3, 0.0, 0.0, 0.0)
 
     def _update_uniforms(self):
