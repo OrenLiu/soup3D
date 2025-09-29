@@ -372,7 +372,7 @@ def update():
     # 将所有固定渲染场景加入全局渲染列队
     for shape_id in stable_shapes:
         shape = stable_shapes[shape_id]
-        shape.paint()
+        glCallList(shape.list_id)
 
     # 渲染所有物体
     for model in render_queue:

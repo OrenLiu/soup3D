@@ -122,6 +122,15 @@ class Texture:
             self.gen_gl_texture()
         return self.texture_id
 
+    def deep_del(self):
+        """
+        深度清理纹理，清理该纹理本身及所有该纹理用到的元素。在确定不再使用该纹理时可使用该方法释放内存。
+        :return: None
+        """
+        if self.texture_id is not None:
+            glDeleteTextures([self.texture_id])
+            self.texture_id = None
+
 
 class Channel:
     def __init__(self, texture: "Img", channelID: int):
@@ -150,6 +159,18 @@ class Channel:
         self.pil_band = bands[self.channelID]
 
         return self.pil_band
+
+    def deep_del(self):
+        """
+        深度清理灰度图，清理该灰度图本身及所有该灰度图用到的元素。在确定不再使用该灰度图时可使用该方法释放内存。
+        :return: None
+        """
+        if self.pil_band is not None:
+            self.pil_band.close()
+            self.pil_band = None
+        if self.texture is not None:
+            self.texture.deep_del()
+            self.texture = None
 
 
 class MixChannel:
@@ -275,6 +296,24 @@ class MixChannel:
         if self.texture_id is None:
             self.gen_gl_texture()
         return self.texture_id
+
+    def deep_del(self):
+        """
+        深度清理纹理，清理该纹理本身及所有该纹理用到的元素。在确定不再使用该纹理时可使用该方法释放内存。
+        :return: None
+        """
+        if self.texture_id is not None:
+            glDeleteTextures([self.texture_id])
+            self.texture_id = None
+
+        if self.pil_pic is not None:
+            self.pil_pic.close()
+            self.pil_pic = None
+
+        # 清理各个通道资源
+        for channel in [self.R, self.G, self.B, self.A]:
+            if isinstance(channel, Channel):
+                channel.deep_del()
 
 
 class ShaderProgram:
@@ -487,7 +526,30 @@ class ShaderProgram:
         深度清理着色器，清理该着色器本身及所有该着色器用到的元素。在确定不再使用该着色器时可使用该方法释放内存。
         :return: None
         """
-        glDeleteProgram(self.shader)
+        # 删除着色器程序
+        if self.shader:
+            glDeleteProgram(self.shader)
+            self.shader = None
+
+        # 删除顶点着色器
+        if self.vertex_shader:
+            glDeleteShader(self.vertex_shader)
+            self.vertex_shader = None
+
+        # 删除片段着色器
+        if self.fragment_shader:
+            glDeleteShader(self.fragment_shader)
+            self.fragment_shader = None
+
+        # 清理纹理资源
+        for _, (texture, _) in self.texture_val.items():
+            texture.deep_del()
+
+        # 清空相关字典
+        self.uniform_loc.clear()
+        self.uniform_val.clear()
+        self.uniform_type.clear()
+        self.texture_val.clear()
 
 
 class AutoSP:
@@ -528,6 +590,46 @@ class AutoSP:
         # 注册到矩阵更新队列
         set_mat_queue[id(self)] = self
         self._update_uniforms()
+
+    def retexture(self,
+                  base_color: "None | Img" = None,
+                  normal: "None | list | tuple | Img" = None,
+                  emission: "None | list | tuple | Img" = None):
+        """
+        重新向着色器上传纹理，填写None则保持原纹理不变
+        :param base_color: 主要颜色
+        :param normal:     自定义法线或法线贴图
+        :param emission:   自发光度，
+                           当该参数为数字时，0.0为不发光，1.0为完全发光；
+                           当该参数为灰度图时，黑色为不发光，白色为完全发光
+        :return: None
+        """
+        # 更新基础颜色纹理
+        if base_color is not None:
+            self.base_color = base_color
+            self.shader_program.uniform_tex("baseColor", self.base_color, 0)
+
+        # 更新法线贴图
+        if normal is not None:
+            self.normal = normal
+            if isinstance(self.normal, (list, tuple)):
+                # 如果是元组或列表，创建混合通道纹理
+                normal_texture = MixChannel((1, 1), *self.normal)
+                self.shader_program.uniform_tex("normal", normal_texture, 1)
+            else:
+                # 如果是纹理对象，直接使用
+                self.shader_program.uniform_tex("normal", self.normal, 1)
+
+        # 更新自发光贴图
+        if emission is not None:
+            self.emission = emission
+            if isinstance(self.emission, (list, tuple)):
+                # 如果是元组或列表，创建混合通道纹理
+                emission_texture = MixChannel((1, 1), *self.emission)
+                self.shader_program.uniform_tex("emission", emission_texture, 3)
+            else:
+                # 如果是纹理对象，直接使用
+                self.shader_program.uniform_tex("emission", self.emission, 3)
 
     def _create_shader_program(self) -> ShaderProgram:
         """根据参数创建着色器程序"""
@@ -860,8 +962,28 @@ class AutoSP:
         if id(self) in set_mat_queue:
             del set_mat_queue[id(self)]
 
+        # 清理材质相关资源
+        if self.base_color:
+            self.base_color.deep_del()
+            self.base_color = None
+
+        if self.normal and not isinstance(self.normal, (list, tuple)):
+            self.normal.deep_del()
+            self.normal = None
+
+        if self.emission and not isinstance(self.emission, (list, tuple)):
+            self.emission.deep_del()
+            self.emission = None
+
         # 清理着色器程序
-        self.shader_program.deep_del()
+        if self.shader_program:
+            self.shader_program.deep_del()
+            self.shader_program = None
+
+        # 清理矩阵
+        self.model_mat = None
+        self.view_mat = None
+        self.projection_mat = None
 
 
 Img = Texture | MixChannel
