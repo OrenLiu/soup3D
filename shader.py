@@ -562,9 +562,16 @@ class AutoSP:
         """
         更具用户提供的参数自动生成ShaderProgram类，并在需要时自动调用ShaderProgram的类成员，作为表面着色器渲染时使用的顶点列表格式：
         [
-            (x, y, z, u, v),
+            (x, y, z, u, v) | (x, y, z, u, v, nx, ny, nz),
             ...
         ]
+        其中：
+        x, y, z: 顶点3维坐标
+
+        u, v: 顶点对应的贴图uv坐标位置
+
+        nx, ny, nz: 顶点法线偏移，默认为0
+
         :param base_color:      主要颜色
         :param normal:          自定义法线或法线贴图
         :param emission:        自发光度，
@@ -933,9 +940,11 @@ class AutoSP:
                 tex_coords.append((v[3], 1.0 - v[4]))  # 翻转纹理坐标的Y轴
             else:
                 tex_coords.append((0.0, 0.0))
-
             # 法线数据 - 使用计算的面法线
-            normals.append(normal)
+            if len(v) >= 8:
+                normals.append(v[5:8])
+            else:
+                normals.append(normal)
 
         # 确保所有数据长度一致
         min_len = min(len(positions), len(tex_coords), len(normals))

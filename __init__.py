@@ -426,7 +426,7 @@ def open_obj(obj: str,
     R, G, B, A = 1.0, 1.0, 1.0, 1.0
     width, height = 1, 1
     emission = 0, 0, 0
-    bump_texture = None  # 新增：用于存储法线贴图
+    bump_texture = None
     roll_count = 0
     for row in command_lines:
         if roll_funk is not None:
@@ -607,6 +607,15 @@ def open_obj(obj: str,
                 if 0 <= vt_idx < len(tex_coords):
                     u, v = tex_coords[vt_idx]
                     vert.extend([u, v])
+                else:
+                    vert.extend([0.0, 0.0])  # 默认纹理坐标
+
+                # 如果有法线，添加法线数据
+                if 0 <= vn_idx < len(normals):
+                    nx, ny, nz = normals[vn_idx]
+                    vert.extend([nx, ny, nz])
+                else:
+                    vert.extend([0.0, 0.0, 0.0])  # 默认法线
 
                 base_indexes.append(tuple(vert))
 
