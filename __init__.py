@@ -389,38 +389,27 @@ def update():
     soup3D.ui.render_queue = []
 
 
-def open_obj(obj: str,
-             mtl: str = None,
+def load_mtl(mtl: str,
              double_side: bool = True,
-             roll_funk = None,
+             roll_funk=None,
              encoding: str = "utf-8",
-             max_light_count: int = 8) -> Model:
+             max_light_count: int = 8) -> dict[str: soup3D.shader.Surface]:
     """
-    从obj文件导入模型
-    :param obj:             *.obj模型文件路径
+    根据mtl文件生成多个着色器
     :param mtl:             *.mtl纹理文件路径
     :param double_side:     是否启用双面渲染
     :param roll_funk:       每当读取一行时调用一次，方法需有，且仅有1个参数，用于接收已读取的行数
-    :param encoding:        读取obj或mtl文件时使用的字符集
-    :param max_light_count: 该模型出现时会同时出现的最多的光源数量
-    :return: 生成出来的模型数据(Model类)
+    :param encoding:        读取mtl文件时使用的字符集
+    :param max_light_count: 这些着色器出现时会同时出现的最多的光源数量
+    :return: 所有生成出的表面着色器
     """
-    # 处理mtl文件
     mtl_dict = {}
 
-    mtl_str = ""
-
-    if mtl is not None:
-        mtl_file = open(mtl, "r", encoding=encoding)
-        mtl_str = mtl_file.read()
-        mtl_file.close()
-
-    obj_file = open(obj, 'r', encoding=encoding)
-    obj_str = obj_file.read()
-    obj_file.close()
+    mtl_file = open(mtl, "r", encoding=encoding)
+    mtl_str = mtl_file.read()
+    mtl_file.close()
 
     command_lines = mtl_str.split("\n")
-    line_count = 1
     now_mtl = None
 
     R, G, B, A = 1.0, 1.0, 1.0, 1.0
@@ -428,6 +417,7 @@ def open_obj(obj: str,
     emission = 0, 0, 0
     bump_texture = None
     roll_count = 0
+
     for row in command_lines:
         if roll_funk is not None:
             roll_funk(roll_count)
@@ -490,7 +480,6 @@ def open_obj(obj: str,
                         arg_name = None
                         continue
                 bump_texture = soup3D.shader.Texture(Image.open(tex_path))
-        line_count += 1
 
     # 添加最后一个材质
     if now_mtl is not None:
@@ -502,6 +491,35 @@ def open_obj(obj: str,
             max_light_count=max_light_count
         )
 
+    return mtl_dict
+
+
+def open_obj(obj: str,
+             mtl: str | dict[str: soup3D.shader.Surface] = None,
+             double_side: bool = True,
+             roll_funk=None,
+             encoding: str = "utf-8",
+             max_light_count: int = 8) -> "Model":
+    """
+    从obj文件导入模型
+    :param obj:             *.obj模型文件路径
+    :param mtl:             *.mtl纹理文件路径或已加载的材质字典
+    :param double_side:     是否启用双面渲染
+    :param roll_funk:       每当读取一行时调用一次，方法需有，且仅有1个参数，用于接收已读取的行数
+    :param encoding:        读取obj或mtl文件时使用的字符集
+    :param max_light_count: 该模型出现时会同时出现的最多的光源数量
+    :return: 生成出来的模型数据(Model类)
+    """
+    # 处理mtl文件
+    mtl_dict = {}
+
+    # 如果mtl是字符串路径，则调用load_mtl加载
+    if isinstance(mtl, str):
+        mtl_dict = load_mtl(mtl, double_side, roll_funk, encoding, max_light_count)
+    elif isinstance(mtl, dict):
+        # 如果已经是字典，则直接使用
+        mtl_dict = mtl
+
     # 创建默认材质（如果未提供MTL或材质未定义时使用）
     default_material = soup3D.shader.AutoSP(
         soup3D.shader.MixChannel((1, 1), 1.0, 1.0, 1.0, 1.0),
@@ -512,6 +530,10 @@ def open_obj(obj: str,
     )
 
     # 处理obj文件
+    obj_file = open(obj, 'r', encoding=encoding)
+    obj_str = obj_file.read()
+    obj_file.close()
+
     vertices = []  # 顶点坐标 (x, y, z)
     tex_coords = []  # 纹理坐标 (u, v)
     normals = []  # 法线向量 (nx, ny, nz)
@@ -521,6 +543,8 @@ def open_obj(obj: str,
     current_material = None
 
     command_lines = obj_str.split("\n")
+    roll_count = 0
+
     for row in command_lines:
         if roll_funk is not None:
             roll_funk(roll_count)
@@ -561,8 +585,11 @@ def open_obj(obj: str,
 
         # 处理材质库引用
         elif prefix == 'mtllib':
-            # 已在外部处理，无需二次处理
-            pass
+            # 如果mtl参数未提供，但obj文件中指定了mtl文件，则自动加载
+            if mtl is None and data:
+                mtl_path = os.path.join(os.path.dirname(obj), data[0])
+                if os.path.exists(mtl_path):
+                    mtl_dict = load_mtl(mtl_path, double_side, roll_funk, encoding, max_light_count)
 
         # 处理材质使用
         elif prefix == 'usemtl':
@@ -596,9 +623,12 @@ def open_obj(obj: str,
                 vn_idx = int(indexes[2]) - 1 if indexes[2] else -1
 
                 # 处理负索引（相对索引）
-                if v_idx < 0: v_idx = len(vertices) + v_idx
-                if vt_idx < 0: vt_idx = len(tex_coords) + vt_idx
-                if vn_idx < 0: vn_idx = len(normals) + vn_idx
+                if v_idx < 0:
+                    v_idx = len(vertices) + v_idx
+                if vt_idx < 0:
+                    vt_idx = len(tex_coords) + vt_idx
+                if vn_idx < 0:
+                    vn_idx = len(normals) + vn_idx
 
                 # 获取顶点数据（确保索引在有效范围内）
                 vert = list(vertices[v_idx])
