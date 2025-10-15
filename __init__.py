@@ -389,11 +389,12 @@ def update():
     soup3D.ui.render_queue = []
 
 
-def load_mtl(mtl: str,
+def open_mtl(mtl: str,
              double_side: bool = True,
              roll_funk=None,
              encoding: str = "utf-8",
-             max_light_count: int = 8) -> dict[str: soup3D.shader.Surface]:
+             max_light_count: int = 8,
+             surface = soup3D.shader.AutoSP) -> dict[str: soup3D.shader.Surface]:
     """
     根据mtl文件生成多个着色器
     :param mtl:             *.mtl纹理文件路径
@@ -401,6 +402,8 @@ def load_mtl(mtl: str,
     :param roll_funk:       每当读取一行时调用一次，方法需有，且仅有1个参数，用于接收已读取的行数
     :param encoding:        读取mtl文件时使用的字符集
     :param max_light_count: 这些着色器出现时会同时出现的最多的光源数量
+    :param surface:         模型使用的表面着色器类型，着色器需要有base_color, emission, normal, double_side, max_light_count等
+                            参数
     :return: 所有生成出的表面着色器
     """
     mtl_dict = {}
@@ -427,8 +430,8 @@ def load_mtl(mtl: str,
         if len(args) > 0:
             if args[0] == "newmtl":
                 if now_mtl is not None:
-                    mtl_dict[now_mtl] = soup3D.shader.AutoSP(
-                        soup3D.shader.MixChannel((width, height), R, G, B, A),
+                    mtl_dict[now_mtl] = surface(
+                        base_color=soup3D.shader.MixChannel((width, height), R, G, B, A),
                         emission=emission,
                         normal=bump_texture if bump_texture else (0.5, 0.5, 1),
                         double_side=double_side,
@@ -483,8 +486,8 @@ def load_mtl(mtl: str,
 
     # 添加最后一个材质
     if now_mtl is not None:
-        mtl_dict[now_mtl] = soup3D.shader.AutoSP(
-            soup3D.shader.MixChannel((width, height), R, G, B, A),
+        mtl_dict[now_mtl] = surface(
+            base_color=soup3D.shader.MixChannel((width, height), R, G, B, A),
             emission=emission,
             normal=bump_texture if bump_texture else (0.5, 0.5, 1),
             double_side=double_side,
@@ -495,7 +498,7 @@ def load_mtl(mtl: str,
 
 
 def open_obj(obj: str,
-             mtl: str | dict[str: soup3D.shader.Surface] = None,
+             mtl: str | dict[str: soup3D.shader.Surface] | None = None,
              double_side: bool = True,
              roll_funk=None,
              encoding: str = "utf-8",
@@ -515,14 +518,14 @@ def open_obj(obj: str,
 
     # 如果mtl是字符串路径，则调用load_mtl加载
     if isinstance(mtl, str):
-        mtl_dict = load_mtl(mtl, double_side, roll_funk, encoding, max_light_count)
+        mtl_dict = open_mtl(mtl, double_side, roll_funk, encoding, max_light_count)
     elif isinstance(mtl, dict):
         # 如果已经是字典，则直接使用
         mtl_dict = mtl
 
     # 创建默认材质（如果未提供MTL或材质未定义时使用）
     default_material = soup3D.shader.AutoSP(
-        soup3D.shader.MixChannel((1, 1), 1.0, 1.0, 1.0, 1.0),
+        base_color=soup3D.shader.MixChannel((1, 1), 1.0, 1.0, 1.0, 1.0),
         emission=(0, 0, 0),
         normal=(0.5, 0.5, 1),
         double_side=double_side,
@@ -589,7 +592,7 @@ def open_obj(obj: str,
             if mtl is None and data:
                 mtl_path = os.path.join(os.path.dirname(obj), data[0])
                 if os.path.exists(mtl_path):
-                    mtl_dict = load_mtl(mtl_path, double_side, roll_funk, encoding, max_light_count)
+                    mtl_dict = open_mtl(mtl_path, double_side, roll_funk, encoding, max_light_count)
 
         # 处理材质使用
         elif prefix == 'usemtl':
