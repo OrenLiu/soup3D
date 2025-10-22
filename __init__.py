@@ -47,7 +47,7 @@ class Face:
         """
         # 初始化类成员
         self.shape_type = shape_type  # 绘制方式
-        self.surface = surface  # 表面着色单元
+        self.surface = surface  # 表面着色器元
         self.vertex = vertex  # 表面端点
 
         # 设置OpenGL绘制模式
@@ -102,6 +102,7 @@ class Model:
         for surface_id in self.face_groups:
             faces = self.face_groups[surface_id]
             for i, face in enumerate(faces):
+                face.surface.use_by[id(face)] = face
                 surface = face.surface
                 if id(surface) not in self.surfaces:
                     self.surfaces[id(surface)] = surface
@@ -215,7 +216,8 @@ class Model:
 
         # 清理所有面使用的纹理资源
         for face in self.faces:
-            face.surface.deep_del()
+            face.surface.use_by.pop(id(face))
+            face.surface.check_del()
 
         # 从全局渲染队列中移除（如果存在）
         if self in render_queue:
