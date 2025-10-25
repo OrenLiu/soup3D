@@ -542,7 +542,7 @@ def open_obj(obj: str,
     vertices = []  # 顶点坐标 (x, y, z)
     tex_coords = []  # 纹理坐标 (u, v)
     normals = []  # 法线向量 (nx, ny, nz)
-    faces = []  # 存储解析出的面数据
+    faces_by_material = {}  # 按材质分组存储面数据
 
     # 当前使用的材质
     current_material = None
@@ -559,8 +559,8 @@ def open_obj(obj: str,
         if not row or row.startswith('#'):
             continue
 
-        # 使用shlex.split分割命令，正确处理带引号的字符串
-        tokens = shlex.split(row)
+        # 使用split代替shlex.split以提高性能
+        tokens = row.split()
         if not tokens:
             continue
 
@@ -609,7 +609,15 @@ def open_obj(obj: str,
             if len(data) < 3:
                 continue  # 至少需要3个顶点构成面
 
-            face_vertices = []
+            # 获取当前材质的标识符
+            material_id = id(current_material) if current_material else id(default_material)
+            
+            # 确保材质分组存在
+            if material_id not in faces_by_material:
+                faces_by_material[material_id] = {
+                    'material': current_material if current_material else default_material,
+                    'vertices': []
+                }
 
             # 多边形三角剖分（简单实现，适合凸多边形）
             base_indexes = []
@@ -662,20 +670,19 @@ def open_obj(obj: str,
                     base_indexes[i],
                     base_indexes[i + 1]
                 ]
-                # 添加到面的顶点列表
-                face_vertices.append(triangle)
+                # 添加到对应材质的顶点列表
+                faces_by_material[material_id]['vertices'].extend(triangle)
 
-            # 创建面对象（使用当前材质）
-            material = current_material if current_material else default_material
-
-            # 将三角剖分后的所有三角形面加入列表
-            for tri_vertices in face_vertices:
-                face = Face(
-                    shape_type="triangle_b",  # 分离的三角形
-                    surface=material,
-                    vertex=tri_vertices
-                )
-                faces.append(face)
+    # 创建面对象，每个材质对应一个面
+    faces = []
+    for material_id, face_data in faces_by_material.items():
+        if face_data['vertices']:  # 只有当有顶点数据时才创建面
+            face = Face(
+                shape_type="triangle_b",  # 分离的三角形
+                surface=face_data['material'],
+                vertex=face_data['vertices']
+            )
+            faces.append(face)
 
     # 创建模型对象（原点设置为0,0,0）
     model = Model(0, 0, 0, *faces)
