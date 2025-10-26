@@ -1081,44 +1081,6 @@ class AutoSP:
         if not self.alive:
             raise Exception("This AutoSP has been deleted")
 
-        # 对于大量顶点数据，直接使用传入的数据
-        if len(vertex) > 100:  # 如果顶点数量大于100，则认为是批量数据
-            # 直接将数据分为位置、纹理坐标和法线三组
-            positions = []
-            tex_coords = []
-            normals = []
-            
-            # 每个顶点数据格式为 (x, y, z, u, v, nx, ny, nz)
-            # 按照每3个顶点为一组进行处理
-            for i in range(0, len(vertex), 3):
-                if i + 2 < len(vertex):
-                    # 处理三角形的三个顶点
-                    for j in range(3):
-                        v = vertex[i + j]
-                        # 位置数据 (x, y, z)
-                        if len(v) >= 3:
-                            positions.append(v[0:3])
-                        else:
-                            positions.append((0.0, 0.0, 0.0))
-                            
-                        # 纹理坐标 (u, v)
-                        if len(v) >= 5:
-                            tex_coords.append((v[3], 1.0 - v[4]))  # 翻转Y轴
-                        else:
-                            tex_coords.append((0.0, 0.0))
-                            
-                        # 法线数据 (nx, ny, nz)
-                        if len(v) >= 8:
-                            normals.append(v[5:8])
-                        else:
-                            # 使用默认法线 (0, 0, 1)
-                            normals.append((0.0, 0.0, 1.0))
-            
-            # 渲染
-            self.shader_program.rend(mode, [positions, tex_coords, normals])
-            return
-
-        # 原有处理单个面的逻辑
         # 计算面法线（使用前三个顶点）
         normal = [0.0, 0.0, 1.0]  # 默认法线
         if len(vertex) >= 3:
