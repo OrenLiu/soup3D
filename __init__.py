@@ -428,7 +428,7 @@ def open_mtl(mtl: str,
             roll_funk(roll_count)
             roll_count += 1
         command = row.split("#")[0]
-        args = shlex.split(command)
+        args = smart_split(command)
         if len(args) > 0:
             if args[0] == "newmtl":
                 if now_mtl is not None:
@@ -559,8 +559,7 @@ def open_obj(obj: str,
         if not row or row.startswith('#'):
             continue
 
-        # 使用split代替shlex.split以提高性能
-        tokens = row.split()
+        tokens = smart_split(row)
         if not tokens:
             continue
 
@@ -700,6 +699,67 @@ def get_projection_mat() -> glm.fmat4x4:
         _current_near,
         _current_far
     )
+
+
+def smart_split(line):
+    """
+    高效的字符串分割函数，用于替代shlex.split处理OBJ/MTL文件行解析
+    针对OBJ/MTL文件格式进行了优化，比shlex.split快得多
+    :param line: 要分割的行
+    :return: 分割后的字符串列表
+    """
+    # 快速路径：如果不包含引号或转义字符，直接使用split()
+    if '"' not in line and "'" not in line and '\\' not in line:
+        return line.split()
+
+    # 处理包含引号的情况
+    result = []
+    current_token = ""
+    in_single_quote = False
+    in_double_quote = False
+    i = 0
+
+    while i < len(line):
+        char = line[i]
+
+        # 处理转义字符
+        if char == '\\' and i + 1 < len(line):
+            # 如果在引号内，保留转义字符和下一个字符
+            if in_single_quote or in_double_quote:
+                current_token += char + line[i + 1]
+            else:
+                # 如果不在引号内，跳过转义字符（按照普通空格分隔处理）
+                current_token += line[i + 1]
+            i += 2
+            continue
+
+        # 处理单引号
+        if char == "'" and not in_double_quote:
+            in_single_quote = not in_single_quote
+            i += 1
+            continue
+
+        # 处理双引号
+        if char == '"' and not in_single_quote:
+            in_double_quote = not in_double_quote
+            i += 1
+            continue
+
+        # 处理空格分隔符
+        if char.isspace() and not in_single_quote and not in_double_quote:
+            if current_token:
+                result.append(current_token)
+                current_token = ""
+        else:
+            current_token += char
+
+        i += 1
+
+    # 添加最后一个token
+    if current_token:
+        result.append(current_token)
+
+    return result
 
 
 if __name__ == '__main__':
