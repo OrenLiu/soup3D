@@ -63,17 +63,12 @@ class Texture:
         self.pil_pic = pil_pic
         self.texture_id = None
 
-        self.alive = True
-        self.use_by = {}
-
     def gen_gl_texture(self, texture_unit: int = 0):
         """
         生成OpenGL纹理
         :param texture_unit: 纹理单元编号（0表示GL_TEXTURE0，1表示GL_TEXTURE1等）
         :return: None
         """
-        if not self.alive:
-            raise Exception("This Texture has been deleted")
 
         # 激活指定纹理单元
         glActiveTexture(GL_TEXTURE0 + texture_unit)
@@ -124,37 +119,15 @@ class Texture:
         获取纹理id，若无纹理id，则创建纹理id。
         :return: 纹理id
         """
-        if not self.alive:
-            raise Exception("This Texture has been deleted")
 
         if self.texture_id is None:
             self.gen_gl_texture()
         return self.texture_id
 
-    def check_del(self):
-        """
-        如果没有任何其他着色单元用到该着色器，则删除该着色器
-        :return: None
-        """
-        if not self.alive:
-            return
-
-        if len(self.use_by) == 0:
-            self.deep_del()
-
-    def deep_del(self):
-        """
-        深度清理纹理，清理该纹理本身及所有该纹理用到的元素。在确定不再使用该纹理时可使用该方法释放内存。
-        :return: None
-        """
-        if not self.alive:
-            raise Exception("This Texture has been deleted")
-
+    def __del__(self):
         if self.texture_id is not None:
             glDeleteTextures([self.texture_id])
             self.texture_id = None
-
-        self.alive = False
 
 
 class Channel:
@@ -167,14 +140,9 @@ class Channel:
         self.texture = texture
         self.channelID = channelID
 
-        self.texture.use_by[id(self)] = self
-
         self.pil_band = None
 
         self._get_pil_band()
-
-        self.alive = True
-        self.use_by = {}
 
     def _get_pil_band(self) -> PIL.Image:
         """
@@ -190,35 +158,10 @@ class Channel:
 
         return self.pil_band
 
-    def check_del(self):
-        """
-        如果没有任何其他着色单元用到该着色器，则删除该着色器
-        :return: None
-        """
-        if not self.alive:
-            return
-
-        if len(self.use_by) == 0:
-            self.deep_del()
-
-    def deep_del(self):
-        """
-        深度清理灰度图，清理该灰度图本身及所有该灰度图用到的元素。在确定不再使用该灰度图时可使用该方法释放内存。
-        :return: None
-        """
-        if not self.alive:
-            # 不再抛出异常，而是直接返回
-            return
-
+    def __del__(self):
         if self.pil_band is not None:
             self.pil_band.close()
             self.pil_band = None
-        if self.texture is not None:
-            self.texture.use_by.pop(id(self), None)
-            self.texture.check_del()
-            self.texture = None
-
-        self.alive = False
 
 
 class MixChannel:
@@ -260,8 +203,6 @@ class MixChannel:
                 bands[channel_name] = band
 
             elif isinstance(source, GrayImg):  # Channel对象
-                # 注册到texture的use_by中
-                source.texture.use_by[id(self)] = self
                 texture_img = source.texture.pil_pic
 
                 # 转换为RGBA确保有四个通道
@@ -288,18 +229,12 @@ class MixChannel:
         self.pil_pic = PIL.Image.merge('RGBA', final_bands)
         self.texture_id = None
 
-        self.alive = True
-        self.use_by = {}
-
     def gen_gl_texture(self, texture_unit: int = 0):
         """
         生成OpenGL纹理
         :param texture_unit: 纹理单元编号（0表示GL_TEXTURE0，1表示GL_TEXTURE1等）
         :return: None
         """
-        if not self.alive:
-            raise Exception("This MixChannel has been deleted")
-
         # 激活指定纹理单元
         glActiveTexture(GL_TEXTURE0 + texture_unit)
 
@@ -349,32 +284,11 @@ class MixChannel:
         获取纹理id，若无纹理id，则创建纹理id。
         :return: 纹理id
         """
-        if not self.alive:
-            raise Exception("This MixChannel has been deleted")
-
         if self.texture_id is None:
             self.gen_gl_texture()
         return self.texture_id
 
-    def check_del(self):
-        """
-        如果没有任何其他着色单元用到该着色器，则删除该着色器
-        :return: None
-        """
-        if not self.alive:
-            return
-
-        if len(self.use_by) == 0:
-            self.deep_del()
-
-    def deep_del(self):
-        """
-        深度清理纹理，清理该纹理本身及所有该纹理用到的元素。在确定不再使用该纹理时可使用该方法释放内存。
-        :return: None
-        """
-        if not self.alive:
-            return
-
+    def __del__(self):
         if self.texture_id is not None:
             glDeleteTextures([self.texture_id])
             self.texture_id = None
@@ -382,15 +296,6 @@ class MixChannel:
         if self.pil_pic is not None:
             self.pil_pic.close()
             self.pil_pic = None
-
-        # 清理各个通道资源
-        for channel in [self.R, self.G, self.B, self.A]:
-            if isinstance(channel, Channel):
-                # 只有在通道还活着的情况下才删除它
-                if channel.alive:
-                    channel.deep_del()
-
-        self.alive = False
 
 
 class ShaderProgram:
@@ -437,17 +342,12 @@ class ShaderProgram:
         self.texture_val = {}
 
         self.dirty = False
-        self.alive = True
-        self.use_by = {}
 
     def use(self):
         """
         使用该着色器，会在应用时自动调用
         :return: None
         """
-        if not self.alive:
-            raise Exception("This ShaderProgram has been deleted")
-
         glUseProgram(self.shader)
 
     def rend(self, mode, vertex):
@@ -457,9 +357,6 @@ class ShaderProgram:
         :param vertex: 表面中所有的顶点
         :return: None
         """
-        if not self.alive:
-            raise Exception("This ShaderProgram has been deleted")
-
         if isinstance(self.vbo_type, str):
             types = [type_map[self.vbo_type] for i in vertex]
         else:
@@ -519,9 +416,6 @@ class ShaderProgram:
         停用该着色器，会在结束应用时自动调用
         :return: None
         """
-        if not self.alive:
-            raise Exception("This ShaderProgram has been deleted")
-
         glUseProgram(0)
 
     def uniform(self, v_name: str, v_type: str, *value):
@@ -534,9 +428,6 @@ class ShaderProgram:
                        (矩阵数量, 是否转置矩阵, 传入的矩阵)
         :return: None
         """
-        if not self.alive:
-            raise Exception("This ShaderProgram has been deleted")
-
         # 获取统一变量位置
         loc = glGetUniformLocation(self.shader, v_name)
         if loc == -1:
@@ -556,9 +447,6 @@ class ShaderProgram:
         :param texture_unit: 纹理单元编号
         :return: None
         """
-        if not self.alive:
-            raise Exception("This ShaderProgram has been deleted")
-
         # 获取统一变量位置
         prev_program = glGetIntegerv(GL_CURRENT_PROGRAM)
         loc = glGetUniformLocation(self.shader, v_name)
@@ -570,9 +458,6 @@ class ShaderProgram:
         self.uniform_loc[v_name] = loc
         self.texture_val[v_name] = (texture, texture_unit)
         self.uniform_type[v_name] = "texture"
-        
-        # 注册到texture的use_by中
-        texture.use_by[id(self)] = self
 
         # 处理纹理类型的uniform
         texture.gen_gl_texture(texture_unit)
@@ -584,9 +469,6 @@ class ShaderProgram:
         标记该着色器为需要更新
         :return: None
         """
-        if not self.alive:
-            raise Exception("This ShaderProgram has been deleted")
-
         if not self.dirty:
             self.dirty = True
             EAU.append((self.update,))
@@ -596,9 +478,6 @@ class ShaderProgram:
         更新着色器
         :return: None
         """
-        if not self.alive:
-            return
-
         prev_program = glGetIntegerv(GL_CURRENT_PROGRAM)
         if prev_program != self.shader:
             glUseProgram(self.shader)
@@ -624,25 +503,11 @@ class ShaderProgram:
         self.uniform_loc = {}
         self.dirty = False
 
-    def check_del(self):
-        """
-        如果没有任何其他着色单元用到该着色器，则删除该着色器
-        :return: None
-        """
-        if not self.alive:
-            return
-
-        if len(self.use_by) == 0:
-            self.deep_del()
-
-    def deep_del(self):
+    def __del__(self):
         """
         深度清理着色器，清理该着色器本身及所有该着色器用到的元素。在确定不再使用该着色器时可使用该方法释放内存。
         :return: None
         """
-        if not self.alive:
-            raise Exception("This ShaderProgram has been deleted")
-
         # 删除顶点着色器
         if self.vertex_shader:
             glDeleteShader(self.vertex_shader)
@@ -658,19 +523,11 @@ class ShaderProgram:
             glDeleteProgram(self.shader)
             self.shader = None
 
-        # 清理纹理资源
-        for _, (texture, _) in self.texture_val.items():
-            # 只有在纹理还活着的情况下才删除它
-            if texture.alive:
-                texture.deep_del()
-
         # 清空相关字典
         self.uniform_loc.clear()
         self.uniform_val.clear()
         self.uniform_type.clear()
         self.texture_val.clear()
-
-        self.alive = False
 
 
 class AutoSP:
@@ -719,9 +576,6 @@ class AutoSP:
         set_mat_queue[id(self)] = self
         self._update_uniforms()
 
-        self.alive = True
-        self.use_by = {}
-
         soup3D.light.dirty = True
 
     def retexture(self,
@@ -737,59 +591,34 @@ class AutoSP:
                            当该参数为灰度图时，黑色为不发光，白色为完全发光
         :return: None
         """
-        if not self.alive:
-            raise Exception("This AutoSP has been deleted")
 
         # 更新基础颜色纹理
         if base_color is not None:
-            # 从旧的base_color中注销
-            if self.base_color:
-                self.base_color.use_by.pop(id(self), None)
-                self.base_color.check_del()
             self.base_color = base_color
             self.shader_program.uniform_tex("baseColor", self.base_color, 0)
-            # 注册到新的base_color的use_by中
-            self.base_color.use_by[id(self)] = self
 
         # 更新法线贴图
         if normal is not None:
-            # 从旧的normal中注销
-            if self.normal and not isinstance(self.normal, (list, tuple)):
-                self.normal.use_by.pop(id(self), None)
-                self.normal.check_del()
                 
             self.normal = normal
             if isinstance(self.normal, (list, tuple)):
                 # 如果是元组或列表，创建混合通道纹理
                 normal_texture = MixChannel((1, 1), *self.normal)
                 self.shader_program.uniform_tex("normal", normal_texture, 1)
-                # 注册到normal_texture的use_by中
-                normal_texture.use_by[id(self)] = self
             else:
                 # 如果是纹理对象，直接使用
                 self.shader_program.uniform_tex("normal", self.normal, 1)
-                # 注册到self.normal的use_by中
-                self.normal.use_by[id(self)] = self
 
         # 更新自发光贴图
         if emission is not None:
-            # 从旧的emission中注销
-            if self.emission and not isinstance(self.emission, (list, tuple)):
-                self.emission.use_by.pop(id(self), None)
-                self.emission.check_del()
-                
             self.emission = emission
             if isinstance(self.emission, (list, tuple)):
                 # 如果是元组或列表，创建混合通道纹理
                 emission_texture = MixChannel((1, 1), *self.emission)
                 self.shader_program.uniform_tex("emission", emission_texture, 3)
-                # 注册到emission_texture的use_by中
-                emission_texture.use_by[id(self)] = self
             else:
                 # 如果是纹理对象，直接使用
                 self.shader_program.uniform_tex("emission", self.emission, 3)
-                # 注册到self.emission的use_by中
-                self.emission.use_by[id(self)] = self
 
     def create_shader_program(self) -> ShaderProgram:
         """根据参数创建着色器程序"""
@@ -934,8 +763,6 @@ class AutoSP:
 
         # 设置基础颜色纹理
         shader_program.uniform_tex("baseColor", self.base_color, 0)
-        # 注册到base_color的use_by中
-        self.base_color.use_by[id(self)] = self
 
         # 设置法线
         if isinstance(self.normal, (list | tuple)):
@@ -943,14 +770,10 @@ class AutoSP:
             shader_program.uniform_tex("normal",
                                        normal_texture,
                                        1)
-            # 注册到normal_texture的use_by中
-            normal_texture.use_by[id(self)] = self
         else:
             shader_program.uniform_tex("normal",
                                        self.normal,
                                        1)
-            # 注册到self.normal的use_by中
-            self.normal.use_by[id(self)] = self
 
         # 设置自发光
         if isinstance(self.emission, (list | tuple)):
@@ -958,14 +781,10 @@ class AutoSP:
             shader_program.uniform_tex("emission",
                                        emission_texture,
                                        3)
-            # 注册到emission_texture的use_by中
-            emission_texture.use_by[id(self)] = self
         else:
             shader_program.uniform_tex("emission",
                                        self.emission,
                                        3)
-            # 注册到self.emission的use_by中
-            self.emission.use_by[id(self)] = self
 
         return shader_program
 
@@ -975,9 +794,6 @@ class AutoSP:
         :param mat: 模型矩阵
         :return: None
         """
-        if not self.alive:
-            raise Exception("This AutoSP has been deleted")
-
         self.model_mat = mat
         self.shader_program.uniform("model", soup3D.ARRAY_MATRIX_VEC4, 1, GL_FALSE, glm.value_ptr(self.model_mat))
 
@@ -987,9 +803,6 @@ class AutoSP:
         :param mat: 投影矩阵
         :return: None
         """
-        if not self.alive:
-            raise Exception("This AutoSP has been deleted")
-
         self.view_mat = mat
         self.shader_program.uniform("view", soup3D.ARRAY_MATRIX_VEC4, 1, GL_FALSE, glm.value_ptr(self.view_mat))
 
@@ -999,9 +812,6 @@ class AutoSP:
         :param mat: 视图矩阵
         :return: None
         """
-        if not self.alive:
-            raise Exception("This AutoSP has been deleted")
-
         self.projection_mat = mat
         self.shader_program.uniform("projection", soup3D.ARRAY_MATRIX_VEC4, 1, GL_FALSE,
                                     glm.value_ptr(self.projection_mat))
@@ -1012,9 +822,6 @@ class AutoSP:
         :param light_queue: 光照列队
         :return: None
         """
-        if not self.alive:
-            raise Exception("This AutoSP has been deleted")
-
         ambient = glGetFloatv(GL_LIGHT_MODEL_AMBIENT)[:3]
         self.shader_program.uniform("ambient", soup3D.FLOAT_VEC3, *ambient)
 
@@ -1066,9 +873,6 @@ class AutoSP:
         使用该着色器，会在应用时自动调用
         :return: None
         """
-        if not self.alive:
-            raise Exception("This AutoSP has been deleted")
-
         self.shader_program.use()
 
     def rend(self, mode, vertex):
@@ -1078,9 +882,6 @@ class AutoSP:
         :param vertex: 表面中所有的顶点
         :return: None
         """
-        if not self.alive:
-            raise Exception("This AutoSP has been deleted")
-
         # 计算面法线（使用前三个顶点）
         normal = [0.0, 0.0, 1.0]  # 默认法线
         if len(vertex) >= 3:
@@ -1143,61 +944,35 @@ class AutoSP:
         停用该着色器，会在结束应用时自动调用
         :return: None
         """
-        if not self.alive:
-            raise Exception("This AutoSP has been deleted")
 
         self.shader_program.unuse()
 
-    def check_del(self):
-        """
-        如果没有任何其他着色单元用到该着色器，则删除该着色器
-        :return: None
-        """
-        if not self.alive:
-            return
-
-        if len(self.use_by) == 0:
-            self.deep_del()
-
-    def deep_del(self):
+    def __del__(self):
         """
         深度清理着色器，清理该着色器本身及所有该着色器用到的元素。在确定不再使用该着色器时可使用该方法释放内存。
         :return: None
         """
-        if not self.alive:
-            raise Exception("This AutoSP has been deleted")
-
         # 从全局队列中移除
         if id(self) in set_mat_queue:
             del set_mat_queue[id(self)]
 
         # 清理材质相关资源
         if self.base_color:
-            self.base_color.use_by.pop(id(self), None)
-            self.base_color.deep_del()
             self.base_color = None
 
         if self.normal and not isinstance(self.normal, (list, tuple)):
-            self.normal.use_by.pop(id(self), None)
-            self.normal.deep_del()
             self.normal = None
 
         if self.emission and not isinstance(self.emission, (list, tuple)):
-            self.emission.use_by.pop(id(self), None)
-            self.emission.deep_del()
             self.emission = None
 
-        # 清理着色器程序
         if self.shader_program:
-            self.shader_program.deep_del()
             self.shader_program = None
 
         # 清理矩阵
         self.model_mat = None
         self.view_mat = None
         self.projection_mat = None
-
-        self.alive = False
 
 
 Img = Texture | MixChannel
