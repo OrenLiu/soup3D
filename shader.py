@@ -7,12 +7,13 @@ import PIL.Image
 import numpy as np
 from pyglm import glm
 import math
+import weakref
 
 import soup3D.name
 
 
 EAU = []
-set_mat_queue = {}
+set_mat_queue = weakref.WeakValueDictionary()
 
 
 type_map = {
