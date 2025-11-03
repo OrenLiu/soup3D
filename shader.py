@@ -575,7 +575,6 @@ class AutoSP:
 
         # 注册到矩阵更新队列
         set_mat_queue[id(self)] = self
-        self._update_uniforms()
 
         soup3D.light.dirty = True
 
@@ -861,13 +860,6 @@ class AutoSP:
         # 填充剩余光源槽位
         for i in range(light_count, self.max_light_count):
             self.shader_program.uniform(f"lights[{i}].color", soup3D.FLOAT_VEC3, 0.0, 0.0, 0.0)
-
-    def _update_uniforms(self):
-        """更新着色器的uniform变量"""
-        self.shader_program.uniform("model", soup3D.ARRAY_MATRIX_VEC4, 1, GL_FALSE, glm.value_ptr(self.model_mat))
-        self.shader_program.uniform("view", soup3D.ARRAY_MATRIX_VEC4, 1, GL_FALSE, glm.value_ptr(self.view_mat))
-        self.shader_program.uniform("projection", soup3D.ARRAY_MATRIX_VEC4, 1, GL_FALSE,
-                                    glm.value_ptr(self.projection_mat))
 
     def use(self):
         """
