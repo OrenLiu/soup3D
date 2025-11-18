@@ -9,7 +9,7 @@ authors = [
 ]
 description = "A 3D engine based on OpenGL and pygame for beginners"
 readme = "README.md"
-license = {file = "LICENSE"}
+license = {text = "MIT"}
 requires-python = ">=3.8"
 classifiers = [
     "Development Status :: 4 - Beta",
@@ -24,6 +24,7 @@ classifiers = [
     "Topic :: Multimedia :: Graphics :: 3D Rendering",
     "Topic :: Software Development :: Libraries :: Python Modules",
 ]
+keywords = ["3D", "OpenGL", "pygame", "graphics", "game development"]
 dependencies = [
     "PyOpenGL",
     "pyglm",
