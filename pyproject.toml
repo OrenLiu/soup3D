@@ -1,0 +1,41 @@
+[build-system]
+requires = ["setuptools>=45", "wheel", "setuptools_scm[toml]>=6.2"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "soup3D"
+authors = [
+    {name = "OrangeSoup", email = "contact@osoup.top"},
+]
+description = "A 3D engine based on OpenGL and pygame for beginners"
+readme = "README.md"
+license = {file = "LICENSE"}
+requires-python = ">=3.8"
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Topic :: Multimedia :: Graphics :: 3D Rendering",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+dependencies = [
+    "PyOpenGL",
+    "pyglm",
+    "Pillow",
+    "numpy",
+    "pygame"
+]
+dynamic = ["version"]
+
+[project.urls]
+Homepage = "https://osoup.top"
+Documentation = "https://osoup.top"  # You can update this with actual documentation URL
+Source = "https://github.com/your-username/soup3D"  # Update with actual repository URL
+
+[tool.setuptools_scm]
