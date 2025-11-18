@@ -1,4 +1,5 @@
 include README.md
+include README_zh.md
 include LICENSE
 include help.md
 include readmepic0.png

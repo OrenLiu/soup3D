@@ -14,6 +14,7 @@ rm -rf *.egg-info/
 echo "拉取最新代码..."
 git pull
 
+# 编辑配置文件
 ${EDITOR:-nano} setup.py
 
 # 运行测试（如果有的话）

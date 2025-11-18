@@ -34,35 +34,38 @@ Dynamic: home-page
 Dynamic: license-file
 Dynamic: requires-python
 
-这是一个基于`OpenGL`和`pygame`开发的3D引擎，易于新手学习，可  
-用于3D游戏开发、数据可视化、3D图形的绘制等开发。
+# soup3D
 
-## 安装
+[中文版](README_zh.md)
 
-如果您的`python`环境中包含`pip`，可使用如下代码进行安装：
+A 3D engine based on `OpenGL` and `pygame` that is easy for beginners to learn, and can be used for 3D game development, data visualization, 3D graphics rendering, and other development tasks.
+
+## Installation
+
+If your `python` environment includes `pip`, you can install it using the following command:
 
 ```bash
-pip install -i https://osoup.top/simple soup3D
+pip install soup3D
 ```
 
-## 小试牛刀
+## Quick Start
 
-安装完成后，您可以试试这段代码：
+After installation, you can try this code:
 
 ```python
-import soup3D  # 3D图像渲染库
-import pygame  # pygame游戏窗口库，用于展示soup3D渲染的图像
+import soup3D  # 3D rendering library
+import pygame  # pygame window library for displaying soup3D rendered images
 
 if __name__ == '__main__':
-    pygame.init()                                                            # 初始化pygame
-    pygame.display.set_caption("soup3D")                                     # 设置pygame窗口标题
-    pygame.display.set_mode((1920, 1080), pygame.DOUBLEBUF | pygame.OPENGL)  # 配置窗口模式
-    soup3D.init(bg_color=(1, 1, 1), width=1920, height=1080)                 # 初始化soup3D
+    pygame.init()                                                            # Initialize pygame
+    pygame.display.set_caption("soup3D")                                     # Set pygame window title
+    pygame.display.set_mode((1920, 1080), pygame.DOUBLEBUF | pygame.OPENGL)  # Configure window mode
+    soup3D.init(bg_color=(1, 1, 1), width=1920, height=1080)                 # Initialize soup3D
 
-    soup3D.light.ambient(1, 1, 1)  # 设置环境光照为最亮
+    soup3D.light.ambient(1, 1, 1)  # Set ambient light to maximum
 
-    surface = soup3D.shader.AutoSP(soup3D.shader.MixChannel((1, 1), 1, 0.5, 0))  # 创建橙色表面着色器
-    face = soup3D.Face(  # 创建直角三角形
+    surface = soup3D.shader.AutoSP(soup3D.shader.MixChannel((1, 1), 1, 0.5, 0))  # Create orange surface shader
+    face = soup3D.Face(  # Create a right triangle
         soup3D.TRIANGLE_L,
         surface,
         (
@@ -71,57 +74,57 @@ if __name__ == '__main__':
             (0, 1, 0, 0, 0)
         )
     )
-    model = soup3D.Model(0, 0, -5, face)  # 将三角形加入模型
-    model.show()  # 显示模型
+    model = soup3D.Model(0, 0, -5, face)  # Add triangle to model
+    model.show()  # Display model
 
-    running = True  # 运行状态
-    while running:  # 主循环
-        soup3D.update()  # 更新soup3D
-        pygame.display.flip()  # 刷新pygame画面
-        for event in pygame.event.get():  # 便利所有事件
-            if event.type == pygame.QUIT:  # 检测退出窗口事件
-                pygame.quit()  # 关闭窗口
-                running = False  # 结束循环
+    running = True  # Running status
+    while running:  # Main loop
+        soup3D.update()  # Update soup3D
+        pygame.display.flip()  # Refresh pygame screen
+        for event in pygame.event.get():  # Iterate through all events
+            if event.type == pygame.QUIT:  # Detect window closing event
+                pygame.quit()  # Close window
+                running = False  # End loop
 
 ```
 
-如果环境配置完整，这段代码运行后，您可以看到一个橙色三角形在窗口中
+If the environment is properly configured, you will see an orange triangle in the window after running this code.
 
-## 协作开发
+## Contributing
 
-由于个人开发能力有限，我们非常欢迎志同道合的人们一同开发此项目。但为了方便代码管理，请先了解我们的开发目的及代码规范
+Due to limited individual development capabilities, we welcome like-minded people to develop this project together. But for better code management, please first understand our development goals and code standards.
 
-- **开发目的**
+- **Development Goals**
   
-  开发该项目的目的是创建一个易于上手的同时又具备一定专业性的3D渲染引擎。让具备python开发经验的用户可以以更加符合他们习惯的方式开发3D应用。
+  The purpose of developing this project is to create a 3D rendering engine that is easy to use while also having professional capabilities. We want Python developers to be able to develop 3D applications in a way that suits their habits.
   
-- **代码规范**
+- **Code Standards**
   
-  更具如下规范进行开发，可以让您的代码拥有更大的概率被我们征用
+  Following these standards will increase the likelihood of your code being accepted:
   
-  1. 所有的函数、类、类成员函数等都需要拥有`Google` 风格的 `docstring` 格式注释
+  1. All functions, classes, and class methods must have `Google` style `docstring` format comments
     
-  2. 自行经过测试后再进行pr提交，测试方法请参考下方`功能测试`部分
+  2. Test your code before submitting a PR. Please refer to the `Function Testing` section below for testing methods
     
-  3. 需要开发某个模块之前，先与作者确认需求
+  3. Confirm requirements with the author before developing any module
   
-  4. 新功能尽量不影响老功能的调用方式
+  4. New features should尽量 not affect the calling methods of existing features
     
-- **功能测试**
+- **Function Testing**
   
-  开发完成后，可通过如下方式进行功能测试
+  After development, you can test functionality in the following way:
   
-  1. 更具如下结构创建测试环境   
-     ![目录结构](readmepic0.png)
+  1. Create a test environment with the following structure   
+     ![Directory Structure](readmepic0.png)
   
-  2. 在`.../project/test.py`中编辑测试代码，测试您编写的各项功能
+  2. Edit test code in `.../project/test.py` to test the functions you've written
   
-  3. 运行`.../project/test.py`，可以正常运行，则测试成功
+  3. Run `.../project/test.py`. If it runs successfully, the test is successful
 
-## 更多内容
+## More Information
 
-该库还有很多的方法供您使用，更多内容可参阅[帮助文档](help.md)
+This library has many more methods for you to use. For more information, please refer to the [Help Document](help.md)
 
-## 许可协议
+## License
 
-本项目采用 **MIT 许可协议**，详见 [LICENSE 文件](LICENSE)。
+This project is licensed under the **MIT License**, see the [LICENSE file](LICENSE) for details.
