@@ -2,7 +2,6 @@ Metadata-Version: 2.4
 Name: soup3D
 Version: 4.2.1
 Summary: A 3D engine based on OpenGL and pygame for beginners
-Home-page: https://osoup.top
 Author: OrangeSoup
 Author-email: OrangeSoup <contact@osoup.top>
 License: MIT
@@ -30,13 +29,12 @@ Requires-Dist: Pillow
 Requires-Dist: numpy
 Requires-Dist: pygame
 Dynamic: author
-Dynamic: home-page
 Dynamic: license-file
 Dynamic: requires-python
 
 # soup3D
 
-[中文版](README_zh.md)
+[English](README.md) | [简体中文](README_zh.md)
 
 A 3D engine based on `OpenGL` and `pygame` that is easy for beginners to learn, and can be used for 3D game development, data visualization, 3D graphics rendering, and other development tasks.
 

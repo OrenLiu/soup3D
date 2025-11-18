@@ -9,11 +9,10 @@ setup(
     name='soup3D',
     version='4.2.1',
     author='OrangeSoup',
-    author_email='contact@osoup.top',
+    author_email='deanliusy@163.com',
     description='A 3D engine based on OpenGL and pygame for beginners',
     long_description=long_description,
     long_description_content_type='text/markdown',
-    url='https://osoup.top',
     packages=find_packages(),
     classifiers=[
         'Development Status :: 4 - Beta',

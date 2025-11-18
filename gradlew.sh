@@ -10,10 +10,6 @@ rm -rf build/
 rm -rf dist/
 rm -rf *.egg-info/
 
-# 确保有最新版本
-echo "拉取最新代码..."
-git pull
-
 # 编辑配置文件
 ${EDITOR:-nano} setup.py
 
