@@ -113,6 +113,21 @@ class Model:
 
         glEndList()
 
+    def mk_shadow(self) -> "Model":
+        """
+        创建模型的影子数据，可用于多个相似模型的创建。影子对象将会与原对象共用网格数据、着色器代码，但是拥有独立的位置、朝向和尺寸等。
+        :return: 影子模型
+        """
+        new_faces = [
+            Face(old_face.shape_type, old_face.surface.mk_shadow(), old_face.vertex)
+            for old_face in self.faces
+        ]
+        result = Model(self.x, self.y, self.z, *new_faces)
+        result.goto(self.x, self.y, self.z)
+        result.turn(self.yaw, self.pitch, self.roll)
+        result.size(self.width, self.height, self.length)
+        return result
+
     def paint(self) -> None:
         """
         在单帧绘制该模型

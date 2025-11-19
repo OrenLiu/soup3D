@@ -531,13 +531,30 @@ class ShaderProgram:
         self.texture_val.clear()
 
 
+class ShaderShadow(ShaderProgram):
+    def __init__(self, father: ShaderProgram):
+        """
+        影子着色器，用于创建ShaderProgram的影子数据，可用于多个相同模型的创建。
+        :param father: 原着色器
+        """
+        super().__init__(father.vertex, father.fragment)
+
+        for v_name in father.uniform_loc:
+            v_type = father.uniform_type[v_name]
+            if v_type == "texture":
+                self.uniform_tex(v_name, *father.texture_val[v_name])
+            else:
+                self.uniform(v_name, father.uniform_type[v_name], *father.uniform_val[v_name])
+
+
 class AutoSP:
     def __init__(self,
                  base_color: "Img",
                  normal: "list | tuple | Img" = (0.5, 0.5, 1),
                  emission: "list | tuple | Img" = (0, 0, 0),
                  double_side: bool = True,
-                 max_light_count: int = 8,):
+                 max_light_count: int = 8,
+                 shader_program: ShaderProgram | None = None):
         """
         更具用户提供的参数自动生成ShaderProgram类，并在需要时自动调用ShaderProgram的类成员，作为表面着色器渲染时使用的顶点列表格式：
         [
@@ -558,6 +575,7 @@ class AutoSP:
                                 当该参数为灰度图时，黑色为不发光，白色为完全发光
         :param double_side:     是否启用双面渲染
         :param max_light_count: 该着色器使用时会同时出现的最多的光源数量
+        :param shader_program:  被AutoSP管理的着色器程序，若为None，则生成着色器程序。该参数为内部调用参数，可以但不建议直接使用该参数。
         """
         self.base_color = base_color
         self.normal = normal
@@ -566,7 +584,9 @@ class AutoSP:
         self.max_light_count = max_light_count
 
         # 生成着色器程序
-        self.shader_program = self.create_shader_program()
+        self.shader_program = shader_program
+        if shader_program is None:
+            self.shader_program = self.create_shader_program()
 
         # 存储矩阵
         self.model_mat = glm.mat4(1.0)
@@ -577,6 +597,21 @@ class AutoSP:
         set_mat_queue[id(self)] = self
 
         soup3D.light.dirty = True
+
+    def mk_shadow(self) -> "AutoSP":
+        """
+        创建原对象的影子对象，影子对象将会与原对象共用网格数据、着色器代码，但是拥有独立的矩阵数据。
+        :return: 影子对象
+        """
+        result = AutoSP(
+            self.base_color,
+            self.normal,
+            self.emission,
+            self.double_side,
+            self.max_light_count,
+            ShaderShadow(self.shader_program)
+        )
+        return result
 
     def retexture(self,
                   base_color: "None | Img" = None,
