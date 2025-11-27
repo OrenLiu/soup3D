@@ -113,6 +113,51 @@ class Model:
 
         glEndList()
 
+    def __add__(self, other: "Model"):
+        """
+        将多个模型组合成一个模型，当使用“model1 + model2”时，model2将会被组合到model1。需要注意的是，模型组合后，模型中其他模型的部分将与模
+        型2共享资源，所以模型组合后，不建议继续使用参与计算的模型，建议使用返回值进行操作，比如“model3 = model1 + model2”,则建议抛弃model1
+        和model2，使用model3执行后续操作。当模型因为不可抗因素需要分开倒入时，可以用该方法进行合并。
+        :param other: 组合到该模型的模型
+        :return: 修改后的本模型
+        """
+        self.faces += other.faces
+
+        # 将表面按照表面着色器分类
+        self.face_groups = {}
+        for face in self.faces:
+            surface = face.surface
+            if id(surface) not in self.face_groups:
+                self.face_groups[id(surface)] = []
+            self.face_groups[id(surface)].append(face)
+            if hasattr(surface, "set_model_mat"):
+                surface.set_model_mat(self.get_model_mat())
+            if hasattr(surface, "set_projection_mat"):
+                surface.set_projection_mat(get_projection_mat())
+            if hasattr(surface, "set_view_mat"):
+                surface.set_view_mat(soup3D.camera.get_view_mat())
+
+        self.list_id = glGenLists(1)
+
+        # 创建显示列表
+        self.surfaces = {}
+        glNewList(self.list_id, GL_COMPILE)
+        for surface_id in self.face_groups:
+            faces = self.face_groups[surface_id]
+            for i, face in enumerate(faces):
+                surface = face.surface
+                if id(surface) not in self.surfaces:
+                    self.surfaces[id(surface)] = surface
+                if i == 0 and hasattr(surface, "use"):
+                    surface.use()
+                surface.rend(face.mode, face.vertex)
+                if i == len(faces) - 1 and hasattr(surface, "unuse"):
+                    surface.unuse()
+
+        glEndList()
+
+        return self
+
     def mk_shadow(self) -> "Model":
         """
         创建模型的影子数据，可用于多个相似模型的创建。影子对象将会与原对象共用网格数据、着色器代码，但是拥有独立的位置、朝向和尺寸等。
