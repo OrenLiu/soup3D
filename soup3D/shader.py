@@ -8,6 +8,8 @@ import numpy as np
 from pyglm import glm
 import math
 import weakref
+import traceback
+import sys
 
 import soup3D.name
 
@@ -419,7 +421,7 @@ class ShaderProgram:
         """
         glUseProgram(0)
 
-    def uniform(self, v_name: str, v_type: str, *value):
+    def uniform(self, v_name: str, v_type: str, *value) -> bool:
         """
         在下一帧向着色器传递数据
         :param v_name: 在着色器内该数据对应的变量名
@@ -427,33 +429,32 @@ class ShaderProgram:
         :param value:  其他填入glUniform方法的参数，当传入值为单独数据时(如v_name=soup3D.INT_VEC1),需在此项填写传入的数据，如果需传
                        入数组(如v_name=soup3D.ARRAY_INT_VEC1)，则需要在此项填入(数组长度, 数组)，如果为矩阵，则需填入
                        (矩阵数量, 是否转置矩阵, 传入的矩阵)
-        :return: None
+        :return: 是否成功添加uniform
         """
         # 获取统一变量位置
         loc = glGetUniformLocation(self.shader, v_name)
         if loc == -1:
-            print(f"Warning: Uniform '{v_name}' not found in shader")
-            return
+            return False
         self.uniform_loc[v_name] = loc
         self.uniform_val[v_name] = value
         self.uniform_type[v_name] = v_type
 
         self.dirty_update()
+        return True
 
-    def uniform_tex(self, v_name: str, texture: "Img", texture_unit: int = 0):
+    def uniform_tex(self, v_name: str, texture: "Img", texture_unit: int = 0) -> bool:
         """
         在下一帧向着色器传递纹理
         :param v_name:       在着色器内该纹理对应的变量名
         :param texture:      贴图类
         :param texture_unit: 纹理单元编号
-        :return: None
+        :return: 是否成功添加文理
         """
         # 获取统一变量位置
         prev_program = glGetIntegerv(GL_CURRENT_PROGRAM)
         loc = glGetUniformLocation(self.shader, v_name)
         if loc == -1:
-            print(f"Warning: Uniform '{v_name}' not found in shader")
-            return
+            return False
 
         # 记录纹理信息
         self.uniform_loc[v_name] = loc
@@ -464,6 +465,8 @@ class ShaderProgram:
         texture.gen_gl_texture(texture_unit)
 
         self.dirty_update()
+
+        return True
 
     def dirty_update(self):
         """
