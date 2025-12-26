@@ -14,7 +14,6 @@ import sys
 import soup3D.name
 
 
-EAU = []
 set_mat_queue = weakref.WeakValueDictionary()
 
 
@@ -468,6 +467,9 @@ class ShaderProgram:
 
         return True
 
+    def is_dirty(self):
+        return self.dirty
+
     def dirty_update(self):
         """
         标记该着色器为需要更新
@@ -475,7 +477,6 @@ class ShaderProgram:
         """
         if not self.dirty:
             self.dirty = True
-            EAU.append((self.update,))
 
     def update(self):
         """
@@ -977,6 +978,12 @@ class AutoSP:
         """
 
         self.shader_program.unuse()
+
+    def is_dirty(self):
+        return self.shader_program.dirty
+
+    def update(self):
+        return self.shader_program.update()
 
     def __del__(self):
         """

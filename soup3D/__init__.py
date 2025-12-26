@@ -20,12 +20,12 @@ stable_shapes = {}                # 固定渲染队列
 EAU = []                          # 更新执行队列
 
 
-_current_fov = 45
-_current_near = 0.1
-_current_far = 1024
+proj_fov = 45
+proj_near = 0.1
+proj_far = 1024
 
-_current_width = 1920
-_current_height = 1080
+proj_width = 1920
+proj_height = 1080
 
 
 class Face:
@@ -298,14 +298,14 @@ def init(width: int | float = 1920,
     :param far:      最远渲染距离
     :return: None
     """
-    global _current_fov, _current_near, _current_far
-    global _current_width, _current_height
-    _current_fov = fov
-    _current_near = near
-    _current_far = far
+    global proj_fov, proj_near, proj_far
+    global proj_width, proj_height
+    proj_fov = fov
+    proj_near = near
+    proj_far = far
 
-    _current_width = width
-    _current_height = height
+    proj_width = width
+    proj_height = height
 
     glClearColor(*bg_color, 1)  # 在上下文创建后设置背景颜色
     glEnable(GL_DEPTH_TEST)  # 启用深度测试
@@ -325,16 +325,16 @@ def resize(width: int | float, height: int | float) -> None:
     :param height: 窗口高度
     :return: None
     """
-    global _current_width, _current_height
+    global proj_width, proj_height
 
-    _current_width = width
-    _current_height = height
+    proj_width = width
+    proj_height = height
 
     glViewport(0, 0, width, height)
     glMatrixMode(GL_PROJECTION)
     glLoadIdentity()
     aspect_ratio = width / height
-    gluPerspective(_current_fov, aspect_ratio, _current_near, _current_far)
+    gluPerspective(proj_fov, aspect_ratio, proj_near, proj_far)
     glMatrixMode(GL_MODELVIEW)
 
     for surface_id in soup3D.shader.set_mat_queue:
@@ -412,7 +412,6 @@ def update():
         soup3D.light.set_surface_light()
 
     # 执行更新执行列队
-    EAU += soup3D.shader.EAU
     EAU += soup3D.light.EAU
 
     EAU_len = len(EAU)  # 调用列队前列队的长度
@@ -422,16 +421,23 @@ def update():
             raise Exception(f"EAU length changed while running: {args[0].__name__}{(*args[1:],)}")
 
     EAU = []
-    shader.EAU = []
     light.EAU = []
 
-    # 将所有固定渲染场景加入全局渲染列队
+    # 渲染固定渲染物体
     for shape_id in stable_shapes:
-        shape = stable_shapes[shape_id]
-        glCallList(shape.list_id)
+        model = stable_shapes[shape_id]
+        for shape in model.faces:
+            surface: soup3D.shader.Surface = shape.surface
+            if surface.is_dirty():
+                surface.update()
+        glCallList(model.list_id)
 
-    # 渲染所有物体
+    # 渲染单帧渲染物体
     for model in render_queue:
+        for shape in model.faces:
+            surface: soup3D.shader.Surface = shape.surface
+            if surface.is_dirty():
+                surface.update()
         glCallList(model.list_id)
 
     # 清空渲染队列
@@ -748,10 +754,10 @@ def get_projection_mat() -> glm.fmat4x4:
     :return: 矩阵
     """
     return glm.perspective(
-        glm.radians(_current_fov),
-        _current_width/_current_height,
-        _current_near,
-        _current_far
+        glm.radians(proj_fov),
+        proj_width / proj_height,
+        proj_near,
+        proj_far
     )
 
 
