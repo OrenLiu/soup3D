@@ -245,10 +245,11 @@ def ambient(R: int | float, G: int | float, B: int | float) -> None:
 def set_surface_light():
     global dirty
 
+    soup3D.shader.light_queue = light_queue
     for surface_id in soup3D.shader.set_mat_queue:
         surface = soup3D.shader.set_mat_queue[surface_id]
         if hasattr(surface, "set_light"):
-            surface.set_light(light_queue)
+            surface.set_light()
     dirty = False
 
 

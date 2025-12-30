@@ -16,6 +16,8 @@ import soup3D.name
 
 set_mat_queue = weakref.WeakValueDictionary()
 
+light_queue = {}
+
 
 type_map = {
     soup3D.name.FLOAT_VEC1: glUniform1f,
@@ -608,6 +610,8 @@ class AutoSP:
         self.view_dirty = True
         self.projection_dirty = True
 
+        self.light_dirty = True
+
     def mk_shadow(self) -> "AutoSP":
         """
         创建原对象的影子对象，影子对象将会与原对象共用网格数据、着色器代码，但是拥有独立的矩阵数据。
@@ -863,50 +867,14 @@ class AutoSP:
         self.dirty = True
         self.projection_dirty = True
 
-    def set_light(self, light_queue):
+    def set_light(self):
         """
         设置光照，在添加、减少光照时自动调用
         :param light_queue: 光照列队
         :return: None
         """
-        ambient = glGetFloatv(GL_LIGHT_MODEL_AMBIENT)[:3]
-        self.shader_program.uniform("ambient", soup3D.FLOAT_VEC3, *ambient)
-
-        # 收集有效光源
-        light_count = 0
-        for light_id, light in light_queue.items():
-            if light.on and light_count < self.max_light_count:
-                if isinstance(light, soup3D.light.Cone):
-                    # 点光源（聚光灯）
-                    direction = light._calc_direction()
-                    # 计算锥角的余弦值
-                    cos_angle = math.cos(math.radians(light.angle / 2))
-
-                    self.shader_program.uniform(f"lights[{light_count}].position", soup3D.FLOAT_VEC3, *light.place)
-                    self.shader_program.uniform(f"lights[{light_count}].direction", soup3D.FLOAT_VEC3, *direction)
-                    self.shader_program.uniform(f"lights[{light_count}].color", soup3D.FLOAT_VEC3, *light.color)
-                    self.shader_program.uniform(f"lights[{light_count}].attenuation", soup3D.FLOAT_VEC1,
-                                                light.attenuation)
-                    self.shader_program.uniform(f"lights[{light_count}].cosAngle", soup3D.FLOAT_VEC1, cos_angle)
-                    self.shader_program.uniform(f"lights[{light_count}].type", soup3D.INT_VEC1, 0)
-                    light_count += 1
-                elif isinstance(light, soup3D.light.Direct):
-                    # 方向光
-                    direction = light._calc_direction()
-                    self.shader_program.uniform(f"lights[{light_count}].position", soup3D.FLOAT_VEC3, 0, 0, 0)
-                    self.shader_program.uniform(f"lights[{light_count}].direction", soup3D.FLOAT_VEC3, *direction)
-                    self.shader_program.uniform(f"lights[{light_count}].color", soup3D.FLOAT_VEC3, *light.color)
-                    self.shader_program.uniform(f"lights[{light_count}].attenuation", soup3D.FLOAT_VEC1, 0.0)
-                    self.shader_program.uniform(f"lights[{light_count}].cosAngle", soup3D.FLOAT_VEC1, 0.0)
-                    self.shader_program.uniform(f"lights[{light_count}].type", soup3D.INT_VEC1, 1)
-                    light_count += 1
-
-        # 设置光源数量
-        self.shader_program.uniform("lightCount", soup3D.INT_VEC1, light_count)
-
-        # 填充剩余光源槽位
-        for i in range(light_count, self.max_light_count):
-            self.shader_program.uniform(f"lights[{i}].color", soup3D.FLOAT_VEC3, 0.0, 0.0, 0.0)
+        self.dirty = True
+        self.light_dirty = True
 
     def use(self):
         """
@@ -984,7 +952,6 @@ class AutoSP:
         停用该着色器，会在结束应用时自动调用
         :return: None
         """
-
         self.shader_program.unuse()
 
     def is_dirty(self):
@@ -1019,6 +986,50 @@ class AutoSP:
                     glm.value_ptr(self.projection_mat)
                 )
                 self.projection_dirty = False
+            if self.light_dirty:
+                ambient = glGetFloatv(GL_LIGHT_MODEL_AMBIENT)[:3]
+                self.shader_program.uniform("ambient", soup3D.FLOAT_VEC3, *ambient)
+
+                # 收集有效光源
+                light_count = 0
+                for light_id, light in light_queue.items():
+                    if light.on and light_count < self.max_light_count:
+                        if isinstance(light, soup3D.light.Cone):
+                            # 点光源（聚光灯）
+                            direction = light._calc_direction()
+                            # 计算锥角的余弦值
+                            cos_angle = math.cos(math.radians(light.angle / 2))
+
+                            self.shader_program.uniform(f"lights[{light_count}].position", soup3D.FLOAT_VEC3,
+                                                        *light.place)
+                            self.shader_program.uniform(f"lights[{light_count}].direction", soup3D.FLOAT_VEC3,
+                                                        *direction)
+                            self.shader_program.uniform(f"lights[{light_count}].color", soup3D.FLOAT_VEC3, *light.color)
+                            self.shader_program.uniform(f"lights[{light_count}].attenuation", soup3D.FLOAT_VEC1,
+                                                        light.attenuation)
+                            self.shader_program.uniform(f"lights[{light_count}].cosAngle", soup3D.FLOAT_VEC1, cos_angle)
+                            self.shader_program.uniform(f"lights[{light_count}].type", soup3D.INT_VEC1, 0)
+                            light_count += 1
+                        elif isinstance(light, soup3D.light.Direct):
+                            # 方向光
+                            direction = light._calc_direction()
+                            self.shader_program.uniform(f"lights[{light_count}].position", soup3D.FLOAT_VEC3, 0, 0, 0)
+                            self.shader_program.uniform(f"lights[{light_count}].direction", soup3D.FLOAT_VEC3,
+                                                        *direction)
+                            self.shader_program.uniform(f"lights[{light_count}].color", soup3D.FLOAT_VEC3, *light.color)
+                            self.shader_program.uniform(f"lights[{light_count}].attenuation", soup3D.FLOAT_VEC1, 0.0)
+                            self.shader_program.uniform(f"lights[{light_count}].cosAngle", soup3D.FLOAT_VEC1, 0.0)
+                            self.shader_program.uniform(f"lights[{light_count}].type", soup3D.INT_VEC1, 1)
+                            light_count += 1
+
+                # 设置光源数量
+                self.shader_program.uniform("lightCount", soup3D.INT_VEC1, light_count)
+
+                # 填充剩余光源槽位
+                for i in range(light_count, self.max_light_count):
+                    self.shader_program.uniform(f"lights[{i}].color", soup3D.FLOAT_VEC3, 0.0, 0.0, 0.0)
+
+                self.light_dirty = False
         if self.shader_program.is_dirty():
             self.shader_program.update()
         self.dirty = False

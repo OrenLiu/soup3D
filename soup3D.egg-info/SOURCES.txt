@@ -1,3 +1,4 @@
+.gitignore
 LICENSE
 MANIFEST.in
 README.md
@@ -25,10 +26,16 @@ soup3D.egg-info/dependency_links.txt
 soup3D.egg-info/requires.txt
 soup3D.egg-info/top_level.txt
 soup3D/__pycache__/__init__.cpython-310.pyc
+soup3D/__pycache__/__init__.cpython-313.pyc
 soup3D/__pycache__/camera.cpython-310.pyc
+soup3D/__pycache__/camera.cpython-313.pyc
 soup3D/__pycache__/events.cpython-310.pyc
 soup3D/__pycache__/light.cpython-310.pyc
+soup3D/__pycache__/light.cpython-313.pyc
 soup3D/__pycache__/main.cpython-310.pyc
 soup3D/__pycache__/name.cpython-310.pyc
+soup3D/__pycache__/name.cpython-313.pyc
 soup3D/__pycache__/shader.cpython-310.pyc
+soup3D/__pycache__/shader.cpython-313.pyc
 soup3D/__pycache__/ui.cpython-310.pyc
+soup3D/__pycache__/ui.cpython-313.pyc
