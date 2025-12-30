@@ -602,6 +602,12 @@ class AutoSP:
 
         soup3D.light.dirty = True
 
+        self.dirty = True
+
+        self.model_dirty = True
+        self.view_dirty = True
+        self.projection_dirty = True
+
     def mk_shadow(self) -> "AutoSP":
         """
         创建原对象的影子对象，影子对象将会与原对象共用网格数据、着色器代码，但是拥有独立的矩阵数据。
@@ -834,7 +840,8 @@ class AutoSP:
         :return: None
         """
         self.model_mat = mat
-        self.shader_program.uniform("model", soup3D.ARRAY_MATRIX_VEC4, 1, GL_FALSE, glm.value_ptr(self.model_mat))
+        self.dirty = True
+        self.model_dirty = True
 
     def set_view_mat(self, mat: glm.mat4):
         """
@@ -843,7 +850,8 @@ class AutoSP:
         :return: None
         """
         self.view_mat = mat
-        self.shader_program.uniform("view", soup3D.ARRAY_MATRIX_VEC4, 1, GL_FALSE, glm.value_ptr(self.view_mat))
+        self.dirty = True
+        self.view_dirty = True
 
     def set_projection_mat(self, mat: glm.mat4):
         """
@@ -852,8 +860,8 @@ class AutoSP:
         :return: None
         """
         self.projection_mat = mat
-        self.shader_program.uniform("projection", soup3D.ARRAY_MATRIX_VEC4, 1, GL_FALSE,
-                                    glm.value_ptr(self.projection_mat))
+        self.dirty = True
+        self.projection_dirty = True
 
     def set_light(self, light_queue):
         """
@@ -980,10 +988,40 @@ class AutoSP:
         self.shader_program.unuse()
 
     def is_dirty(self):
-        return self.shader_program.dirty
+        return self.shader_program.dirty or self.dirty
 
     def update(self):
-        return self.shader_program.update()
+        if self.dirty:
+            if self.model_dirty:
+                self.shader_program.uniform(
+                    "model",
+                    soup3D.ARRAY_MATRIX_VEC4,
+                    1,
+                    GL_FALSE,
+                    glm.value_ptr(self.model_mat)
+                )
+                self.model_dirty = False
+            if self.view_dirty:
+                self.shader_program.uniform(
+                    "view",
+                    soup3D.ARRAY_MATRIX_VEC4,
+                    1,
+                    GL_FALSE,
+                    glm.value_ptr(self.view_mat)
+                )
+                self.view_dirty = False
+            if self.projection_dirty:
+                self.shader_program.uniform(
+                    "projection",
+                    soup3D.ARRAY_MATRIX_VEC4,
+                    1,
+                    GL_FALSE,
+                    glm.value_ptr(self.projection_mat)
+                )
+                self.projection_dirty = False
+        if self.shader_program.is_dirty():
+            self.shader_program.update()
+        self.dirty = False
 
     def __del__(self):
         """
