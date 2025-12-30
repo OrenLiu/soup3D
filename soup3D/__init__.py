@@ -127,6 +127,10 @@ class Model:
         return self
 
     def gen_dis_list(self):
+        """
+        创建显示列表，该操作开销较大，不建议实时使用
+        :return: None
+        """
         self.list_id = glGenLists(1)
         self.surfaces = {}
         glNewList(self.list_id, GL_COMPILE)
@@ -144,6 +148,10 @@ class Model:
         glEndList()
 
     def del_dis_list(self):
+        """
+        删除显示列表
+        :return: None
+        """
         global render_queue
         global stable_shapes
 

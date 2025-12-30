@@ -102,15 +102,16 @@
     :param value:  其他填入glUniform方法的参数，当传入值为单独数据时(如v_name=soup3D.INT_VEC1),需在此项填写传入的数据，如果需传   
                    入数组(如v_name=soup3D.ARRAY_INT_VEC1)，则需要在此项填入(数组长度, 数组)，如果为矩阵，则需填入   
                    (矩阵数量, 是否转置矩阵, 传入的矩阵)   
-    :return: None   
+    :return: 是否成功添加uniform   
    
   - uniform_tex(self, v_name, texture, texture_unit): `函数`   
     在下一帧向着色器传递纹理   
     :param v_name:       在着色器内该纹理对应的变量名   
     :param texture:      贴图类   
     :param texture_unit: 纹理单元编号   
-    :return: None   
+    :return: 是否成功添加文理   
    
+  - is_dirty(self): `函数`   
   - dirty_update(self): `函数`   
     标记该着色器为需要更新   
     :return: None   
@@ -184,7 +185,7 @@
     :param mat: 视图矩阵   
     :return: None   
    
-  - set_light(self, light_queue): `函数`   
+  - set_light(self): `函数`   
     设置光照，在添加、减少光照时自动调用   
     :param light_queue: 光照列队   
     :return: None   
@@ -203,6 +204,8 @@
     停用该着色器，会在结束应用时自动调用   
     :return: None   
    
+  - is_dirty(self): `函数`   
+  - update(self): `函数`   
   - __del__(self): `函数`   
     深度清理着色器，清理该着色器本身及所有该着色器用到的元素。在确定不再使用该着色器时可使用该方法释放内存。   
     :return: None   
@@ -290,6 +293,14 @@ soup3D的ui子库，用于绘制2D图形，可绘制HUD叠加显示、GUI用户�
     和model2，使用model3执行后续操作。当模型因为不可抗因素需要分开倒入时，可以用该方法进行合并。   
     :param other: 组合到该模型的模型   
     :return: 修改后的本模型   
+   
+  - gen_dis_list(self): `函数`   
+    创建显示列表，该操作开销较大，不建议实时使用   
+    :return: None   
+   
+  - del_dis_list(self): `函数`   
+    删除显示列表   
+    :return: None   
    
   - mk_shadow(self): `函数`   
     创建模型的影子数据，可用于多个相似模型的创建。影子对象将会与原对象共用网格数据、着色器代码，但是拥有独立的位置、朝向和尺寸等。   
@@ -502,6 +513,10 @@ soup3D的ui子库，用于绘制2D图形，可绘制HUD叠加显示、GUI用户�
    
    
 - set_surface_light(): `函数`   
+  自动调用函数，无需手动调用。在有光源变动时让所有着色器响应。   
+  :return: None   
+   
+   
 - rotated(Xa, Ya, Xb, Yb, degree): `函数`   
   点A绕点B旋转特定角度后，点A的坐标   
   :param Xa:     环绕点(点A)X坐标   
