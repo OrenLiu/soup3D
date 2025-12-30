@@ -94,24 +94,8 @@ class Model:
             if hasattr(surface, "set_view_mat"):
                 surface.set_view_mat(soup3D.camera.get_view_mat())
 
-        self.list_id = glGenLists(1)
-
-        # 创建显示列表
-        self.surfaces = {}
-        glNewList(self.list_id, GL_COMPILE)
-        for surface_id in self.face_groups:
-            faces = self.face_groups[surface_id]
-            for i, face in enumerate(faces):
-                surface = face.surface
-                if id(surface) not in self.surfaces:
-                    self.surfaces[id(surface)] = surface
-                if i == 0 and hasattr(surface, "use"):
-                    surface.use()
-                surface.rend(face.mode, face.vertex)
-                if i == len(faces)-1 and hasattr(surface, "unuse"):
-                    surface.unuse()
-
-        glEndList()
+        self.list_id = None
+        self.surfaces = None
 
     def __add__(self, other: "Model"):
         """
@@ -137,9 +121,13 @@ class Model:
             if hasattr(surface, "set_view_mat"):
                 surface.set_view_mat(soup3D.camera.get_view_mat())
 
-        self.list_id = glGenLists(1)
+        if self.list_id is not None:
+            self.gen_dis_list()
 
-        # 创建显示列表
+        return self
+
+    def gen_dis_list(self):
+        self.list_id = glGenLists(1)
         self.surfaces = {}
         glNewList(self.list_id, GL_COMPILE)
         for surface_id in self.face_groups:
@@ -153,10 +141,24 @@ class Model:
                 surface.rend(face.mode, face.vertex)
                 if i == len(faces) - 1 and hasattr(surface, "unuse"):
                     surface.unuse()
-
         glEndList()
 
-        return self
+    def del_dis_list(self):
+        global render_queue
+        global stable_shapes
+
+        # 清理顶点列表
+        if self.list_id is not None:
+            glDeleteLists(self.list_id, 1)
+            self.list_id = None
+
+        # 从全局渲染队列中移除（如果存在）
+        if self in render_queue:
+            render_queue.remove(self)
+
+        # 从稳定形状中移除（如果存在）
+        if id(self) in stable_shapes:
+            stable_shapes.pop(id(self))
 
     def mk_shadow(self) -> "Model":
         """
@@ -178,6 +180,8 @@ class Model:
         在单帧绘制该模型
         :return: None
         """
+        if self.list_id is None:
+            self.gen_dis_list()
         render_queue.append(self)
 
     def show(self) -> None:
@@ -186,6 +190,9 @@ class Model:
         :return: None
         """
         global stable_shapes
+
+        if self.list_id is None:
+            self.gen_dis_list()
         stable_shapes[id(self)] = self
 
     def hide(self) -> None:
@@ -205,8 +212,8 @@ class Model:
         :return: None
         """
         self.x, self.y, self.z = x, y, z
-        for surface_id in self.surfaces:
-            surface = self.surfaces[surface_id]
+        for face in self.faces:
+            surface = face.surface
             if hasattr(surface, "set_model_mat"):
                 surface.set_model_mat(self.get_model_mat())
 
@@ -219,8 +226,8 @@ class Model:
         :return: None
         """
         self.yaw, self.pitch, self.roll = yaw, pitch, roll
-        for surface_id in self.surfaces:
-            surface = self.surfaces[surface_id]
+        for face in self.faces:
+            surface = face.surface
             if hasattr(surface, "set_model_mat"):
                 surface.set_model_mat(self.get_model_mat())
 
@@ -233,8 +240,8 @@ class Model:
         :return: None
         """
         self.width, self.height, self.length = width, height, length
-        for surface_id in self.surfaces:
-            surface = self.surfaces[surface_id]
+        for face in self.faces:
+            surface = face.surface
             if hasattr(surface, "set_model_mat"):
                 surface.set_model_mat(self.get_model_mat())
 
@@ -267,19 +274,7 @@ class Model:
         深度清理模型，清理该模型本身及所有该模型用到的元素。在确定不再使用该模型时可使用该方法释放内存。
         :return: None
         """
-        global render_queue
-        global stable_shapes
-
-        # 清理顶点列表
-        glDeleteLists(self.list_id, 1)
-
-        # 从全局渲染队列中移除（如果存在）
-        if self in render_queue:
-            render_queue.remove(self)
-
-        # 从稳定形状中移除（如果存在）
-        if id(self) in stable_shapes:
-            stable_shapes.pop(id(self))
+        self.del_dis_list()
 
 
 def init(width: int | float = 1920,
