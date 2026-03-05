@@ -1,11 +1,10 @@
 """
 调用：soup3D.ui
-soup3D的ui子库，用于绘制2D图形，可绘制HUD叠加显示、GUI用户界面等。
+soup3D 的 ui 子库，用于绘制 2D 图形，可绘制 HUD 叠加显示、GUI 用户界面等。
 """
 from OpenGL.GL import *
 from OpenGL.GLU import *
 from math import*
-from PIL import Image
 
 import soup3D.shader
 

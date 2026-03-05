@@ -28,7 +28,6 @@ keywords = ["3D", "OpenGL", "pygame", "graphics", "game development"]
 dependencies = [
     "PyOpenGL",
     "pyglm",
-    "Pillow",
     "numpy",
     "pygame"
 ]

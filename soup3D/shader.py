@@ -3,7 +3,6 @@
 """
 from OpenGL.GL import *
 from OpenGL.GL.shaders import compileShader, compileProgram
-import PIL.Image
 import numpy as np
 from pyglm import glm
 import math
@@ -54,53 +53,62 @@ type_map = {
 
 
 class Texture:
-    def __init__(self, pil_pic: PIL.Image.Image):
+    def __init__(self, image_data: bytes | str, width: int = None, height: int = None, format: str = 'RGBA'):
         """
-        贴图，基于pillow处理图像
+        贴图，直接使用二进制图像数据或文件路径
         提取通道时：
-        通道0: 红色通道
-        通道1: 绿色通道
-        通道2: 蓝色通道
-        通道3: 透明度(如无该通道，则统一返回1)
-        :param pil_pic: pillow图像
+        通道 0: 红色通道
+        通道 1: 绿色通道
+        通道 2: 蓝色通道
+        通道 3: 透明度 (如无该通道，则统一返回 1)
+        :param image_data: 二进制图像数据或文件路径字符串
+        :param width: 图像宽度（当 image_data 为二进制数据时需要提供）
+        :param height: 图像高度（当 image_data 为二进制数据时需要提供）
+        :param format: 图像格式，可以是 'RGBA', 'RGB', 'L' (灰度) 等
         """
-        self.pil_pic = pil_pic
+        self.width = width
+        self.height = height
+        self.format = format
         self.texture_id = None
+        
+        # 如果传入的是文件路径，读取文件
+        if isinstance(image_data, str):
+            self.image_path = image_data
+            self.image_data = None  # 延迟加载
+        else:
+            self.image_path = None
+            self.image_data = image_data
+            if width is None or height is None:
+                raise ValueError("When providing binary data, width and height must be specified")
 
     def gen_gl_texture(self, texture_unit: int = 0):
         """
-        生成OpenGL纹理
-        :param texture_unit: 纹理单元编号（0表示GL_TEXTURE0，1表示GL_TEXTURE1等）
+        生成 OpenGL 纹理
+        :param texture_unit: 纹理单元编号（0 表示 GL_TEXTURE0，1 表示 GL_TEXTURE1 等）
         :return: None
         """
-
         # 激活指定纹理单元
         glActiveTexture(GL_TEXTURE0 + texture_unit)
 
-        # 确定图像模式并转换为RGBA格式
-        mode = self.pil_pic.mode
-        if mode == '1':  # 黑白图像
-            self.pil_pic = self.pil_pic.convert('RGBA')
-            data = self.pil_pic.tobytes('raw', 'RGBA', 0, -1)
-        elif mode == 'L':  # 灰度图像
-            self.pil_pic = self.pil_pic.convert('RGBA')
-            data = self.pil_pic.tobytes('raw', 'RGBA', 0, -1)
-        elif mode == 'RGB':  # RGB图像
-            self.pil_pic = self.pil_pic.convert('RGBA')
-            data = self.pil_pic.tobytes('raw', 'RGBA', 0, -1)
-        elif mode == 'RGBA':  # RGBA图像
-            data = self.pil_pic.tobytes('raw', 'RGBA', 0, -1)
-        else:
-            # 其他格式转换为RGBA
-            self.pil_pic = self.pil_pic.convert('RGBA')
-            data = self.pil_pic.tobytes('raw', 'RGBA', 0, -1)
+        # 加载图像数据（如果还未加载）
+        if self.image_path and self.image_data is None:
+            self._load_image()
 
+        # 确定图像模式和对应的 OpenGL 格式
+        format_map = {
+            'RGBA': (GL_RGBA, GL_RGBA),
+            'RGB': (GL_RGB, GL_RGB),
+            'L': (GL_RED, GL_RED),  # 灰度图使用 RED 通道
+            'A': (GL_ALPHA, GL_ALPHA)
+        }
+        
+        internal_format, data_format = format_map.get(self.format, (GL_RGBA, GL_RGBA))
+        
         # 获取图像尺寸
-        width, height = self.pil_pic.size
+        width, height = self.width, self.height
 
         # 创建或绑定纹理
         texture_id = glGenTextures(1)
-
         glBindTexture(GL_TEXTURE_2D, texture_id)
 
         # 设置纹理参数
@@ -110,20 +118,49 @@ class Texture:
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR)
 
         # 上传纹理数据
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, data)
+        glTexImage2D(GL_TEXTURE_2D, 0, internal_format, width, height, 0, data_format, GL_UNSIGNED_BYTE, self.image_data)
 
-        # 生成mipmap（提高纹理在远距离的渲染质量）
+        # 生成 mipmap（提高纹理在远距离的渲染质量）
         glGenerateMipmap(GL_TEXTURE_2D)
 
         self.texture_id = texture_id
         return texture_id
+    
+    def _load_image(self):
+        """
+        从文件路径加载图像数据
+        这里需要根据实际情况实现图像加载逻辑
+        如果需要支持多种格式，可以集成 stb_image 或其他轻量级图像加载库
+        """
+        if not self.image_path:
+            return
+        
+        # 尝试使用 imageio 加载（可选依赖）
+        try:
+            import imageio.v2 as imageio
+            img = imageio.imread(self.image_path)
+            self.height, self.width = img.shape[:2]
+            
+            if len(img.shape) == 2:  # 灰度图
+                self.format = 'L'
+                self.image_data = img.tobytes()
+            elif img.shape[2] == 3:  # RGB
+                self.format = 'RGB'
+                self.image_data = img.tobytes()
+            elif img.shape[2] == 4:  # RGBA
+                self.format = 'RGBA'
+                self.image_data = img.tobytes()
+        except ImportError:
+            raise ImportError(
+                "Please install imageio to load images: pip install imageio\n"
+                "Or provide image data directly as bytes"
+            )
 
     def get_texture_id(self):
         """
-        获取纹理id，若无纹理id，则创建纹理id。
-        :return: 纹理id
+        获取纹理 id，若无纹理 id，则创建纹理 id。
+        :return: 纹理 id
         """
-
         if self.texture_id is None:
             self.gen_gl_texture()
         return self.texture_id
@@ -144,29 +181,6 @@ class Channel:
         self.texture = texture
         self.channelID = channelID
 
-        self.pil_band = None
-
-        self._get_pil_band()
-
-    def _get_pil_band(self) -> PIL.Image:
-        """
-        获取单通道pil图像
-        :return:
-        """
-        img = self.texture.pil_pic
-        if img.mode != 'RGBA':
-            img = img.convert('RGBA')
-
-        bands = img.split()
-        self.pil_band = bands[self.channelID]
-
-        return self.pil_band
-
-    def __del__(self):
-        if self.pil_band is not None:
-            self.pil_band.close()
-            self.pil_band = None
-
 
 class MixChannel:
     def __init__(self,
@@ -177,95 +191,109 @@ class MixChannel:
                  A: "int | float | GrayImg" = 1.0):
         """
         混合通道成为一个贴图
-        混合通道贴图(MixChannel)可通过类似贴图(Texture)的方式提取通道
+        混合通道贴图 (MixChannel) 可通过类似贴图 (Texture) 的方式提取通道
         :param resize: 重新定义图像尺寸，不同的通道可能来自不同尺寸的贴图，为实现合并，需将所有通道转换为同一尺寸的图像
-        :param R: 红色通道，可直接通过0.0~1.0的小数定义通道亮度，也可以引入Channel通道实现引入贴图通道
-        :param G: 绿色通道，可直接通过0.0~1.0的小数定义通道亮度，也可以引入Channel通道实现引入贴图通道
-        :param B: 蓝色通道，可直接通过0.0~1.0的小数定义通道亮度，也可以引入Channel通道实现引入贴图通道
-        :param A: 透明度通道，可直接通过0.0~1.0的小数定义通道亮度，也可以引入Channel通道实现引入贴图通道
+        :param R: 红色通道，可直接通过 0.0~1.0 的小数定义通道亮度，也可以引入 Channel 通道实现引入贴图通道
+        :param G: 绿色通道，可直接通过 0.0~1.0 的小数定义通道亮度，也可以引入 Channel 通道实现引入贴图通道
+        :param B: 蓝色通道，可直接通过 0.0~1.0 的小数定义通道亮度，也可以引入 Channel 通道实现引入贴图通道
+        :param A: 透明度通道，可直接通过 0.0~1.0 的小数定义通道亮度，也可以引入 Channel 通道实现引入贴图通道
         """
         self.resize = resize
         self.R = R
         self.G = G
         self.B = B
         self.A = A
-
-        self.pil_pic = None  # 缓存混合通道后的图像，以便父着色单元提取
-
-        # 创建目标尺寸的空图像（RGBA模式）
-        result = PIL.Image.new('RGBA', self.resize)
-
-        # 处理每个通道：R, G, B, A
-        bands = {}
-        for channel_name in ['R', 'G', 'B', 'A']:
-            source = getattr(self, channel_name)
-
-            if isinstance(source, (float, int)):  # 浮点常数
-                # 创建纯色通道图像（值为0-255的整数）
-                value = max(0, min(255, int(source * 255)))
-                band = PIL.Image.new('L', self.resize, value)
-                bands[channel_name] = band
-
-            elif isinstance(source, GrayImg):  # Channel对象
-                texture_img = source.texture.pil_pic
-
-                # 转换为RGBA确保有四个通道
-                if texture_img.mode != 'RGBA':
-                    texture_img = texture_img.convert('RGBA')
-
-                # 分离RGBA通道
-                r_band, g_band, b_band, a_band = texture_img.split()
-                all_bands = {'R': r_band, 'G': g_band, 'B': b_band, 'A': a_band}
-
-                # 选择所需通道并调整尺寸
-                selected = all_bands.get(
-                    ['R', 'G', 'B', 'A'][source.channelID],
-                    PIL.Image.new('L', texture_img.size, 255)  # 默认全白（1.0）
-                )
-                bands[channel_name] = selected.resize(self.resize, PIL.Image.BILINEAR)
-
-        # 合并所有通道（缺失通道用灰色占位）
-        final_bands = []
-        for ch in ['R', 'G', 'B', 'A']:
-            final_bands.append(bands.get(ch, PIL.Image.new('L', self.resize, 128)))
-
-        # 合并为最终RGBA图像
-        self.pil_pic = PIL.Image.merge('RGBA', final_bands)
         self.texture_id = None
 
     def gen_gl_texture(self, texture_unit: int = 0):
         """
-        生成OpenGL纹理
-        :param texture_unit: 纹理单元编号（0表示GL_TEXTURE0，1表示GL_TEXTURE1等）
+        生成 OpenGL 纹理
+        :param texture_unit: 纹理单元编号（0 表示 GL_TEXTURE0，1 表示 GL_TEXTURE1 等）
         :return: None
         """
         # 激活指定纹理单元
         glActiveTexture(GL_TEXTURE0 + texture_unit)
 
-        # 确定图像模式并转换为RGBA格式
-        mode = self.pil_pic.mode
-        if mode == '1':  # 黑白图像
-            self.pil_pic = self.pil_pic.convert('RGBA')
-            data = self.pil_pic.tobytes('raw', 'RGBA', 0, -1)
-        elif mode == 'L':  # 灰度图像
-            self.pil_pic = self.pil_pic.convert('RGBA')
-            data = self.pil_pic.tobytes('raw', 'RGBA', 0, -1)
-        elif mode == 'RGB':  # RGB图像
-            self.pil_pic = self.pil_pic.convert('RGBA')
-            data = self.pil_pic.tobytes('raw', 'RGBA', 0, -1)
-        elif mode == 'RGBA':  # RGBA图像
-            data = self.pil_pic.tobytes('raw', 'RGBA', 0, -1)
-        else:
-            # 其他格式转换为RGBA
-            self.pil_pic = self.pil_pic.convert('RGBA')
-            data = self.pil_pic.tobytes('raw', 'RGBA', 0, -1)
-
-        # 获取图像尺寸
-        width, height = self.pil_pic.size
+        # 生成混合通道的二进制数据
+        width, height = self.resize
+        total_pixels = width * height
+        
+        # 初始化四个通道的数组
+        r_data = np.zeros(total_pixels, dtype=np.uint8)
+        g_data = np.zeros(total_pixels, dtype=np.uint8)
+        b_data = np.zeros(total_pixels, dtype=np.uint8)
+        a_data = np.full(total_pixels, 255, dtype=np.uint8)  # 默认不透明
+        
+        # 处理每个通道
+        for i, (channel_name, source) in enumerate([('R', self.R), ('G', self.G), 
+                                                      ('B', self.B), ('A', self.A)]):
+            if isinstance(source, (float, int)):  # 浮点常数
+                value = max(0, min(255, int(source * 255)))
+                if channel_name == 'R':
+                    r_data.fill(value)
+                elif channel_name == 'G':
+                    g_data.fill(value)
+                elif channel_name == 'B':
+                    b_data.fill(value)
+                elif channel_name == 'A':
+                    a_data.fill(value)
+                    
+            elif isinstance(source, Channel):  # Channel 对象
+                # 从源纹理获取数据
+                src_texture = source.texture
+                if src_texture.image_path and src_texture.image_data is None:
+                    src_texture._load_image()
+                
+                src_width = src_texture.width
+                src_height = src_texture.height
+                src_format = src_texture.format
+                src_data = src_texture.image_data
+                
+                # 根据源格式解析数据
+                if src_format == 'RGBA':
+                    channels_per_pixel = 4
+                elif src_format == 'RGB':
+                    channels_per_pixel = 3
+                elif src_format == 'L':
+                    channels_per_pixel = 1
+                else:
+                    channels_per_pixel = 4
+                
+                # 提取指定通道
+                src_channel_idx = source.channelID
+                if src_channel_idx < channels_per_pixel:
+                    channel_bytes = src_data[src_channel_idx::channels_per_pixel]
+                    channel_array = np.frombuffer(channel_bytes, dtype=np.uint8)
+                else:
+                    channel_array = np.full(src_width * src_height, 255, dtype=np.uint8)
+                
+                # 调整尺寸（简单的最近邻插值）
+                if (src_width, src_height) != self.resize:
+                    channel_array = self._resize_channel(channel_array, 
+                                                         (src_width, src_height), 
+                                                         self.resize)
+                
+                # 填充到对应通道
+                if channel_name == 'R':
+                    r_data[:len(channel_array)] = channel_array
+                elif channel_name == 'G':
+                    g_data[:len(channel_array)] = channel_array
+                elif channel_name == 'B':
+                    b_data[:len(channel_array)] = channel_array
+                elif channel_name == 'A':
+                    a_data[:len(channel_array)] = channel_array
+        
+        # 合并为 RGBA 数据
+        rgba_data = np.zeros((total_pixels, 4), dtype=np.uint8)
+        rgba_data[:, 0] = r_data
+        rgba_data[:, 1] = g_data
+        rgba_data[:, 2] = b_data
+        rgba_data[:, 3] = a_data
+        
+        data = rgba_data.tobytes()
 
         # 创建或绑定纹理
         texture_id = glGenTextures(1)
-
         glBindTexture(GL_TEXTURE_2D, texture_id)
 
         # 设置纹理参数
@@ -277,16 +305,48 @@ class MixChannel:
         # 上传纹理数据
         glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, data)
 
-        # 生成mipmap（提高纹理在远距离的渲染质量）
+        # 生成 mipmap
         glGenerateMipmap(GL_TEXTURE_2D)
 
         self.texture_id = texture_id
         return texture_id
+    
+    def _resize_channel(self, channel_array: np.ndarray, 
+                        src_size: tuple[int, int], 
+                        dst_size: tuple[int, int]) -> np.ndarray:
+        """
+        调整通道尺寸（最近邻插值）
+        :param channel_array: 一维通道数组
+        :param src_size: 原始尺寸 (width, height)
+        :param dst_size: 目标尺寸 (width, height)
+        :return: 调整后的通道数组
+        """
+        src_w, src_h = src_size
+        dst_w, dst_h = dst_size
+        
+        # 重塑为 2D
+        channel_2d = channel_array.reshape((src_h, src_w))
+        
+        # 创建目标数组
+        result = np.zeros((dst_h, dst_w), dtype=np.uint8)
+        
+        # 计算缩放比例
+        scale_x = src_w / dst_w
+        scale_y = src_h / dst_h
+        
+        # 最近邻插值
+        for y in range(dst_h):
+            for x in range(dst_w):
+                src_x = int(min(x * scale_x, src_w - 1))
+                src_y = int(min(y * scale_y, src_h - 1))
+                result[y, x] = channel_2d[src_y, src_x]
+        
+        return result.flatten()
 
     def get_texture_id(self):
         """
-        获取纹理id，若无纹理id，则创建纹理id。
-        :return: 纹理id
+        获取纹理 id，若无纹理 id，则创建纹理 id。
+        :return: 纹理 id
         """
         if self.texture_id is None:
             self.gen_gl_texture()
@@ -296,10 +356,6 @@ class MixChannel:
         if self.texture_id is not None:
             glDeleteTextures([self.texture_id])
             self.texture_id = None
-
-        if self.pil_pic is not None:
-            self.pil_pic.close()
-            self.pil_pic = None
 
 
 class ShaderProgram:

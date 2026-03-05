@@ -5,7 +5,6 @@
 """
 from OpenGL.GLU import *
 from pyglm import glm
-from PIL import Image
 import os
 import shlex
 
@@ -517,22 +516,27 @@ def open_mtl(mtl: str,
             if args[0] == "map_Kd":
                 base_dir = os.path.dirname(mtl)
                 tex_path = (os.path.join(base_dir, args[1]))
-                pil_pic = Image.open(tex_path)
-                width, height = pil_pic.width, pil_pic.height
-                texture = soup3D.shader.Texture(pil_pic)
+                texture = soup3D.shader.Texture(tex_path)
+                # 延迟加载纹理以获取尺寸
+                try:
+                    import imageio.v2 as imageio
+                    img = imageio.imread(tex_path)
+                    height, width = img.shape[:2]
+                except:
+                    width, height = 1, 1
                 R = soup3D.shader.Channel(texture, 0)
                 G = soup3D.shader.Channel(texture, 1)
                 B = soup3D.shader.Channel(texture, 2)
             if args[0] == "map_d":
                 base_dir = os.path.dirname(mtl)
                 tex_path = (os.path.join(base_dir, args[1]))
-                texture = soup3D.shader.Texture(Image.open(tex_path))
+                texture = soup3D.shader.Texture(tex_path)
                 A = soup3D.shader.Channel(texture, 3)
             if args[0] == "map_Ke":
                 base_dir = os.path.dirname(mtl)
                 tex_path = (os.path.join(base_dir, args[1]))
-                emission = soup3D.shader.Texture(Image.open(tex_path))
-            # 新增：处理map_Bump命令
+                emission = soup3D.shader.Texture(tex_path)
+            # 新增：处理 map_Bump 命令
             if args[0] == "map_Bump":
                 tex_path = None
                 arg_name = None
@@ -544,10 +548,10 @@ def open_mtl(mtl: str,
                         base_dir = os.path.dirname(mtl)
                         tex_path = (os.path.join(base_dir, arg))
                     else:
-                        # 处理选项(“-”或“--”开头)，目前没有任何支持的选项需要处理，直接恢复默认
+                        # 处理选项 ("-"或"--"开头)，目前没有任何支持的选项需要处理，直接恢复默认
                         arg_name = None
                         continue
-                bump_texture = soup3D.shader.Texture(Image.open(tex_path))
+                bump_texture = soup3D.shader.Texture(tex_path)
 
     # 添加最后一个材质
     if now_mtl is not None:

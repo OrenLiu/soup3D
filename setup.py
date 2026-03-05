@@ -31,7 +31,6 @@ setup(
     install_requires=[
         'PyOpenGL',
         'pyglm',
-        'Pillow',
         'numpy',
         'pygame'
     ],
