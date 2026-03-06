@@ -7,6 +7,7 @@ from OpenGL.GLU import *
 from pyglm import glm
 import os
 import shlex
+import imageio.v2 as imageio
 
 import soup3D.shader
 import soup3D.camera
@@ -519,7 +520,6 @@ def open_mtl(mtl: str,
                 texture = soup3D.shader.Texture(tex_path)
                 # 延迟加载纹理以获取尺寸
                 try:
-                    import imageio.v2 as imageio
                     img = imageio.imread(tex_path)
                     height, width = img.shape[:2]
                 except:
@@ -536,7 +536,6 @@ def open_mtl(mtl: str,
                 base_dir = os.path.dirname(mtl)
                 tex_path = (os.path.join(base_dir, args[1]))
                 emission = soup3D.shader.Texture(tex_path)
-            # 新增：处理 map_Bump 命令
             if args[0] == "map_Bump":
                 tex_path = None
                 arg_name = None
@@ -715,7 +714,7 @@ def open_obj(obj: str,
                 # 如果有纹理坐标，添加纹理坐标
                 if 0 <= vt_idx < len(tex_coords):
                     u, v = tex_coords[vt_idx]
-                    vert.extend([u, v])
+                    vert.extend([u, -v])
                 else:
                     vert.extend([0.0, 0.0])  # 默认纹理坐标
 

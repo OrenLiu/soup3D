@@ -72,7 +72,7 @@ Due to limited individual development capabilities, we welcome like-minded peopl
     
   3. Confirm requirements with the author before developing any module
   
-  4. New features should尽量 not affect the calling methods of existing features
+  4. New features should not affect the calling methods of existing features
     
 - **Function Testing**
   

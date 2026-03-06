@@ -9,6 +9,7 @@ import math
 import weakref
 import traceback
 import sys
+import imageio.v2 as imageio
 
 import soup3D.name
 
@@ -137,7 +138,6 @@ class Texture:
         
         # 尝试使用 imageio 加载（可选依赖）
         try:
-            import imageio.v2 as imageio
             img = imageio.imread(self.image_path)
             self.height, self.width = img.shape[:2]
             

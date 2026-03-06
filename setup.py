@@ -32,7 +32,8 @@ setup(
         'PyOpenGL',
         'pyglm',
         'numpy',
-        'pygame'
+        'pygame',
+        'imageio'
     ],
     package_data={
         'soup3D': ['*.md', 'LICENSE', 'help.md', '*.png'],
