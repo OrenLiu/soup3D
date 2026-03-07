@@ -401,6 +401,65 @@ def _paint_ui(shape: soup3D.ui.Shape, x: int | float, y: int | float) -> None:
     shape._restore_projection()
 
 
+def _render_fullscreen_image(img: soup3D.shader.Img) -> None:
+    """渲染全屏叠加图像"""
+    # 获取视口尺寸
+    viewport = glGetIntegerv(GL_VIEWPORT)
+    width, height = viewport[2], viewport[3]
+    
+    # 获取纹理 ID
+    tex_id = img.get_texture_id()
+    
+    # 保存当前矩阵状态
+    glMatrixMode(GL_PROJECTION)
+    glPushMatrix()
+    glLoadIdentity()
+    
+    # 设置正交投影（与 UI 渲染一致）
+    gluOrtho2D(0, width, height, 0)
+    
+    glMatrixMode(GL_MODELVIEW)
+    glPushMatrix()
+    glLoadIdentity()
+    
+    # 保存当前状态并禁用光照和深度测试
+    glPushAttrib(GL_ENABLE_BIT)
+    glDisable(GL_LIGHTING)
+    glDisable(GL_DEPTH_TEST)
+    
+    # 启用纹理和混合
+    glEnable(GL_TEXTURE_2D)
+    glBindTexture(GL_TEXTURE_2D, tex_id)
+    glEnable(GL_BLEND)
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
+    
+    # 绘制全屏四边形
+    glBegin(GL_QUADS)
+    # 左上角
+    glTexCoord2f(0.0, 0.0)
+    glVertex2f(0.0, 0.0)
+    # 右上角
+    glTexCoord2f(1.0, 0.0)
+    glVertex2f(width, 0.0)
+    # 右下角
+    glTexCoord2f(1.0, 1.0)
+    glVertex2f(width, height)
+    # 左下角
+    glTexCoord2f(0.0, 1.0)
+    glVertex2f(0.0, height)
+    glEnd()
+    
+    # 恢复状态
+    glDisable(GL_BLEND)
+    glPopAttrib()
+    
+    # 恢复矩阵
+    glMatrixMode(GL_PROJECTION)
+    glPopMatrix()
+    glMatrixMode(GL_MODELVIEW)
+    glPopMatrix()
+
+
 def update():
     """
     更新画布
@@ -446,11 +505,15 @@ def update():
     # 清空渲染队列
     render_queue = []
 
-    # 渲染ui界面
+    # 渲染 ui 界面
     for i in soup3D.ui.render_queue:
         _paint_ui(*i)
-
-    # 清空ui渲染列队
+    
+    # 渲染全屏叠加图像
+    if soup3D.ui.fullscreen_img is not None:
+        _render_fullscreen_image(soup3D.ui.fullscreen_img)
+    
+    # 清空 ui 渲染列队
     soup3D.ui.render_queue = []
 
 

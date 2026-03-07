@@ -9,16 +9,16 @@ from math import*
 import soup3D.shader
 
 render_queue : list[tuple["Shape", float, float]] = []  # 全局渲染队列
-
-
-frame = None  # 准备在下一帧中全屏覆盖的图像
+fullscreen_img = None  # 全屏显示的图像资源
 
 
 class Shape:
+    warned = False
     def __init__(self, shape_type,
                  texture: soup3D.shader.Img,
                  vertex: list | tuple):
         """
+        (已停止支持，建议使用full_display作为平替)
         图形，可以批量生成线段、三角形
         :param shape_type: 绘制方式，可以填写这些内容：
                            "line_b": 不相连线段
@@ -30,6 +30,9 @@ class Shape:
         :param texture:    使用的纹理对象，默认为None
         :param vertex:     图形中所有的端点，每个参数的格式为：(x, y, u, v)
         """
+        if not Shape.warned:
+            print("[Warning] soup3D.ui.Shape is deprecated, please use soup3D.ui.full_display as replacement")
+
         type_menu = {
             "line_b": GL_LINES,
             "line_s": GL_LINE_STRIP,
@@ -71,12 +74,17 @@ class Shape:
 
 
 class Group:
+    warned = False
     def __init__(self, *arg: Shape, origin : tuple[float, float]=(0.0, 0.0)):
         """
+        (已停止支持，建议使用full_display作为平替)
         图形组
         :param arg:    组中所有的图形
         :param origin: 图形组在屏幕中的位置
         """
+        if not Group.warned:
+            print("[Warning] soup3D.ui.Group is deprecated, please use soup3D.ui.Group as replacement")
+
         self.shapes = list(arg)
         self.origin = list(origin)
 
@@ -96,11 +104,26 @@ class Group:
             shape.paint(*self.origin)
 
 
-def imframe(img: soup3D.shader.Img):
+def full_display(img: soup3D.shader.Img):
     """
-    在下一帧中全屏覆盖一张图像，如UI、屏幕叠加信息等
+    从下一帧开始全屏覆盖一张图像，可覆盖如 UI、屏幕叠加信息等
     :param img: 需要全屏显示的图像
     :return: None
     """
-    global frame
-    frame = img
+    global fullscreen_img
+    
+    # 如果已经有图像资源，先清理
+    if fullscreen_img is not None:
+        clean_display()
+    
+    # 保存新的图像资源
+    fullscreen_img = img
+
+
+def clean_display() -> None:
+    """
+    清空屏幕
+    :return: None
+    """
+    global fullscreen_img
+    fullscreen_img = None
