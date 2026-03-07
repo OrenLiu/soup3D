@@ -11,6 +11,9 @@ import soup3D.shader
 render_queue : list[tuple["Shape", float, float]] = []  # 全局渲染队列
 
 
+frame = None  # 准备在下一帧中全屏覆盖的图像
+
+
 class Shape:
     def __init__(self, shape_type,
                  texture: soup3D.shader.Img,
@@ -91,3 +94,13 @@ class Group:
         """单帧显示"""
         for shape in self.shapes:
             shape.paint(*self.origin)
+
+
+def imframe(img: soup3D.shader.Img):
+    """
+    在下一帧中全屏覆盖一张图像，如UI、屏幕叠加信息等
+    :param img: 需要全屏显示的图像
+    :return: None
+    """
+    global frame
+    frame = img
