@@ -135,26 +135,19 @@ class Texture:
         """
         if not self.image_path:
             return
-        
-        # 尝试使用 imageio 加载（可选依赖）
-        try:
-            img = imageio.imread(self.image_path)
-            self.height, self.width = img.shape[:2]
-            
-            if len(img.shape) == 2:  # 灰度图
-                self.format = 'L'
-                self.image_data = img.tobytes()
-            elif img.shape[2] == 3:  # RGB
-                self.format = 'RGB'
-                self.image_data = img.tobytes()
-            elif img.shape[2] == 4:  # RGBA
-                self.format = 'RGBA'
-                self.image_data = img.tobytes()
-        except ImportError:
-            raise ImportError(
-                "Please install imageio to load images: pip install imageio\n"
-                "Or provide image data directly as bytes"
-            )
+
+        img = imageio.imread(self.image_path)
+        self.height, self.width = img.shape[:2]
+
+        if len(img.shape) == 2:  # 灰度图
+            self.format = 'L'
+            self.image_data = img.tobytes()
+        elif img.shape[2] == 3:  # RGB
+            self.format = 'RGB'
+            self.image_data = img.tobytes()
+        elif img.shape[2] == 4:  # RGBA
+            self.format = 'RGBA'
+            self.image_data = img.tobytes()
 
     def get_texture_id(self):
         """

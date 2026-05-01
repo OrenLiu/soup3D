@@ -1,6 +1,6 @@
 Metadata-Version: 2.4
 Name: soup3D
-Version: 4.4.0
+Version: 5.0.0
 Summary: A 3D engine based on OpenGL and pygame for beginners
 Author: OrangeSoup
 Author-email: OrangeSoup <contact@osoup.top>
@@ -25,7 +25,6 @@ Description-Content-Type: text/markdown
 License-File: LICENSE
 Requires-Dist: PyOpenGL
 Requires-Dist: pyglm
-Requires-Dist: Pillow
 Requires-Dist: numpy
 Requires-Dist: pygame
 Dynamic: author
@@ -106,7 +105,7 @@ Due to limited individual development capabilities, we welcome like-minded peopl
     
   3. Confirm requirements with the author before developing any module
   
-  4. New features should尽量 not affect the calling methods of existing features
+  4. New features should not affect the calling methods of existing features
     
 - **Function Testing**
   
