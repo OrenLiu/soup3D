@@ -817,6 +817,28 @@ def open_obj(obj: str,
     return model
 
 
+def open_gltf(
+        gltf: str,
+        double_side: bool = True,
+        roll_funk=None,
+        encoding: str = "utf-8",
+        max_light_count: int = 8,
+        surface = soup3D.shader.AutoSP
+    ):
+    """
+    从glb导入模型和骨骼
+    :param gltf:            gltf模型文件路径
+    :param double_side:     是否启用双面渲染
+    :param roll_funk:       每当读取一行时调用一次，方法需有，且仅有1个参数，用于接收已读取的行数
+    :param encoding:        读取obj或mtl文件时使用的字符集
+    :param max_light_count: 该模型出现时会同时出现的最多的光源数量
+    :param surface:         模型使用的表面着色器类型，着色器需要有skeleton, base_color, emission, normal, double_side,
+                            max_light_count等参数
+    :return: 模型数据(Model类), 骨架数据(字典)
+    """
+    ...
+
+
 def get_projection_mat() -> glm.fmat4x4:
     """
     获取透视矩阵，可用于代码着色器
