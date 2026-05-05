@@ -523,7 +523,7 @@ def open_mtl(mtl: str,
              roll_funk=None,
              encoding: str = "utf-8",
              max_light_count: int = 8,
-             surface = soup3D.shader.AutoSP) -> dict[str: soup3D.shader.Surface]:
+             surface = soup3D.shader.AutoSP) -> dict:
     """
     根据mtl文件生成多个着色器
     :param mtl:             *.mtl纹理文件路径
@@ -630,7 +630,7 @@ def open_mtl(mtl: str,
 
 
 def open_obj(obj: str,
-             mtl: str | dict[str: soup3D.shader.Surface] | None = None,
+             mtl: str | dict | None = None,
              double_side: bool = True,
              roll_funk=None,
              encoding: str = "utf-8",
