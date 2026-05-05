@@ -824,7 +824,8 @@ def open_gltf(
         roll_funk=None,
         encoding: str = "utf-8",
         max_light_count: int = 8,
-        surface = soup3D.shader.AutoSP
+        surface = soup3D.shader.AutoSP,
+        skin = soup3D.shader.BoneBinderSP
     ):
     """
     从glb导入模型和骨骼
@@ -833,9 +834,11 @@ def open_gltf(
     :param roll_funk:       每当读取一行时调用一次，方法需有，且仅有1个参数，用于接收已读取的行数
     :param encoding:        读取文本文件时使用的字符集(建议在建模软件里把所有元素命名为英文，这样就不用管这个参数了)
     :param max_light_count: 该模型出现时会同时出现的最多的光源数量，大了会导致性能问题
-    :param surface:         模型使用的表面着色器类型，着色器需要有skeleton, base_color, emission, normal, double_side,
+    :param surface:         模型使用的表面着色器类型，着色器需要有base_color, emission, normal, double_side,max_light_count等参
+                            数
+    :param skin:            模型使用的蒙皮着色器类型，着色器需要有skeleton, base_color, emission, normal, double_side,
                             max_light_count等参数
-    :return: 模型数据(Model类), 骨架数据(字典)
+    :return: 模型数据(Model类), 骨架数据(Skeleton类)
     """
     ...
 
