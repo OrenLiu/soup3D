@@ -1120,7 +1120,7 @@ class BoneBinderSP(AutoSP):
                  double_side: bool = True,
                  max_light_count: int = 8,
                  shader_program: ShaderProgram | None = None,
-                 skeleton: dict = None):
+                 skeleton: soup3D.skeleton.Skeleton | dict = None):
         """
         骨骼绑定着色器，作为表面着色器渲染时使用的顶点列表格式：
         [
@@ -1149,15 +1149,190 @@ class BoneBinderSP(AutoSP):
         :param double_side:     是否启用双面渲染
         :param max_light_count: 该着色器使用时会同时出现的最多的光源数量
         :param shader_program:  被AutoSP管理的着色器程序，若为None，则生成着色器程序。该参数为内部调用参数，可以但不建议直接使用该参数。
-        :param skeleton:        一个包含多个骨头的字典，格式：{name: bone, name: bone, ...}
+        :param skeleton:        一个Skeleton对象或包含多个骨头的字典，格式：{name: bone, name: bone, ...}
         """
+        # 如果skeleton为None，创建一个空的Skeleton对象
+        if skeleton is None:
+            self.skeleton = soup3D.skeleton.Skeleton()
+        else:
+            self.skeleton = skeleton
+
+        self.max_bones = 32  # 最大骨骼数量
+        self.bones_dirty = True  # 骨骼矩阵更新标记
+
         super().__init__(base_color, normal, emission, double_side, max_light_count, shader_program)
-        self.skeleton = skeleton
-        ...
 
     def create_shader_program(self):
         """根据参数创建着色器程序"""
-        ...
+        vertex_shader = """
+        #version 330 core
+        layout(location = 0) in vec3 VertPos;
+        layout(location = 1) in vec2 VertUV;
+        layout(location = 2) in vec3 VertNormal;
+        layout(location = 3) in ivec4 BoneIDs;      // 骨骼索引
+        layout(location = 4) in vec4 BoneWeights;   // 骨骼权重
+
+        out vec2 TexCoord;
+        out vec3 FragPos;
+        out vec3 Normal;
+
+        uniform mat4 model;       // 模型矩阵
+        uniform mat4 view;        // 相机矩阵
+        uniform mat4 projection;  // 透视矩阵
+        uniform mat4 boneMatrices[32];  // 骨骼变换矩阵
+
+        void main()
+        {
+            // 骨骼蒙皮动画
+            mat4 boneTransform = mat4(0.0);
+            boneTransform += boneMatrices[BoneIDs[0]] * BoneWeights[0];
+            boneTransform += boneMatrices[BoneIDs[1]] * BoneWeights[1];
+            boneTransform += boneMatrices[BoneIDs[2]] * BoneWeights[2];
+            boneTransform += boneMatrices[BoneIDs[3]] * BoneWeights[3];
+
+            // 应用骨骼变换
+            vec4 skinnedPos = boneTransform * vec4(VertPos, 1.0);
+            FragPos = vec3(model * skinnedPos);
+
+            // 变换法线
+            mat3 normalMatrix = transpose(inverse(mat3(model * boneTransform)));
+            Normal = normalMatrix * VertNormal;
+
+            gl_Position = projection * view * vec4(FragPos, 1.0);
+            TexCoord = vec2(VertUV.x, 1-VertUV.y);
+        }
+
+
+        """
+
+        fragment_shader = """
+        #version 330 core
+        in vec2 TexCoord;
+        in vec3 FragPos;
+        in vec3 Normal;
+        out vec4 FragColor;
+
+        // 材质属性
+        uniform sampler2D baseColor;
+        uniform sampler2D normal;
+        uniform sampler2D emission;
+
+        // 光照属性
+        struct Light {
+            vec3 position;
+            vec3 direction;
+            vec3 color;
+            float attenuation;
+            float angle;
+            float cosAngle;
+            int type;
+        };
+
+        uniform Light lights[8];
+        uniform int lightCount;
+        uniform vec3 ambient;
+
+        void main()
+        {
+            vec3 SideNormal = Normal;
+            %s
+
+            // 基础颜色
+            vec4 base = texture(baseColor, TexCoord);
+
+            // 法线处理
+            vec4 norm_tex = texture(normal, TexCoord);
+            vec3 norm = normalize(SideNormal) + vec3(norm_tex.rg*2-1, norm_tex.b-1);
+
+            // 自发光
+            vec4 emi = texture(emission, TexCoord);
+
+            // 漫反射贡献
+            vec3 diffuse = vec3(0.0);
+
+            // 遍历所有光源
+            for (int i = 0; i < lightCount; i++) {
+                vec3 lightDir;
+                float attenuation = 1.0;
+                float spotFactor = 1.0;
+
+                if (lights[i].type == 0) {
+                    lightDir = normalize(lights[i].position - FragPos);
+
+                    // 计算衰减
+                    float distance = length(lights[i].position - FragPos);
+                    attenuation = 1.0 / (1.0 + lights[i].attenuation * distance);
+
+                    // 计算聚光灯效果
+                    vec3 spotDir = normalize(-lights[i].direction);
+                    float cosTheta = dot(lightDir, spotDir);
+
+                    // 检查是否在聚光灯锥角内
+                    if (cosTheta > lights[i].cosAngle) {
+                        // 计算聚光灯衰减（边缘平滑过渡）
+                        float epsilon = lights[i].cosAngle - lights[i].cosAngle * 0.9;
+                        spotFactor = clamp((cosTheta - lights[i].cosAngle) / epsilon, 0.0, 1.0);
+                    } else {
+                        spotFactor = 0.0;
+                    }
+                    attenuation *= spotFactor;
+                } else { // 方向光
+                    lightDir = normalize(lights[i].direction);
+                }
+
+                // 漫反射计算
+                float diff = max(dot(norm, lightDir), 0.0);
+                diffuse += lights[i].color * diff * attenuation;
+            }
+
+            // 最终颜色 = (环境光 + 漫反射) * 基础颜色 + 自发光
+            vec3 result = (ambient + diffuse) * base.rgb + base.rgb * emi.rgb;
+            FragColor = vec4(result, base.a);
+        }
+        """
+
+        if self.double_side:
+            fragment_shader = fragment_shader % (
+                """
+                if (!gl_FrontFacing) {
+                    SideNormal = -Normal;
+                }
+                """
+            )
+        else:
+            fragment_shader = fragment_shader % (
+                """
+                if (!gl_FrontFacing) {
+                    discard;
+                }
+                """
+            )
+
+        # 创建着色器程序
+        shader_program = ShaderProgram(
+            vertex_shader,
+            fragment_shader,
+            vbo_type=[soup3D.FLOAT, soup3D.FLOAT, soup3D.FLOAT, soup3D.INT_US, soup3D.FLOAT]
+        )
+
+        # 设置基础颜色纹理
+        shader_program.uniform_tex("baseColor", self.base_color, 0)
+
+        # 设置法线
+        if isinstance(self.normal, (list | tuple)):
+            normal_texture = MixChannel((1, 1), *self.normal)
+            shader_program.uniform_tex("normal", normal_texture, 1)
+        else:
+            shader_program.uniform_tex("normal", self.normal, 1)
+
+        # 设置自发光
+        if isinstance(self.emission, (list | tuple)):
+            emission_texture = MixChannel((1, 1), *self.emission)
+            shader_program.uniform_tex("emission", emission_texture, 3)
+        else:
+            shader_program.uniform_tex("emission", self.emission, 3)
+
+        return shader_program
 
     def rend(self, mode, vertex):
         """
@@ -1170,7 +1345,160 @@ class BoneBinderSP(AutoSP):
                        ]
         :return: None
         """
-        ...
+        # 获取骨架信息
+        skeleton_obj = self._get_skeleton_obj()
+
+        # 准备顶点数据
+        positions = []
+        tex_coords = []
+        normals = []
+        bone_ids = []
+        bone_weights = []
+
+        for v in vertex:
+            # 解析骨骼权重
+            bone_weights_dict = v[0] if isinstance(v[0], dict) else {}
+
+            # 提取骨骼ID和权重
+            bone_id_list = []
+            weight_list = []
+
+            for bone_name, weight in bone_weights_dict.items():
+                bone_idx = skeleton_obj.get_bone_index(bone_name)
+                if bone_idx >= 0:
+                    bone_id_list.append(bone_idx)
+                    weight_list.append(weight)
+
+            # 规范化为4个骨骼权重（最多支持4个骨骼影响一个顶点）
+            while len(bone_id_list) < 4:
+                bone_id_list.append(0)
+                weight_list.append(0.0)
+
+            if len(bone_id_list) > 4:
+                # 按权重排序，取前4个
+                sorted_pairs = sorted(zip(weight_list, bone_id_list), reverse=True)
+                weight_list = [p[0] for p in sorted_pairs[:4]]
+                bone_id_list = [p[1] for p in sorted_pairs[:4]]
+
+            # 归一化权重
+            total_weight = sum(weight_list[:4])
+            if total_weight > 0:
+                weight_list = [w / total_weight for w in weight_list[:4]]
+            else:
+                weight_list = [0.0, 0.0, 0.0, 0.0]
+
+            bone_ids.append(bone_id_list[:4])
+            bone_weights.append(weight_list[:4])
+
+            # 解析位置
+            if len(v) >= 4:
+                positions.append(v[1:4])
+            else:
+                positions.append((0.0, 0.0, 0.0))
+
+            # 解析纹理坐标
+            if len(v) >= 6:
+                tex_coords.append((v[4], 1.0 - v[5]))
+            else:
+                tex_coords.append((0.0, 0.0))
+
+            # 解析法线
+            if len(v) >= 9:
+                normals.append(v[6:9])
+            else:
+                normals.append((0.0, 0.0, 1.0))
+
+        # 渲染
+        self.shader_program.rend(mode, [positions, tex_coords, normals, bone_ids, bone_weights])
+
+    def update(self):
+        """更新着色器"""
+        if self.dirty:
+            # 更新骨骼矩阵
+            if self.bones_dirty:
+                self._update_bone_matrices()
+                self.bones_dirty = False
+
+        super().update()
+
+    def set_skeleton(self, skeleton: soup3D.skeleton.Skeleton | dict):
+        """
+        设置骨架
+        :param skeleton: Skeleton对象或骨骼字典
+        :return: None
+        """
+        self.skeleton = skeleton
+        self.bones_dirty = True
+        self.dirty = True
+
+    def mark_bones_dirty(self):
+        """标记骨骼需要更新"""
+        self.bones_dirty = True
+        self.dirty = True
+
+    def _get_skeleton_obj(self) -> soup3D.skeleton.Skeleton:
+        """获取Skeleton对象"""
+        if isinstance(self.skeleton, soup3D.skeleton.Skeleton):
+            return self.skeleton
+        elif isinstance(self.skeleton, dict):
+            # 如果是字典，转换为Skeleton对象
+            skel = soup3D.skeleton.Skeleton()
+            for name, bone in self.skeleton.items():
+                skel.add_bone(name, bone)
+            return skel
+        else:
+            # 返回空骨架
+            return soup3D.skeleton.Skeleton()
+
+    def _update_bone_matrices(self):
+        """更新骨骼矩阵到着色器"""
+        skeleton_obj = self._get_skeleton_obj()
+
+        # 获取最大骨骼数量
+        max_bones = min(skeleton_obj.get_max_bones(), self.max_bones)
+
+        # 获取骨骼矩阵
+        bone_matrices = skeleton_obj.get_bone_matrices()
+
+        # 上传到着色器
+        for i in range(max_bones):
+            mat_ptr = glm.value_ptr(bone_matrices[i])
+            self.shader_program.uniform(
+                f"boneMatrices[{i}]",
+                soup3D.ARRAY_MATRIX_VEC4,
+                1,
+                GL_FALSE,
+                mat_ptr
+            )
+
+        # 填充剩余骨骼矩阵为单位矩阵
+        for i in range(max_bones, self.max_bones):
+            identity_mat = glm.mat4(1.0)
+            mat_ptr = glm.value_ptr(identity_mat)
+            self.shader_program.uniform(
+                f"boneMatrices[{i}]",
+                soup3D.ARRAY_MATRIX_VEC4,
+                1,
+                GL_FALSE,
+                mat_ptr
+            )
+
+    def mk_shadow(self) -> "BoneBinderSP":
+        """
+        创建原对象的影子对象，影子对象将会与原对象共用网格数据、着色器代码，但是拥有独立的矩阵数据。
+        :return: 影子对象
+        """
+        result = BoneBinderSP(
+            self.base_color,
+            self.normal,
+            self.emission,
+            self.double_side,
+            self.max_light_count,
+            ShaderShadow(self.shader_program),
+            self.skeleton
+        )
+        result.max_bones = self.max_bones
+        return result
 
 
 Img = Texture | MixChannel

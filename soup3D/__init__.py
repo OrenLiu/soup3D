@@ -13,6 +13,7 @@ import soup3D.shader
 import soup3D.camera
 import soup3D.light
 import soup3D.ui
+import soup3D.skeleton
 from soup3D.name import *
 
 render_queue: list["Model"] = []  # 单次渲染队列
