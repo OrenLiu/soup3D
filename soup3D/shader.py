@@ -1184,11 +1184,19 @@ class BoneBinderSP(AutoSP):
         void main()
         {
             // 骨骼蒙皮动画
-            mat4 boneTransform = mat4(0.0);
-            boneTransform += boneMatrices[BoneIDs[0]] * BoneWeights[0];
-            boneTransform += boneMatrices[BoneIDs[1]] * BoneWeights[1];
-            boneTransform += boneMatrices[BoneIDs[2]] * BoneWeights[2];
-            boneTransform += boneMatrices[BoneIDs[3]] * BoneWeights[3];
+            float totalWeight = BoneWeights[0] + BoneWeights[1] + BoneWeights[2] + BoneWeights[3];
+            mat4 boneTransform;
+
+            if (totalWeight > 0.0) {
+                boneTransform = mat4(0.0);
+                boneTransform += boneMatrices[BoneIDs[0]] * BoneWeights[0];
+                boneTransform += boneMatrices[BoneIDs[1]] * BoneWeights[1];
+                boneTransform += boneMatrices[BoneIDs[2]] * BoneWeights[2];
+                boneTransform += boneMatrices[BoneIDs[3]] * BoneWeights[3];
+            } else {
+                // 当所有权重都为0时，使用单位矩阵（不进行骨骼变换）
+                boneTransform = mat4(1.0);
+            }
 
             // 应用骨骼变换
             vec4 skinnedPos = boneTransform * vec4(VertPos, 1.0);
