@@ -435,18 +435,31 @@ class ShaderProgram:
         vao = glGenVertexArrays(1)
         glBindVertexArray(vao)
 
+        _int_type_map = {
+            GL_BYTE: np.int8, GL_UNSIGNED_BYTE: np.uint8,
+            GL_SHORT: np.int16, GL_UNSIGNED_SHORT: np.uint16,
+            GL_INT: np.int32, GL_UNSIGNED_INT: np.uint32,
+        }
+
         for i, vert_group in enumerate(vertex):
             if not vert_group:  # 空顶点组跳过
                 continue
 
-            vbo_np = np.array(vert_group, dtype=np.float32)
+            gl_type = types[i]
+            if gl_type in _int_type_map:
+                vbo_np = np.array(vert_group, dtype=_int_type_map[gl_type])
+            else:
+                vbo_np = np.array(vert_group, dtype=np.float32)
 
             glBindBuffer(GL_ARRAY_BUFFER, vbo_ids[i])
             glBufferData(GL_ARRAY_BUFFER, vbo_np.nbytes, vbo_np, GL_STATIC_DRAW)
 
             # 计算每个顶点的元素个数
             components = len(vert_group[0])
-            glVertexAttribPointer(i, components, types[i], GL_FALSE, 0, ctypes.c_void_p(0))
+            if gl_type in _int_type_map:
+                glVertexAttribIPointer(i, components, gl_type, 0, ctypes.c_void_p(0))
+            else:
+                glVertexAttribPointer(i, components, gl_type, GL_FALSE, 0, ctypes.c_void_p(0))
             glEnableVertexAttribArray(i)
 
         glBindBuffer(GL_ARRAY_BUFFER, 0)
@@ -1209,8 +1222,6 @@ class BoneBinderSP(AutoSP):
             gl_Position = projection * view * vec4(FragPos, 1.0);
             TexCoord = vec2(VertUV.x, 1-VertUV.y);
         }
-
-
         """
 
         fragment_shader = """
@@ -1382,11 +1393,10 @@ class BoneBinderSP(AutoSP):
                 bone_id_list.append(0)
                 weight_list.append(0.0)
 
-            if len(bone_id_list) > 4:
-                # 按权重排序，取前4个
-                sorted_pairs = sorted(zip(weight_list, bone_id_list), reverse=True)
-                weight_list = [p[0] for p in sorted_pairs[:4]]
-                bone_id_list = [p[1] for p in sorted_pairs[:4]]
+            # 按权重排序，取前4个
+            sorted_pairs = sorted(zip(weight_list, bone_id_list), reverse=True)
+            weight_list = [p[0] for p in sorted_pairs[:4]]
+            bone_id_list = [p[1] for p in sorted_pairs[:4]]
 
             # 归一化权重
             total_weight = sum(weight_list[:4])
