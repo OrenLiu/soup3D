@@ -1021,7 +1021,7 @@ def _process_mesh(gltf: dict, mesh: dict, gltf_dir: str, double_side: bool,
 
                 vertex = (weight_dict, *pos, texcoord[0], texcoord[1], *normal)
             else:
-                vertex = (*pos, texcoord[0], texcoord[1], *normal)
+                vertex = (-pos[1], pos[0], pos[2], texcoord[0], texcoord[1], -normal[1], normal[0], normal[2])
 
             vertices.append(vertex)
 
