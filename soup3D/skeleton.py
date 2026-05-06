@@ -141,9 +141,11 @@ class Bone:
         # 如果有父骨骼，使用父骨骼的世界矩阵
         if self.parent:
             parent_matrix = self.parent.get_bone_matrix()
-            self._world_matrix = parent_matrix * init_matrix * local_matrix
+            # self._world_matrix = parent_matrix * init_matrix * local_matrix
+            self._world_matrix = parent_matrix * local_matrix
         else:
-            self._world_matrix = init_matrix * local_matrix
+            # self._world_matrix = init_matrix * local_matrix  # 这里不需要代入初始矩阵
+            self._world_matrix = local_matrix
 
         # 计算逆绑定矩阵（初始姿态的逆矩阵）
         self._inverse_bind_matrix = glm.inverse(init_matrix)
