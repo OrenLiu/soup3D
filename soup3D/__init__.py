@@ -522,6 +522,30 @@ def update():
     soup3D.ui.render_queue = []
 
 
+def gen_skeleton_model(_skeleton: skeleton.Skeleton | dict):
+    """
+    生成骨架模型，在屏幕中用线条叠加渲染骨架，用于调试。警告：该操作比较占用性能，只建议在调试时使用。
+    :param _skeleton: 骨架对象或骨骼字典
+    :return: 模型(Model类)
+    """
+    print("warning: skeleton model is not stable, use it in debug mode only.")
+
+    faces = []
+    for bone_name in _skeleton.bones:
+        bone = _skeleton.bones[bone_name]
+        faces.append(
+            Face(
+                LINE_B,
+                soup3D.shader.AutoSP(
+                    soup3D.shader.MixChannel((1, 1), 1, 0, 0)
+                ),
+                [(bone.x, bone.y, bone.z, 0, 0), (*bone._get_end_position(), 0, 0)]
+            )
+        )
+    model = Model(0, 0, 0, *faces)
+    return model
+
+
 def open_mtl(mtl: str,
              double_side: bool = True,
              roll_funk=None,

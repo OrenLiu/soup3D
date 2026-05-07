@@ -158,7 +158,14 @@ class Bone:
         """
         # 构建初始变换矩阵
         matrix = glm.mat4(1.0)
-        matrix = glm.translate(matrix, self.init_pos)
+        matrix = glm.translate(
+            matrix,
+            glm.vec3(
+                self.init_pos.x+self.x,
+                self.init_pos.y+self.y,
+                self.init_pos.z+self.z
+            )
+        )
 
         # 应用初始方向旋转
         matrix = glm.rotate(matrix, glm.radians(-self.init_toward.x - self.yaw), glm.vec3(0.0, 1.0, 0.0))
