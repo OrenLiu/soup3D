@@ -522,24 +522,75 @@ def update():
     soup3D.ui.render_queue = []
 
 
-def gen_skeleton_model(_skeleton: skeleton.Skeleton | dict):
+def gen_skeleton_model(_skeleton: soup3D.skeleton.Skeleton | dict, bone_color=None):
     """
     生成骨架模型，在屏幕中用线条叠加渲染骨架，用于调试。警告：该操作比较占用性能，只建议在调试时使用。
     :param _skeleton: 骨架对象或骨骼字典
+    :param bone_color:  骨骼颜色字典，键为骨骼名称，值为颜色元组
     :return: 模型(Model类)
     """
     print("warning: skeleton model is not stable, use it in debug mode only.")
 
+    if bone_color is None:
+        bone_color = {}
+
+    if isinstance(_skeleton, soup3D.skeleton.Skeleton):
+        _skeleton = _skeleton.bones
+
     faces = []
-    for bone_name in _skeleton.bones:
-        bone = _skeleton.bones[bone_name]
+    for bone_name in _skeleton:
+        bone = _skeleton[bone_name]
+        color = (1, 0, 0)
+        if bone_name in bone_color:
+            color = bone_color[bone_name]
+        end_pos = bone._get_end_position()
         faces.append(
             Face(
-                LINE_B,
+                TRIANGLE_B,
                 soup3D.shader.AutoSP(
-                    soup3D.shader.MixChannel((1, 1), 1, 0, 0)
+                    soup3D.shader.MixChannel((1, 1), *color)
                 ),
-                [(bone.x, bone.y, bone.z, 0, 0), (*bone._get_end_position(), 0, 0)]
+                [
+                    (
+                        bone.init_pos.x + bone.x + 0.01,
+                        bone.init_pos.y + bone.y,
+                        bone.init_pos.z + bone.z,
+                        0, 0
+                    ),
+                    (
+                        bone.init_pos.x + bone.x - 0.01,
+                        bone.init_pos.y + bone.y,
+                        bone.init_pos.z + bone.z,
+                        0, 0)
+                    ,
+                    (*end_pos, 0, 0),
+                    (
+                        bone.init_pos.x + bone.x,
+                        bone.init_pos.y + bone.y + 0.01,
+                        bone.init_pos.z + bone.z,
+                        0, 0
+                    ),
+                    (
+                        bone.init_pos.x + bone.x,
+                        bone.init_pos.y + bone.y - 0.01,
+                        bone.init_pos.z + bone.z,
+                        0, 0
+                    ),
+                    (*end_pos, 0, 0),
+                    (
+                        bone.init_pos.x + bone.x,
+                        bone.init_pos.y + bone.y,
+                        bone.init_pos.z + bone.z + 0.01,
+                        0, 0
+                    ),
+                    (
+                        bone.init_pos.x + bone.x,
+                        bone.init_pos.y + bone.y,
+                        bone.init_pos.z + bone.z - 0.01,
+                        0, 0
+                    ),
+                    (*end_pos, 0, 0),
+                ]
             )
         )
     model = Model(0, 0, 0, *faces)
@@ -1385,6 +1436,37 @@ def _parse_texture(gltf: dict, texture_index: int, gltf_dir: str) -> "soup3D.sha
         return soup3D.shader.Texture(bytes([255, 255, 255, 255]), 1, 1, 'RGBA')
 
 
+def _process_joint_node(nodes: list, joint_set: set, node_idx: int,
+                       parent_matrix, parent_joint_idx: int,
+                       joint_world_matrices: dict, joint_parent_map: dict):
+    """处理glTF节点，计算世界矩阵和父子关系"""
+    if node_idx >= len(nodes):
+        return
+
+    node = nodes[node_idx]
+    translation = node.get('translation', [0, 0, 0])
+    rotation = node.get('rotation', [0, 0, 0, 1])
+    scale = node.get('scale', [1, 1, 1])
+
+    local_matrix = glm.mat4(1.0)
+    local_matrix = glm.scale(local_matrix, glm.vec3(*scale))
+    q = glm.quat(*rotation)
+    local_matrix = local_matrix * glm.mat4_cast(q)
+    local_matrix = glm.translate(local_matrix, glm.vec3(*translation))
+
+    world_matrix = parent_matrix * local_matrix
+
+    if node_idx in joint_set:
+        joint_world_matrices[node_idx] = world_matrix
+        if parent_joint_idx is not None:
+            joint_parent_map[node_idx] = parent_joint_idx
+        parent_joint_idx = node_idx
+
+    for child_idx in node.get('children', []):
+        _process_joint_node(nodes, joint_set, child_idx, world_matrix,
+                           parent_joint_idx, joint_world_matrices, joint_parent_map)
+
+
 def _build_skeleton(gltf: dict, skin_index: int, node_index: int,
                     gltf_dir: str) -> soup3D.skeleton.Skeleton:
     """构建骨架"""
@@ -1395,54 +1477,76 @@ def _build_skeleton(gltf: dict, skin_index: int, node_index: int,
 
     skin = gltf['skins'][skin_index]
     joints = skin.get('joints', [])
-    inverse_bind_matrices = skin.get('inverseBindMatrices')
-
-    # 获取逆绑定矩阵
-    ibm_data = []
-    if inverse_bind_matrices is not None:
-        ibm_data = _get_accessor_data(gltf, inverse_bind_matrices, gltf_dir)
-
-    # 获取关节节点
     nodes = gltf.get('nodes', [])
 
-    # 构建骨骼层级
-    bones_dict = {}
+    if not joints:
+        return skeleton
 
-    for i, joint_index in enumerate(joints):
+    joint_set = set(joints)
+    bones_dict = {}
+    joint_world_matrices = {}
+    joint_parent_map = {}
+
+    for joint_index in joints:
+        if joint_index not in joint_world_matrices:
+            _process_joint_node(nodes, joint_set, joint_index, glm.mat4(1.0),
+                              None, joint_world_matrices, joint_parent_map)
+
+    for joint_index in joints:
         node = nodes[joint_index]
         bone_name = node.get('name', f'joint_{joint_index}')
 
-        # 获取变换信息
-        translation = node.get('translation', [0, 0, 0])
-        rotation = node.get('rotation', [0, 0, 0, 1])  # 四元数
-        scale = node.get('scale', [1, 1, 1])
+        world_matrix = joint_world_matrices.get(joint_index, glm.mat4(1.0))
+        world_pos = glm.vec3(world_matrix[3])
+        init_pos = (world_pos.x, world_pos.y, world_pos.z)
 
-        # 计算初始位置和方向
-        init_pos = tuple(translation)
-
-        # 从四元数转换为欧拉角
-        q = rotation
-        yaw, pitch, roll = _quaternion_to_euler(q[0], q[1], q[2], q[3])
+        rotation = node.get('rotation', [0, 0, 0, 1])
+        yaw, pitch, roll = _quaternion_to_euler(rotation[0], rotation[1], rotation[2], rotation[3])
         init_toward = (yaw, pitch, roll)
 
-        # 计算骨骼长度（从逆绑定矩阵或缩放）
-        init_length = scale[0] if len(scale) > 0 else 1.0
-
-        bone = soup3D.skeleton.Bone(init_pos, init_length, init_toward)
+        bone = soup3D.skeleton.Bone(init_pos, 1.0, init_toward)
         bones_dict[joint_index] = bone
         skeleton.add_bone(bone_name, bone)
 
-    # 构建层级关系
-    for joint_index, bone in bones_dict.items():
-        node = nodes[joint_index]
-        children = node.get('children', [])
+    for joint_index in joints:
+        if joint_index in joint_parent_map:
+            parent_idx = joint_parent_map[joint_index]
+            if parent_idx in bones_dict:
+                parent_bone = bones_dict[parent_idx]
+                child_bone = bones_dict[joint_index]
+                parent_bone.children.append(child_bone)
+                child_bone.parent = parent_bone
 
-        for child_index in children:
-            if child_index in bones_dict:
-                child_bone = bones_dict[child_index]
-                # 子骨骼的初始位置由父骨骼决定，这里需要重新计算
-                bone.children.append(child_bone)
-                child_bone.parent = bone
+    for joint_index in joints:
+        bone = bones_dict[joint_index]
+        if bone.children:
+            first_child = bone.children[0]
+
+            child_idx = None
+            for idx, b in bones_dict.items():
+                if b == first_child:
+                    child_idx = idx
+                    break
+
+            if child_idx is not None:
+                parent_matrix = joint_world_matrices.get(joint_index, glm.mat4(1.0))
+                child_matrix = joint_world_matrices.get(child_idx, glm.mat4(1.0))
+
+                parent_pos = glm.vec3(parent_matrix[3])
+                child_pos = glm.vec3(child_matrix[3])
+
+                direction = child_pos - parent_pos
+                length = glm.length(direction)
+
+                if length > 0.0001:
+                    direction = glm.normalize(direction)
+                    yaw = math.degrees(math.atan2(direction.x, direction.z))
+                    pitch = math.degrees(math.asin(-direction.y))
+                    roll = 0
+
+                    bone.init_length = length
+                    bone.length = length
+                    bone.init_toward = glm.vec3(yaw, pitch, roll)
 
     return skeleton
 

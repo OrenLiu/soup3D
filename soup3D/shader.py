@@ -579,17 +579,17 @@ class ShaderProgram:
         :return: None
         """
         # 删除顶点着色器
-        if self.vertex_shader:
+        if hasattr(self, 'vertex_shader') and self.vertex_shader:
             glDeleteShader(self.vertex_shader)
             self.vertex_shader = None
 
         # 删除片段着色器
-        if self.fragment_shader:
+        if hasattr(self, 'fragment_shader') and self.fragment_shader:
             glDeleteShader(self.fragment_shader)
             self.fragment_shader = None
 
         # 删除着色器程序
-        if self.shader:
+        if hasattr(self, 'shader') and self.shader:
             glDeleteProgram(self.shader)
             self.shader = None
 
