@@ -553,41 +553,41 @@ def gen_skeleton_model(_skeleton: soup3D.skeleton.Skeleton | dict, bone_color=No
                 ),
                 [
                     (
-                        bone.init_pos.x + bone.x + size,
-                        bone.init_pos.y + bone.y,
-                        bone.init_pos.z + bone.z,
+                        bone.pos.x + size,
+                        bone.pos.y,
+                        bone.pos.z,
                         0, 0
                     ),
                     (
-                        bone.init_pos.x + bone.x - size,
-                        bone.init_pos.y + bone.y,
-                        bone.init_pos.z + bone.z,
+                        bone.pos.x - size,
+                        bone.pos.y,
+                        bone.pos.z,
                         0, 0)
                     ,
                     (*end_pos, 0, 0),
                     (
-                        bone.init_pos.x + bone.x,
-                        bone.init_pos.y + bone.y + size,
-                        bone.init_pos.z + bone.z,
+                        bone.pos.x,
+                        bone.pos.y + size,
+                        bone.pos.z,
                         0, 0
                     ),
                     (
-                        bone.init_pos.x + bone.x,
-                        bone.init_pos.y + bone.y - size,
-                        bone.init_pos.z + bone.z,
+                        bone.pos.x,
+                        bone.pos.y - size,
+                        bone.pos.z,
                         0, 0
                     ),
                     (*end_pos, 0, 0),
                     (
-                        bone.init_pos.x + bone.x,
-                        bone.init_pos.y + bone.y,
-                        bone.init_pos.z + bone.z + size,
+                        bone.pos.x,
+                        bone.pos.y,
+                        bone.pos.z + size,
                         0, 0
                     ),
                     (
-                        bone.init_pos.x + bone.x,
-                        bone.init_pos.y + bone.y,
-                        bone.init_pos.z + bone.z - size,
+                        bone.pos.x,
+                        bone.pos.y,
+                        bone.pos.z - size,
                         0, 0
                     ),
                     (*end_pos, 0, 0),

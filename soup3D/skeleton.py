@@ -15,14 +15,9 @@ class Bone:
         self.init_toward = glm.vec3(*init_toward)
 
         # 当前变换
-        self.x = 0
-        self.y = 0
-        self.z = 0
+        self.pos = glm.vec3(*init_pos)
         self.length = init_length
-
-        self.yaw = 0
-        self.pitch = 0
-        self.roll = 0
+        self.toward = glm.vec3(*init_toward)
 
         # 层级结构
         self.children = []
@@ -42,19 +37,19 @@ class Bone:
         """
         # 计算子骨骼的初始位置（在父骨骼末端）
         child_init_pos = self._get_init_end_position()
+        # 计算子骨骼的偏移位置（在父骨骼末端）
         child_real_pos = self._get_end_position()
 
+        # 创建子骨骼
         child = Bone(child_init_pos, init_length, init_toward)
+
+        # 移动子骨骼到偏移位置
         child.move(
-            child_real_pos[0]-child.init_pos.x,
-            child_real_pos[1]-child.init_pos.y,
-            child_real_pos[2]-child.init_pos.z
+            child_real_pos[0],
+            child_real_pos[1],
+            child_real_pos[2]
         )
-        child.turn(
-            child.yaw + self.yaw,
-            child.pitch + self.pitch,
-            child.roll + self.roll
-        )
+
         self.children.append(child)
         return child
 
@@ -66,19 +61,13 @@ class Bone:
         :param z: z轴偏移量
         :return: None
         """
-        self.x = x
-        self.y = y
-        self.z = z
+        self.pos = glm.vec3(x, y, z)
 
         child_real_pos = self._get_end_position()
 
         # 更新子骨骼位置
         for child in self.children:
-            child.move(
-                child_real_pos[0] - child.init_pos.x,
-                child_real_pos[1] - child.init_pos.y,
-                child_real_pos[2] - child.init_pos.z
-            )
+            child.move(*child_real_pos)
 
         self._mark_dirty()
 
@@ -90,28 +79,13 @@ class Bone:
         :param roll:  横滚角度
         :return: None
         """
-        yaw_add = yaw - self.yaw
-        pitch_add = pitch - self.pitch
-        roll_add = roll - self.roll
-
-        self.yaw = yaw
-        self.pitch = pitch
-        self.roll = roll
+        self.toward = glm.vec3(yaw, pitch, roll)
 
         child_real_pos = self._get_end_position()
 
         # 更新子骨骼位置
         for child in self.children:
-            child.move(
-                child_real_pos[0] - child.init_pos.x,
-                child_real_pos[1] - child.init_pos.y,
-                child_real_pos[2] - child.init_pos.z
-            )
-            child.turn(
-                child.yaw + yaw_add,
-                child.pitch + pitch_add,
-                child.roll + roll_add
-            )
+            child.move(*child_real_pos)
 
         self._mark_dirty()
 
@@ -158,19 +132,12 @@ class Bone:
         """
         # 构建初始变换矩阵
         matrix = glm.mat4(1.0)
-        matrix = glm.translate(
-            matrix,
-            glm.vec3(
-                self.init_pos.x+self.x,
-                self.init_pos.y+self.y,
-                self.init_pos.z+self.z
-            )
-        )
+        matrix = glm.translate(matrix, self.pos)
 
         # 应用初始方向旋转
-        matrix = glm.rotate(matrix, glm.radians(-self.init_toward.x - self.yaw), glm.vec3(0.0, 1.0, 0.0))
-        matrix = glm.rotate(matrix, glm.radians(self.init_toward.y + self.pitch), glm.vec3(1.0, 0.0, 0.0))
-        matrix = glm.rotate(matrix, glm.radians(self.init_toward.z + self.roll), glm.vec3(0.0, 0.0, 1.0))
+        matrix = glm.rotate(matrix, glm.radians(-self.toward.x), glm.vec3(0.0, 1.0, 0.0))
+        matrix = glm.rotate(matrix, glm.radians(self.toward.y), glm.vec3(1.0, 0.0, 0.0))
+        matrix = glm.rotate(matrix, glm.radians(self.toward.z), glm.vec3(0.0, 0.0, 1.0))
 
         # 沿Z轴延伸骨骼长度
         end_point = glm.vec4(0.0, 0.0, self.length, 1.0)
@@ -187,12 +154,25 @@ class Bone:
         local_matrix = glm.mat4(1.0)
 
         # 移动
-        local_matrix = glm.translate(local_matrix, glm.vec3(self.x, self.y, self.z))
+        local_matrix = glm.translate(
+            local_matrix,
+            glm.vec3(
+                self.x-self.init_pos.x,
+                self.y-self.init_pos.y,
+                self.z-self.init_pos.z
+            )
+        )
 
         # 旋转
-        local_matrix = glm.rotate(local_matrix, glm.radians(-self.yaw), glm.vec3(0.0, 1.0, 0.0))
-        local_matrix = glm.rotate(local_matrix, glm.radians(self.pitch), glm.vec3(1.0, 0.0, 0.0))
-        local_matrix = glm.rotate(local_matrix, glm.radians(self.roll), glm.vec3(0.0, 0.0, 1.0))
+        local_matrix = glm.rotate(
+            local_matrix, glm.radians(-self.yaw-self.init_toward.x), glm.vec3(0.0, 1.0, 0.0)
+        )
+        local_matrix = glm.rotate(
+            local_matrix, glm.radians(self.pitch-self.init_toward.y), glm.vec3(1.0, 0.0, 0.0)
+        )
+        local_matrix = glm.rotate(
+            local_matrix, glm.radians(self.roll-self.init_toward.z), glm.vec3(0.0, 0.0, 1.0)
+        )
 
         # 缩放长度
         scale = self.length / self.init_length if self.init_length > 0 else 1.0
@@ -222,35 +202,12 @@ class Bone:
 
     def reset(self):
         """
-        重置骨骼到初始姿态
+        重置骨骼到初始姿态。不建议单个骨骼重置，可能会导致骨骼断层。
         :return: None
         """
-
-        yaw_add = 0 - self.yaw
-        pitch_add = 0 - self.pitch
-        roll_add = 0 - self.roll
-
-        self.x = 0
-        self.y = 0
-        self.z = 0
+        self.pos = glm.vec3(self.init_pos)
+        self.toward = glm.vec3(self.init_toward)
         self.length = self.init_length
-        self.yaw = 0
-        self.pitch = 0
-        self.roll = 0
-
-        child_real_pos = self._get_end_position()
-
-        for child in self.children:
-            child.move(
-                child_real_pos[0] - child.init_pos.x,
-                child_real_pos[1] - child.init_pos.y,
-                child_real_pos[2] - child.init_pos.z
-            )
-            child.turn(
-                child.yaw + yaw_add,
-                child.pitch + pitch_add,
-                child.roll + roll_add
-            )
 
         self._mark_dirty()
 
