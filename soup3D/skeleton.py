@@ -157,21 +157,21 @@ class Bone:
         local_matrix = glm.translate(
             local_matrix,
             glm.vec3(
-                self.x-self.init_pos.x,
-                self.y-self.init_pos.y,
-                self.z-self.init_pos.z
+                self.pos.x-self.init_pos.x,
+                self.pos.y-self.init_pos.y,
+                self.pos.z-self.init_pos.z
             )
         )
 
         # 旋转
         local_matrix = glm.rotate(
-            local_matrix, glm.radians(-self.yaw-self.init_toward.x), glm.vec3(0.0, 1.0, 0.0)
+            local_matrix, glm.radians(-self.toward.x-self.init_toward.x), glm.vec3(0.0, 1.0, 0.0)
         )
         local_matrix = glm.rotate(
-            local_matrix, glm.radians(self.pitch-self.init_toward.y), glm.vec3(1.0, 0.0, 0.0)
+            local_matrix, glm.radians(self.toward.y-self.init_toward.y), glm.vec3(1.0, 0.0, 0.0)
         )
         local_matrix = glm.rotate(
-            local_matrix, glm.radians(self.roll-self.init_toward.z), glm.vec3(0.0, 0.0, 1.0)
+            local_matrix, glm.radians(self.toward.z-self.init_toward.z), glm.vec3(0.0, 0.0, 1.0)
         )
 
         # 缩放长度

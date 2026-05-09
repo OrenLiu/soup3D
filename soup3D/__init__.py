@@ -906,7 +906,7 @@ def open_gltf(
         skin = soup3D.shader.BoneBinderSP
     ):
     """
-    从glb导入模型和骨骼
+    从gltf文件导入模型和骨骼
     :param gltf:            gltf模型文件路径
     :param double_side:     是否启用双面渲染
     :param max_light_count: 该模型出现时会同时出现的最多的光源数量，大了会导致性能问题
@@ -916,6 +916,7 @@ def open_gltf(
                             max_light_count等参数
     :return: 模型数据(Model类), 骨架数据(Skeleton类)
     """
+    ...
 
 
 def get_projection_mat() -> glm.fmat4x4:
