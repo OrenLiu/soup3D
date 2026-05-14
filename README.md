@@ -66,13 +66,19 @@ Due to limited individual development capabilities, we welcome like-minded peopl
   
   Following these standards will increase the likelihood of your code being accepted:
   
-  1. All functions, classes, and class methods must have `Google` style `docstring` format comments
+  1. All functions, classes, and class methods must have `reStructuredText` format comments
     
   2. Test your code before submitting a PR. Please refer to the `Function Testing` section below for testing methods
     
   3. Confirm requirements with the author before developing any module
   
   4. New features should not affect the calling methods of existing features
+    
+  5. Do not import modules anywhere except at the beginning of files
+    
+  6. Do not nest function definitions. All functions except class member functions must be defined in the global scope of their files
+    
+  7. Class member variables can be accessed from outside the class, but do not modify them externally. If modification is needed, add class member functions instead
     
 - **Function Testing**
   
