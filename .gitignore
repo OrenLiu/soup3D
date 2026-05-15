@@ -1,4 +1,5 @@
 test/
 .venv/
 .idea/
+soup3D/__pycache__/
 CLAUDE.md

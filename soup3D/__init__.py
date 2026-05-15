@@ -898,6 +898,381 @@ def open_obj(obj: str,
     return model
 
 
+def _gltf_component_size(component_type: int) -> int:
+    """获取GLTF组件类型的字节大小"""
+    size_map = {5120: 1, 5121: 1, 5122: 2, 5123: 2, 5125: 4, 5126: 4}
+    return size_map.get(component_type, 4)
+
+
+def _gltf_component_count(accessor_type: str) -> int:
+    """获取GLTF访问器类型的分量数量"""
+    count_map = {"SCALAR": 1, "VEC2": 2, "VEC3": 3, "VEC4": 4, "MAT2": 4, "MAT3": 9, "MAT4": 16}
+    return count_map.get(accessor_type, 1)
+
+
+def _gltf_read_accessor(gltf_data: dict, buffers_data: list, accessor_idx: int) -> list:
+    """
+    读取GLTF访问器数据
+    :param gltf_data:    GLTF JSON数据
+    :param buffers_data: 已加载的缓冲区数据列表
+    :param accessor_idx: 访问器索引
+    :return: 数据列表
+    """
+    accessor = gltf_data["accessors"][accessor_idx]
+    buffer_view = gltf_data["bufferViews"][accessor["bufferView"]]
+
+    component_type = accessor["componentType"]
+    accessor_type = accessor["type"]
+    count = accessor["count"]
+    comp_size = _gltf_component_size(component_type)
+    comp_count = _gltf_component_count(accessor_type)
+
+    buffer_idx = buffer_view.get("buffer", 0)
+    byte_offset = buffer_view.get("byteOffset", 0) + accessor.get("byteOffset", 0)
+    byte_stride = buffer_view.get("byteStride", 0)
+
+    raw = buffers_data[buffer_idx]
+
+    # 根据组件类型确定struct格式字符
+    fmt_map = {5126: 'f', 5123: 'H', 5121: 'B', 5122: 'h', 5120: 'b', 5125: 'I'}
+    fmt_char = fmt_map.get(component_type, 'f')
+
+    if byte_stride and byte_stride > comp_count * comp_size:
+        # 有字节步幅，逐元素读取
+        result = []
+        for i in range(count):
+            offset = byte_offset + i * byte_stride
+            vals = struct.unpack_from(f"<{comp_count}{fmt_char}", raw, offset)
+            if comp_count == 1:
+                result.append(vals[0])
+            else:
+                result.append(vals)
+        return result
+    else:
+        # 连续数据，直接读取
+        elem_size = comp_count * comp_size
+        result = []
+        for i in range(count):
+            offset = byte_offset + i * elem_size
+            vals = struct.unpack_from(f"<{comp_count}{fmt_char}", raw, offset)
+            if comp_count == 1:
+                result.append(vals[0])
+            else:
+                result.append(vals)
+        return result
+
+
+def _gltf_load_buffers(gltf_data: dict, base_dir: str) -> list:
+    """
+    加载GLTF缓冲区数据
+    :param gltf_data: GLTF JSON数据
+    :param base_dir:  GLTF文件所在目录
+    :return: 缓冲区数据列表（bytes对象）
+    """
+    buffers = []
+    for buf in gltf_data.get("buffers", []):
+        uri = buf.get("uri", "")
+        if uri.startswith("data:"):
+            # data URI
+            split_idx = uri.index(",")
+            raw = base64.b64decode(uri[split_idx + 1:])
+        else:
+            buf_path = os.path.join(base_dir, uri)
+            with open(buf_path, "rb") as f:
+                raw = f.read()
+        buffers.append(raw)
+    return buffers
+
+
+def _gltf_load_materials(gltf_data: dict, base_dir: str, double_side: bool, max_light_count: int, surface) -> dict:
+    """
+    加载GLTF材质，返回材质索引到着色器的映射
+    :param gltf_data:      GLTF JSON数据
+    :param base_dir:       GLTF文件所在目录
+    :param double_side:    是否启用双面渲染
+    :param max_light_count: 最大光源数量
+    :param surface:        表面着色器类型
+    :return: 材质字典 {材质索引: 着色器对象}
+    """
+    materials_dict = {}
+
+    images_data = gltf_data.get("images", [])
+    textures_data = gltf_data.get("textures", [])
+    materials_data = gltf_data.get("materials", [])
+
+    # 加载所有图像
+    loaded_images = []
+    for img_info in images_data:
+        uri = img_info.get("uri", "")
+        if uri.startswith("data:"):
+            split_idx = uri.index(",")
+            img_bytes = base64.b64decode(uri[split_idx + 1:])
+            img_array = imageio.imread(img_bytes)
+        else:
+            img_path = os.path.join(base_dir, uri)
+            img_array = imageio.imread(img_path)
+        loaded_images.append(img_array)
+
+    for mat_idx, mat_info in enumerate(materials_data):
+        mat_double_side = mat_info.get("doubleSided", double_side)
+
+        # 尝试获取base color纹理
+        base_color = soup3D.shader.MixChannel((1, 1), 0.8, 0.8, 0.8, 1.0)
+        pbr = mat_info.get("pbrMetallicRoughness", {})
+        base_color_tex = pbr.get("baseColorTexture", {})
+        if base_color_tex:
+            tex_idx = base_color_tex.get("index", -1)
+            if 0 <= tex_idx < len(textures_data):
+                source_idx = textures_data[tex_idx].get("source", -1)
+                if 0 <= source_idx < len(loaded_images):
+                    img_array = loaded_images[source_idx]
+                    h, w = img_array.shape[:2]
+                    if len(img_array.shape) == 3 and img_array.shape[2] == 4:
+                        fmt = "RGBA"
+                    elif len(img_array.shape) == 3:
+                        fmt = "RGB"
+                    else:
+                        fmt = "L"
+                    tex = soup3D.shader.Texture(img_array.tobytes(), width=w, height=h, format=fmt)
+                    r_ch = soup3D.shader.Channel(tex, 0)
+                    g_ch = soup3D.shader.Channel(tex, 1)
+                    b_ch = soup3D.shader.Channel(tex, 2)
+                    a_ch = soup3D.shader.Channel(tex, 3) if fmt == "RGBA" else 1.0
+                    base_color = soup3D.shader.MixChannel((w, h), r_ch, g_ch, b_ch, a_ch)
+
+        # 尝试获取emissive纹理
+        emission = (0, 0, 0)
+        emissive_tex = mat_info.get("emissiveTexture", {})
+        if emissive_tex:
+            tex_idx = emissive_tex.get("index", -1)
+            if 0 <= tex_idx < len(textures_data):
+                source_idx = textures_data[tex_idx].get("source", -1)
+                if 0 <= source_idx < len(loaded_images):
+                    img_array = loaded_images[source_idx]
+                    h, w = img_array.shape[:2]
+                    fmt = "RGB" if len(img_array.shape) == 3 else "L"
+                    tex = soup3D.shader.Texture(img_array.tobytes(), width=w, height=h, format=fmt)
+                    emission = tex
+
+        # 检查base color因子
+        base_color_factor = pbr.get("baseColorFactor", None)
+
+        materials_dict[mat_idx] = surface(
+            base_color=base_color,
+            emission=emission,
+            normal=(0.5, 0.5, 1),
+            double_side=mat_double_side,
+            max_light_count=max_light_count
+        )
+
+    return materials_dict
+
+
+def _quat_to_euler(qx, qy, qz, qw):
+    """
+    将四元数转换为欧拉角(yaw, pitch, roll)，单位为角度
+    :param qx: 四元数x分量
+    :param qy: 四元数y分量
+    :param qz: 四元数z分量
+    :param qw: 四元数w分量
+    :return: (yaw, pitch, roll) 角度
+    """
+    # Yaw (绕Y轴)
+    siny_cosp = 2 * (qw * qy + qx * qz)
+    cosy_cosp = 1 - 2 * (qy * qy + qz * qz)
+    yaw = math.degrees(math.atan2(siny_cosp, cosy_cosp))
+
+    # Pitch (绕X轴)
+    sinp = 2 * (qw * qx - qz * qy)
+    sinp = max(-1.0, min(1.0, sinp))
+    pitch = math.degrees(math.asin(sinp))
+
+    # Roll (绕Z轴)
+    sinr_cosp = 2 * (qw * qz + qx * qy)
+    cosr_cosp = 1 - 2 * (qz * qz + qy * qy)
+    roll = math.degrees(math.atan2(sinr_cosp, cosr_cosp))
+
+    return yaw, pitch, roll
+
+
+def _quat_to_mat4(qx, qy, qz, qw):
+    """
+    将四元数转换为4x4旋转矩阵
+    :param qx: 四元数x分量
+    :param qy: 四元数y分量
+    :param qz: 四元数z分量
+    :param qw: 四元数w分量
+    :return: 4x4矩阵
+    """
+    mat = glm.mat4(1.0)
+    mat[0][0] = 1 - 2 * (qy * qy + qz * qz)
+    mat[0][1] = 2 * (qx * qy + qw * qz)
+    mat[0][2] = 2 * (qx * qz - qw * qy)
+    mat[1][0] = 2 * (qx * qy - qw * qz)
+    mat[1][1] = 1 - 2 * (qx * qx + qz * qz)
+    mat[1][2] = 2 * (qy * qz + qw * qx)
+    mat[2][0] = 2 * (qx * qz + qw * qy)
+    mat[2][1] = 2 * (qy * qz - qw * qx)
+    mat[2][2] = 1 - 2 * (qx * qx + qy * qy)
+    return mat
+
+
+def _gltf_build_node_transform(node: dict) -> glm.mat4:
+    """
+    根据GLTF节点的TRS属性构建局部变换矩阵
+    :param node: GLTF节点数据
+    :return: 4x4变换矩阵
+    """
+    mat = glm.mat4(1.0)
+
+    # 平移
+    t = node.get("translation", [0, 0, 0])
+    mat = glm.translate(mat, glm.vec3(*t))
+
+    # 旋转（四元数）
+    r = node.get("rotation", [0, 0, 0, 1])
+    rot_mat = _quat_to_mat4(r[0], r[1], r[2], r[3])
+    mat = mat * rot_mat
+
+    # 缩放
+    s = node.get("scale", [1, 1, 1])
+    mat = glm.scale(mat, glm.vec3(*s))
+
+    return mat
+
+
+def _gltf_compute_world_transforms(nodes: list) -> list:
+    """
+    计算所有节点的世界变换矩阵
+    :param nodes: GLTF节点列表
+    :return: 世界变换矩阵列表
+    """
+    world_transforms = [None] * len(nodes)
+    root_nodes = []
+
+    # 找出所有有父节点的节点
+    has_parent = set()
+    for i, node in enumerate(nodes):
+        for child_idx in node.get("children", []):
+            has_parent.add(child_idx)
+
+    # 没有父节点的就是根节点
+    for i in range(len(nodes)):
+        if i not in has_parent:
+            root_nodes.append(i)
+
+    # 如果有场景定义，使用场景的根节点
+    # 这里简单处理：所有根节点都用单位矩阵作为父变换
+    def _compute(idx, parent_transform):
+        local = _gltf_build_node_transform(nodes[idx])
+        world = parent_transform * local
+        world_transforms[idx] = world
+        for child_idx in nodes[idx].get("children", []):
+            _compute(child_idx, world)
+
+    for root_idx in root_nodes:
+        _compute(root_idx, glm.mat4(1.0))
+
+    return world_transforms
+
+
+def _gltf_build_skeleton(gltf_data: dict, world_transforms: list) -> soup3D.skeleton.Skeleton:
+    """
+    从GLTF数据构建骨架
+    :param gltf_data:      GLTF JSON数据
+    :param world_transforms: 节点世界变换矩阵列表
+    :return: Skeleton对象
+    """
+    nodes = gltf_data["nodes"]
+    skeleton = soup3D.skeleton.Skeleton()
+
+    # 如果没有skin，返回空骨架
+    skins = gltf_data.get("skins", [])
+    if not skins:
+        return skeleton
+
+    skin = skins[0]
+    joints = skin["joints"]
+    joint_names = {}
+    for joint_idx in joints:
+        joint_names[joint_idx] = nodes[joint_idx].get("name", f"bone_{joint_idx}")
+
+    # 构建每个关节到其子关节的映射
+    children_map = {}
+    for joint_idx in joints:
+        children_map[joint_idx] = []
+        for child_idx in nodes[joint_idx].get("children", []):
+            if child_idx in joint_names:
+                children_map[joint_idx].append(child_idx)
+
+    # 找到根关节（没有在joints中有父关节的关节）
+    joint_set = set(joints)
+    root_joints = []
+    for joint_idx in joints:
+        is_root = True
+        for other_idx in joints:
+            if joint_idx in nodes[other_idx].get("children", []):
+                is_root = False
+                break
+        if is_root:
+            root_joints.append(joint_idx)
+
+    # 递归构建骨骼
+    def _build_bone(joint_idx, parent_bone=None):
+        name = joint_names[joint_idx]
+        world_mat = world_transforms[joint_idx]
+
+        # 从世界矩阵提取位置
+        pos = glm.vec3(world_mat[3])
+
+        # 计算骨骼长度：到第一个子关节的距离
+        child_joints = children_map.get(joint_idx, [])
+        if child_joints:
+            child_world = world_transforms[child_joints[0]]
+            child_pos = glm.vec3(child_world[3])
+            length = glm.length(child_pos - pos)
+            if length < 1e-6:
+                length = 0.01
+        else:
+            length = 0.01
+
+        # 从世界矩阵提取旋转欧拉角
+        rot_mat = glm.mat3(world_mat)
+        # 使用glm的eulerAngles从旋转矩阵提取欧拉角
+        quat = glm.quat_cast(rot_mat)
+        euler = glm.eulerAngles(quat)
+        yaw = math.degrees(euler.y)
+        pitch = math.degrees(euler.x)
+        roll = math.degrees(euler.z)
+
+        # 计算骨骼方向：从位置到子关节位置
+        if child_joints:
+            child_world = world_transforms[child_joints[0]]
+            child_pos = glm.vec3(child_world[3])
+            direction = child_pos - pos
+        else:
+            direction = glm.vec3(rot_mat[0][0], rot_mat[0][1], rot_mat[0][2])
+
+        bone = soup3D.skeleton.Bone(
+            (pos.x, pos.y, pos.z),
+            length,
+            (yaw, pitch, roll)
+        )
+
+        # 构建子骨骼
+        for child_idx in child_joints:
+            child_bone = _build_bone(child_idx, bone)
+            bone.children.append(child_bone)
+
+        skeleton.add_bone(name, bone)
+        return bone
+
+    for root_idx in root_joints:
+        _build_bone(root_idx)
+
+    return skeleton
+
+
 def open_gltf(
         gltf: str,
         double_side: bool = True,
@@ -914,9 +1289,142 @@ def open_gltf(
                             数
     :param skin:            模型使用的蒙皮着色器类型，着色器需要有skeleton, base_color, emission, normal, double_side,
                             max_light_count等参数
-    :return: 模型数据(Model类), 骨架数据(Skeleton类)
+    :return: (模型数据(Model类), 骨架数据(Skeleton类))
     """
-    ...
+    base_dir = os.path.dirname(os.path.abspath(gltf))
+
+    # 读取GLTF文件
+    with open(gltf, "r", encoding="utf-8") as f:
+        gltf_data = json.load(f)
+
+    # 加载缓冲区数据
+    buffers_data = _gltf_load_buffers(gltf_data, base_dir)
+
+    nodes = gltf_data["nodes"]
+
+    # 计算所有节点的世界变换矩阵
+    world_transforms = _gltf_compute_world_transforms(nodes)
+
+    # 加载材质
+    materials_dict = _gltf_load_materials(gltf_data, base_dir, double_side, max_light_count, surface)
+
+    # 检查是否有蒙皮数据
+    skins_data = gltf_data.get("skins", [])
+    has_skin = len(skins_data) > 0
+
+    # 构建骨架
+    skeleton = _gltf_build_skeleton(gltf_data, world_transforms)
+
+    # 读取蒙皮的逆绑定矩阵和关节映射
+    joint_name_map = {}
+    if has_skin:
+        skin_info = skins_data[0]
+        joints = skin_info["joints"]
+        for joint_idx in joints:
+            joint_name_map[joint_idx] = nodes[joint_idx].get("name", f"bone_{joint_idx}")
+
+    # 创建默认材质
+    default_surface = surface(
+        base_color=soup3D.shader.MixChannel((1, 1), 0.8, 0.8, 0.8, 1.0),
+        emission=(0, 0, 0),
+        normal=(0.5, 0.5, 1),
+        double_side=double_side,
+        max_light_count=max_light_count
+    )
+
+    # 处理所有网格
+    all_faces = []
+    meshes = gltf_data.get("meshes", [])
+
+    for mesh in meshes:
+        for primitive in mesh.get("primitives", []):
+            attributes = primitive.get("attributes", {})
+
+            # 读取顶点数据
+            positions = _gltf_read_accessor(gltf_data, buffers_data, attributes.get("POSITION", -1)) if "POSITION" in attributes else []
+            normals = _gltf_read_accessor(gltf_data, buffers_data, attributes.get("NORMAL", -1)) if "NORMAL" in attributes else []
+            texcoords = _gltf_read_accessor(gltf_data, buffers_data, attributes.get("TEXCOORD_0", -1)) if "TEXCOORD_0" in attributes else []
+            joints_data = _gltf_read_accessor(gltf_data, buffers_data, attributes.get("JOINTS_0", -1)) if "JOINTS_0" in attributes else []
+            weights_data = _gltf_read_accessor(gltf_data, buffers_data, attributes.get("WEIGHTS_0", -1)) if "WEIGHTS_0" in attributes else []
+
+            # 读取索引数据
+            indices = []
+            if "indices" in primitive:
+                indices = _gltf_read_accessor(gltf_data, buffers_data, primitive["indices"])
+
+            # 获取材质
+            mat_idx = primitive.get("material", -1)
+            if mat_idx >= 0 and mat_idx in materials_dict:
+                prim_surface = materials_dict[mat_idx]
+            else:
+                prim_surface = default_surface
+
+            # 构建顶点列表
+            vertices = []
+            if indices:
+                index_list = indices
+            else:
+                index_list = list(range(len(positions)))
+
+            for idx in index_list:
+                # 位置
+                pos = positions[idx] if idx < len(positions) else (0, 0, 0)
+
+                # 纹理坐标
+                uv = texcoords[idx] if idx < len(texcoords) else (0, 0)
+
+                # 法线
+                nrm = normals[idx] if idx < len(normals) else (0, 0, 1)
+
+                if has_skin and joints_data and weights_data:
+                    # 带骨骼权重的顶点
+                    joint_indices = joints_data[idx] if idx < len(joints_data) else (0, 0, 0, 0)
+                    joint_weights = weights_data[idx] if idx < len(weights_data) else (0, 0, 0, 0)
+
+                    # 构建骨骼权重字典
+                    bone_weights_dict = {}
+                    for j in range(4):
+                        if joint_weights[j] > 0.0 and joint_indices[j] in joint_name_map:
+                            bone_weights_dict[joint_name_map[joint_indices[j]]] = joint_weights[j]
+
+                    vertex = (
+                        bone_weights_dict,
+                        pos[0], pos[1], pos[2],
+                        uv[0], uv[1],
+                        nrm[0], nrm[1], nrm[2]
+                    )
+                else:
+                    # 普通顶点
+                    vertex = (
+                        pos[0], pos[1], pos[2],
+                        uv[0], uv[1],
+                        nrm[0], nrm[1], nrm[2]
+                    )
+                vertices.append(vertex)
+
+            if not vertices:
+                continue
+
+            # 根据是否有骨骼选择着色器类型
+            if has_skin and joints_data and weights_data:
+                face_surface = skin(
+                    base_color=prim_surface.base_color if hasattr(prim_surface, 'base_color') else soup3D.shader.MixChannel((1, 1), 0.8, 0.8, 0.8, 1.0),
+                    normal=prim_surface.normal if hasattr(prim_surface, 'normal') else (0.5, 0.5, 1),
+                    emission=prim_surface.emission if hasattr(prim_surface, 'emission') else (0, 0, 0),
+                    double_side=prim_surface.double_side if hasattr(prim_surface, 'double_side') else double_side,
+                    max_light_count=max_light_count,
+                    skeleton=skeleton
+                )
+            else:
+                face_surface = prim_surface
+
+            face = Face(TRIANGLE_B, face_surface, vertices)
+            all_faces.append(face)
+
+    # 创建模型
+    model = Model(0, 0, 0, *all_faces)
+
+    return model, skeleton
 
 
 def get_projection_mat() -> glm.fmat4x4:
