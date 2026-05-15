@@ -149,49 +149,7 @@ class Bone:
         """更新骨骼变换矩阵"""
         if not self._matrix_dirty:
             return
-
-        # 构建局部变换矩阵
-        local_matrix = glm.mat4(1.0)
-
-        # 移动
-        local_matrix = glm.translate(
-            local_matrix,
-            glm.vec3(
-                self.pos.x-self.init_pos.x,
-                self.pos.y-self.init_pos.y,
-                self.pos.z-self.init_pos.z
-            )
-        )
-
-        # 旋转
-        local_matrix = glm.rotate(
-            local_matrix, glm.radians(-self.toward.x-self.init_toward.x), glm.vec3(0.0, 1.0, 0.0)
-        )
-        local_matrix = glm.rotate(
-            local_matrix, glm.radians(self.toward.y-self.init_toward.y), glm.vec3(1.0, 0.0, 0.0)
-        )
-        local_matrix = glm.rotate(
-            local_matrix, glm.radians(self.toward.z-self.init_toward.z), glm.vec3(0.0, 0.0, 1.0)
-        )
-
-        # 缩放长度
-        scale = self.length / self.init_length if self.init_length > 0 else 1.0
-        local_matrix = glm.scale(local_matrix, glm.vec3(1.0, 1.0, scale))
-
-        # 构建初始变换矩阵
-        init_matrix = glm.mat4(1.0)
-        init_matrix = glm.translate(init_matrix, self.init_pos)
-        init_matrix = glm.rotate(init_matrix, glm.radians(-self.init_toward.x), glm.vec3(0.0, 1.0, 0.0))
-        init_matrix = glm.rotate(init_matrix, glm.radians(self.init_toward.y), glm.vec3(1.0, 0.0, 0.0))
-        init_matrix = glm.rotate(init_matrix, glm.radians(self.init_toward.z), glm.vec3(0.0, 0.0, 1.0))
-
-        # 计算世界变换矩阵
-        self._world_matrix = init_matrix * local_matrix
-
-        # 计算逆绑定矩阵（初始姿态的逆矩阵）
-        self._inverse_bind_matrix = glm.inverse(init_matrix)
-
-        self._matrix_dirty = False
+        ...
 
     def _mark_dirty(self):
         """标记矩阵需要更新"""

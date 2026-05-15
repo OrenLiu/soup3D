@@ -1182,43 +1182,21 @@ class BoneBinderSP(AutoSP):
         layout(location = 0) in vec3 VertPos;
         layout(location = 1) in vec2 VertUV;
         layout(location = 2) in vec3 VertNormal;
-        layout(location = 3) in ivec4 BoneIDs;      // 骨骼索引
-        layout(location = 4) in vec4 BoneWeights;   // 骨骼权重
-
+        
         out vec2 TexCoord;
         out vec3 FragPos;
         out vec3 Normal;
-
+        
         uniform mat4 model;       // 模型矩阵
         uniform mat4 view;        // 相机矩阵
         uniform mat4 projection;  // 透视矩阵
-        uniform mat4 boneMatrices[128];  // 骨骼变换矩阵
-
+        
         void main()
         {
-            // 骨骼蒙皮动画
-            float totalWeight = BoneWeights[0] + BoneWeights[1] + BoneWeights[2] + BoneWeights[3];
-            mat4 boneTransform;
-
-            if (totalWeight > 0.0) {
-                boneTransform = mat4(0.0);
-                boneTransform += boneMatrices[BoneIDs[0]] * BoneWeights[0];
-                boneTransform += boneMatrices[BoneIDs[1]] * BoneWeights[1];
-                boneTransform += boneMatrices[BoneIDs[2]] * BoneWeights[2];
-                boneTransform += boneMatrices[BoneIDs[3]] * BoneWeights[3];
-            } else {
-                // 当所有权重都为0时，使用单位矩阵（不进行骨骼变换）
-                boneTransform = mat4(1.0);
-            }
-
-            // 应用骨骼变换
-            vec4 skinnedPos = boneTransform * vec4(VertPos, 1.0);
-            FragPos = vec3(model * skinnedPos);
-
-            // 变换法线
-            mat3 normalMatrix = transpose(inverse(mat3(model * boneTransform)));
+            FragPos = vec3(model * vec4(VertPos, 1.0));
+            mat3 normalMatrix = transpose(inverse(mat3(model)));
             Normal = normalMatrix * VertNormal;
-
+        
             gl_Position = projection * view * vec4(FragPos, 1.0);
             TexCoord = vec2(VertUV.x, 1-VertUV.y);
         }

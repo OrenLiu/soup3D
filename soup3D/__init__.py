@@ -1224,39 +1224,42 @@ def _gltf_build_skeleton(gltf_data: dict, world_transforms: list) -> soup3D.skel
 
         # 从世界矩阵提取位置
         pos = glm.vec3(world_mat[3])
+        rot_mat = glm.mat3(world_mat)
 
-        # 计算骨骼长度：到第一个子关节的距离
+        # 确定骨骼方向和长度
+        # Blender骨骼在GLTF中沿局部+Y轴延伸
         child_joints = children_map.get(joint_idx, [])
         if child_joints:
-            child_world = world_transforms[child_joints[0]]
-            child_pos = glm.vec3(child_world[3])
-            length = glm.length(child_pos - pos)
-            if length < 1e-6:
-                length = 0.01
-        else:
-            length = 0.01
-
-        # 从世界矩阵提取旋转欧拉角
-        rot_mat = glm.mat3(world_mat)
-        # 使用glm的eulerAngles从旋转矩阵提取欧拉角
-        quat = glm.quat_cast(rot_mat)
-        euler = glm.eulerAngles(quat)
-        yaw = math.degrees(euler.y)
-        pitch = math.degrees(euler.x)
-        roll = math.degrees(euler.z)
-
-        # 计算骨骼方向：从位置到子关节位置
-        if child_joints:
-            child_world = world_transforms[child_joints[0]]
-            child_pos = glm.vec3(child_world[3])
+            # 有子关节：方向从骨骼位置指向子关节位置
+            child_pos = glm.vec3(world_transforms[child_joints[0]][3])
             direction = child_pos - pos
+            length = glm.length(direction)
+            if length < 1e-6:
+                direction = rot_mat * glm.vec3(0, 1, 0)
+                length = 1.0
+            else:
+                direction = direction / length
         else:
-            direction = glm.vec3(rot_mat[0][0], rot_mat[0][1], rot_mat[0][2])
+            # 叶子骨骼：使用世界旋转矩阵提取局部+Y轴方向
+            direction = rot_mat * glm.vec3(0, 1, 0)
+            length = 1.0
+
+        # 将方向向量转换为Bone类的(yaw, pitch, roll)约定
+        # Bone类沿+Z延伸，先绕Y轴旋转-yaw，再绕X轴旋转pitch
+        # 合成方向：D = (-sin(yaw)*cos(pitch), -sin(pitch), cos(yaw)*cos(pitch))
+        dx, dy, dz = direction.x, direction.y, direction.z
+        h = math.sqrt(dx * dx + dz * dz)
+        if h > 1e-6:
+            yaw = math.degrees(math.atan2(-dx, dz))
+            pitch = math.degrees(math.atan2(-dy, h))
+        else:
+            yaw = 0.0
+            pitch = -90.0 if dy > 0 else 90.0
 
         bone = soup3D.skeleton.Bone(
             (pos.x, pos.y, pos.z),
             length,
-            (yaw, pitch, roll)
+            (yaw, pitch, 0.0)
         )
 
         # 构建子骨骼
