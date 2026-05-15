@@ -1182,23 +1182,43 @@ class BoneBinderSP(AutoSP):
         layout(location = 0) in vec3 VertPos;
         layout(location = 1) in vec2 VertUV;
         layout(location = 2) in vec3 VertNormal;
-        
+        layout(location = 3) in uvec4 BoneIDs;
+        layout(location = 4) in vec4 BoneWeights;
+
         out vec2 TexCoord;
         out vec3 FragPos;
         out vec3 Normal;
-        
+
         uniform mat4 model;       // 模型矩阵
         uniform mat4 view;        // 相机矩阵
         uniform mat4 projection;  // 透视矩阵
-        
+        uniform mat4 boneMatrices[128];
+
         void main()
         {
-            FragPos = vec3(model * vec4(VertPos, 1.0));
-            mat3 normalMatrix = transpose(inverse(mat3(model)));
-            Normal = normalMatrix * VertNormal;
-        
+            // 计算骨骼蒙皮变换矩阵
+            mat4 skinMatrix = mat4(0.0);
+            float totalWeight = 0.0;
+            for (int i = 0; i < 4; i++) {
+                skinMatrix += BoneWeights[i] * boneMatrices[int(BoneIDs[i])];
+                totalWeight += BoneWeights[i];
+            }
+
+            // 无骨骼绑定时使用单位矩阵，避免顶点被移动到原点
+            if (totalWeight < 0.001) {
+                skinMatrix = mat4(1.0);
+            }
+
+            // 应用蒙皮变换
+            vec4 skinnedPos = skinMatrix * vec4(VertPos, 1.0);
+            FragPos = vec3(model * skinnedPos);
+
+            // 法线变换
+            mat3 skinNormalMatrix = transpose(inverse(mat3(model * skinMatrix)));
+            Normal = skinNormalMatrix * VertNormal;
+
             gl_Position = projection * view * vec4(FragPos, 1.0);
-            TexCoord = vec2(VertUV.x, 1-VertUV.y);
+            TexCoord = vec2(VertUV.x, 1.0 - VertUV.y);
         }
         """
 
@@ -1236,6 +1256,10 @@ class BoneBinderSP(AutoSP):
 
             // 基础颜色
             vec4 base = texture(baseColor, TexCoord);
+            
+            if (base.a < 0.5) {
+                discard;
+            }
 
             // 法线处理
             vec4 norm_tex = texture(normal, TexCoord);

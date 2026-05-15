@@ -149,7 +149,29 @@ class Bone:
         """更新骨骼变换矩阵"""
         if not self._matrix_dirty:
             return
-        ...
+
+        # 构建初始姿态矩阵
+        bind_matrix = glm.mat4(1.0)
+        bind_matrix = glm.translate(bind_matrix, self.init_pos)
+        bind_matrix = glm.rotate(bind_matrix, glm.radians(-self.init_toward.x), glm.vec3(0.0, 1.0, 0.0))
+        bind_matrix = glm.rotate(bind_matrix, glm.radians(self.init_toward.y), glm.vec3(1.0, 0.0, 0.0))
+        bind_matrix = glm.rotate(bind_matrix, glm.radians(self.init_toward.z), glm.vec3(0.0, 0.0, 1.0))
+
+        # 构建当前姿态矩阵
+        current_matrix = glm.mat4(1.0)
+        current_matrix = glm.translate(current_matrix, self.pos)
+        current_matrix = glm.rotate(current_matrix, glm.radians(-self.toward.x), glm.vec3(0.0, 1.0, 0.0))
+        current_matrix = glm.rotate(current_matrix, glm.radians(self.toward.y), glm.vec3(1.0, 0.0, 0.0))
+        current_matrix = glm.rotate(current_matrix, glm.radians(self.toward.z), glm.vec3(0.0, 0.0, 1.0))
+
+        # 逆绑定矩阵
+        self._inverse_bind_matrix = glm.inverse(bind_matrix)
+
+        # 世界矩阵 = 当前姿态 * 逆初始姿态
+        # 当初始姿态与当前姿态相同时，结果为单位矩阵，顶点不会发生位移
+        self._world_matrix = current_matrix * self._inverse_bind_matrix
+
+        self._matrix_dirty = False
 
     def _mark_dirty(self):
         """标记矩阵需要更新"""

@@ -1319,12 +1319,13 @@ def open_gltf(
     skeleton = _gltf_build_skeleton(gltf_data, world_transforms)
 
     # 读取蒙皮的逆绑定矩阵和关节映射
+    # JOINTS_0的值是skin.joints数组的索引，需要映射到骨骼名称
     joint_name_map = {}
     if has_skin:
         skin_info = skins_data[0]
         joints = skin_info["joints"]
-        for joint_idx in joints:
-            joint_name_map[joint_idx] = nodes[joint_idx].get("name", f"bone_{joint_idx}")
+        for arr_idx, node_idx in enumerate(joints):
+            joint_name_map[arr_idx] = nodes[node_idx].get("name", f"bone_{node_idx}")
 
     # 创建默认材质
     default_surface = surface(
