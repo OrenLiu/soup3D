@@ -6,9 +6,9 @@ class Bone:
     def __init__(self, init_pos, init_length, init_toward):
         """
         单个骨骼节点
-        :param init_pos:    骨骼根初始位置，整个骨骼将会绕该点旋转，绑定该骨骼的蒙皮会结合权重绕该点旋转。需填写：(x, y, z)
-        :param init_length: 骨骼初始长度，这会决定子骨骼与父骨骼之间的距离。
-        :param init_toward: 骨骼初始方向，这会决定子骨骼在父骨骼的什么方向。需填写：(yaw, pitch, roll)
+        :param init_pos:    骨骼根初始位置，使用特定着色器的网格会基于该点结合权重进行环绕、缩放和位移。需填写：(x, y, z)
+        :param init_length: 骨骼初始长度，用于参照缩放比例。
+        :param init_toward: 骨骼初始方向，用于参照旋转方向。需填写：(yaw, pitch, roll)
         """
         self.init_pos = glm.vec3(*init_pos)
         self.init_length = init_length
@@ -27,49 +27,34 @@ class Bone:
         self._world_matrix = glm.mat4(1.0)
         self._inverse_bind_matrix = glm.mat4(1.0)
 
-    def add_child(self, init_length, init_toward):
+    def add_child(self, child):
         """
-        添加子骨骼，该方法将根据父骨骼的初始位置、长度和方向自动计算子骨骼的初始位置。当父骨骼发生改变时，父骨骼将自动向子骨骼传递旋转角度和旋转
-        后子骨骼的位置。
-        :param init_length: 子骨骼初始长度，这会决定子骨骼与子骨骼的子骨骼之间的距离。
-        :param init_toward: 子骨骼初始方向，这会决定子骨骼的子骨骼在子骨骼的什么方向。需填写：(yaw, pitch, roll)
-        :return: 子骨骼对象(Bone类)
+        添加子骨骼，当该骨骼发生位移、缩放、旋转等行为时，父骨骼会自动更改子骨骼位置。需要注意的是，无论该骨骼发生的行为是位移、缩放还是旋转，子
+        骨骼都只会发生位移，不会继承其他动作。
+        :param child: 需要添加为子骨骼的骨骼。
+        :return: None
         """
-        # 计算子骨骼的初始位置（在父骨骼末端）
-        child_init_pos = self._get_init_end_position()
-        # 计算子骨骼的偏移位置（在父骨骼末端）
-        child_real_pos = self._get_end_position()
-
-        # 创建子骨骼
-        child = Bone(child_init_pos, init_length, init_toward)
-
-        # 移动子骨骼到偏移位置
-        child.move(
-            child_real_pos[0],
-            child_real_pos[1],
-            child_real_pos[2]
-        )
-
         self.children.append(child)
-        return child
 
     def move(self, x, y, z):
         """
-        移动骨骼，特定着色器会根据该位置结合权重改变顶点位置，同时移动子骨骼位置。
+        移动骨骼，特定着色器会根据该位置结合权重改变顶点位置，同时移动子骨骼到(子骨骼初始位置+(父骨骼实际位置-父骨骼初始位置))。
         :param x: x轴偏移量
         :param y: y轴偏移量
         :param z: z轴偏移量
         :return: None
         """
         self.pos = glm.vec3(x, y, z)
+        ...
 
-        child_real_pos = self._get_end_position()
-
-        # 更新子骨骼位置
-        for child in self.children:
-            child.move(*child_real_pos)
-
-        self._mark_dirty()
+    def resize(self, length):
+        """
+        缩放骨骼，特定着色器会根据该长度结合权重改变顶点位置，同时缩放子骨骼长度。
+        :param length: 新长度
+        :return: None
+        """
+        self.length = length
+        ...
 
     def turn(self, yaw, pitch, roll):
         """
@@ -80,14 +65,7 @@ class Bone:
         :return: None
         """
         self.toward = glm.vec3(yaw, pitch, roll)
-
-        child_real_pos = self._get_end_position()
-
-        # 更新子骨骼位置
-        for child in self.children:
-            child.move(*child_real_pos)
-
-        self._mark_dirty()
+        ...
 
     def get_bone_matrix(self):
         """
@@ -104,46 +82,6 @@ class Bone:
         """
         self._update_matrix()
         return self._inverse_bind_matrix
-
-    def _get_init_end_position(self):
-        """
-        获取骨骼初始末端位置
-        :return: (x, y, z)
-        """
-        # 构建初始变换矩阵
-        matrix = glm.mat4(1.0)
-        matrix = glm.translate(matrix, self.init_pos)
-
-        # 应用初始方向旋转
-        matrix = glm.rotate(matrix, glm.radians(-self.init_toward.x), glm.vec3(0.0, 1.0, 0.0))
-        matrix = glm.rotate(matrix, glm.radians(self.init_toward.y), glm.vec3(1.0, 0.0, 0.0))
-        matrix = glm.rotate(matrix, glm.radians(self.init_toward.z), glm.vec3(0.0, 0.0, 1.0))
-
-        # 沿Z轴延伸骨骼长度
-        end_point = glm.vec4(0.0, 0.0, self.init_length, 1.0)
-        end_pos = matrix * end_point
-
-        return end_pos.x, end_pos.y, end_pos.z
-
-    def _get_end_position(self):
-        """
-        获取骨骼末端位置
-        :return: (x, y, z)
-        """
-        # 构建初始变换矩阵
-        matrix = glm.mat4(1.0)
-        matrix = glm.translate(matrix, self.pos)
-
-        # 应用初始方向旋转
-        matrix = glm.rotate(matrix, glm.radians(-self.toward.x), glm.vec3(0.0, 1.0, 0.0))
-        matrix = glm.rotate(matrix, glm.radians(self.toward.y), glm.vec3(1.0, 0.0, 0.0))
-        matrix = glm.rotate(matrix, glm.radians(self.toward.z), glm.vec3(0.0, 0.0, 1.0))
-
-        # 沿Z轴延伸骨骼长度
-        end_point = glm.vec4(0.0, 0.0, self.length, 1.0)
-        end_pos = matrix * end_point
-
-        return end_pos.x, end_pos.y, end_pos.z
 
     def _update_matrix(self):
         """更新骨骼变换矩阵"""
@@ -188,8 +126,7 @@ class Bone:
         self.pos = glm.vec3(self.init_pos)
         self.toward = glm.vec3(self.init_toward)
         self.length = self.init_length
-
-        self._mark_dirty()
+        ...
 
 
 class Skeleton:
