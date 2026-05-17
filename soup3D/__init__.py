@@ -544,7 +544,14 @@ def gen_skeleton_model(_skeleton: soup3D.skeleton.Skeleton | dict, bone_color=No
         color = (1, 0, 0)
         if bone_name in bone_color:
             color = bone_color[bone_name]
-        end_pos = bone._get_end_position()
+        # 计算骨骼末端位置（用于可视化）
+        _m = glm.mat4(1.0)
+        _m = glm.translate(_m, bone.pos)
+        _m = glm.rotate(_m, glm.radians(-bone.toward.x), glm.vec3(0, 1, 0))
+        _m = glm.rotate(_m, glm.radians(bone.toward.y), glm.vec3(1, 0, 0))
+        _m = glm.rotate(_m, glm.radians(bone.toward.z), glm.vec3(0, 0, 1))
+        _ep = _m * glm.vec4(0, 0, bone.length, 1.0)
+        end_pos = (_ep.x, _ep.y, _ep.z)
         faces.append(
             Face(
                 TRIANGLE_B,
@@ -1141,6 +1148,22 @@ def _gltf_build_node_transform(node: dict) -> glm.mat4:
     return mat
 
 
+def _gltf_compute_world_recursive(idx, nodes, parent_transform, world_transforms):
+    """
+    递归计算单个节点的世界变换矩阵
+    :param idx:              节点索引
+    :param nodes:            GLTF节点列表
+    :param parent_transform: 父节点世界变换矩阵
+    :param world_transforms: 世界变换矩阵列表（就地修改）
+    :return: None
+    """
+    local = _gltf_build_node_transform(nodes[idx])
+    world = parent_transform * local
+    world_transforms[idx] = world
+    for child_idx in nodes[idx].get("children", []):
+        _gltf_compute_world_recursive(child_idx, nodes, world, world_transforms)
+
+
 def _gltf_compute_world_transforms(nodes: list) -> list:
     """
     计算所有节点的世界变换矩阵
@@ -1149,44 +1172,90 @@ def _gltf_compute_world_transforms(nodes: list) -> list:
     """
     world_transforms = [None] * len(nodes)
     root_nodes = []
-
-    # 找出所有有父节点的节点
     has_parent = set()
     for i, node in enumerate(nodes):
         for child_idx in node.get("children", []):
             has_parent.add(child_idx)
-
-    # 没有父节点的就是根节点
     for i in range(len(nodes)):
         if i not in has_parent:
             root_nodes.append(i)
 
-    # 如果有场景定义，使用场景的根节点
-    # 这里简单处理：所有根节点都用单位矩阵作为父变换
-    def _compute(idx, parent_transform):
-        local = _gltf_build_node_transform(nodes[idx])
-        world = parent_transform * local
-        world_transforms[idx] = world
-        for child_idx in nodes[idx].get("children", []):
-            _compute(child_idx, world)
-
     for root_idx in root_nodes:
-        _compute(root_idx, glm.mat4(1.0))
+        _gltf_compute_world_recursive(root_idx, nodes, glm.mat4(1.0), world_transforms)
 
     return world_transforms
+
+
+def _gltf_build_bone_recursive(joint_idx, nodes, world_transforms, joint_names, children_map, skeleton):
+    """
+    递归构建骨骼节点
+    :param joint_idx:        关节索引
+    :param nodes:            GLTF节点列表
+    :param world_transforms: 世界变换矩阵列表
+    :param joint_names:      关节名称映射
+    :param children_map:     关节子节点映射
+    :param skeleton:         骨架对象（就地添加骨骼）
+    :return: 骨骼对象
+    """
+    name = joint_names[joint_idx]
+    world_mat = world_transforms[joint_idx]
+    pos = glm.vec3(world_mat[3])
+    rot_mat = glm.mat3(world_mat)
+
+    # 从旋转矩阵提取骨骼方向（Blender骨骼在GLTF中沿局部+Y轴延伸）
+    raw_dir = rot_mat * glm.vec3(0, 1, 0)
+    if glm.length(raw_dir) < 1e-6:
+        direction = glm.vec3(0, 1, 0)
+    else:
+        direction = glm.normalize(raw_dir)
+
+    # 从文件数据计算骨骼长度（骨骼根到最近子关节的距离）
+    child_joints = children_map.get(joint_idx, [])
+    if child_joints:
+        child_pos = glm.vec3(world_transforms[child_joints[0]][3])
+        length = glm.length(child_pos - pos)
+        if length < 1e-6:
+            length = 1.0
+    else:
+        length = 1.0
+
+    # 将方向向量转换为Bone类的(yaw, pitch, roll)约定
+    dx, dy, dz = direction.x, direction.y, direction.z
+    h = math.sqrt(dx * dx + dz * dz)
+    if h > 1e-6:
+        yaw = math.degrees(math.atan2(-dx, dz))
+        pitch = math.degrees(math.atan2(-dy, h))
+    else:
+        yaw = 0.0
+        pitch = -90.0 if dy > 0 else 90.0
+
+    bone = soup3D.skeleton.Bone(
+        (pos.x, pos.y, pos.z),
+        length,
+        (yaw, pitch, 0.0)
+    )
+
+    # 构建子骨骼
+    for child_idx in child_joints:
+        child_bone = _gltf_build_bone_recursive(
+            child_idx, nodes, world_transforms, joint_names, children_map, skeleton
+        )
+        bone.add_child(child_bone)
+
+    skeleton.add_bone(name, bone)
+    return bone
 
 
 def _gltf_build_skeleton(gltf_data: dict, world_transforms: list) -> soup3D.skeleton.Skeleton:
     """
     从GLTF数据构建骨架
-    :param gltf_data:      GLTF JSON数据
+    :param gltf_data:        GLTF JSON数据
     :param world_transforms: 节点世界变换矩阵列表
     :return: Skeleton对象
     """
     nodes = gltf_data["nodes"]
     skeleton = soup3D.skeleton.Skeleton()
 
-    # 如果没有skin，返回空骨架
     skins = gltf_data.get("skins", [])
     if not skins:
         return skeleton
@@ -1206,7 +1275,6 @@ def _gltf_build_skeleton(gltf_data: dict, world_transforms: list) -> soup3D.skel
                 children_map[joint_idx].append(child_idx)
 
     # 找到根关节（没有在joints中有父关节的关节）
-    joint_set = set(joints)
     root_joints = []
     for joint_idx in joints:
         is_root = True
@@ -1217,61 +1285,8 @@ def _gltf_build_skeleton(gltf_data: dict, world_transforms: list) -> soup3D.skel
         if is_root:
             root_joints.append(joint_idx)
 
-    # 递归构建骨骼
-    def _build_bone(joint_idx, parent_bone=None):
-        name = joint_names[joint_idx]
-        world_mat = world_transforms[joint_idx]
-
-        # 从世界矩阵提取位置
-        pos = glm.vec3(world_mat[3])
-        rot_mat = glm.mat3(world_mat)
-
-        # 确定骨骼方向和长度
-        # Blender骨骼在GLTF中沿局部+Y轴延伸
-        child_joints = children_map.get(joint_idx, [])
-        if child_joints:
-            # 有子关节：方向从骨骼位置指向子关节位置
-            child_pos = glm.vec3(world_transforms[child_joints[0]][3])
-            direction = child_pos - pos
-            length = glm.length(direction)
-            if length < 1e-6:
-                direction = rot_mat * glm.vec3(0, 1, 0)
-                length = 1.0
-            else:
-                direction = direction / length
-        else:
-            # 叶子骨骼：使用世界旋转矩阵提取局部+Y轴方向
-            direction = rot_mat * glm.vec3(0, 1, 0)
-            length = 1.0
-
-        # 将方向向量转换为Bone类的(yaw, pitch, roll)约定
-        # Bone类沿+Z延伸，先绕Y轴旋转-yaw，再绕X轴旋转pitch
-        # 合成方向：D = (-sin(yaw)*cos(pitch), -sin(pitch), cos(yaw)*cos(pitch))
-        dx, dy, dz = direction.x, direction.y, direction.z
-        h = math.sqrt(dx * dx + dz * dz)
-        if h > 1e-6:
-            yaw = math.degrees(math.atan2(-dx, dz))
-            pitch = math.degrees(math.atan2(-dy, h))
-        else:
-            yaw = 0.0
-            pitch = -90.0 if dy > 0 else 90.0
-
-        bone = soup3D.skeleton.Bone(
-            (pos.x, pos.y, pos.z),
-            length,
-            (yaw, pitch, 0.0)
-        )
-
-        # 构建子骨骼
-        for child_idx in child_joints:
-            child_bone = _build_bone(child_idx, bone)
-            bone.children.append(child_bone)
-
-        skeleton.add_bone(name, bone)
-        return bone
-
     for root_idx in root_joints:
-        _build_bone(root_idx)
+        _gltf_build_bone_recursive(root_idx, nodes, world_transforms, joint_names, children_map, skeleton)
 
     return skeleton
 

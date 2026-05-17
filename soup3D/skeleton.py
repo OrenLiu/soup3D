@@ -45,7 +45,11 @@ class Bone:
         :return: None
         """
         self.pos = glm.vec3(x, y, z)
-        ...
+        # 子骨骼移动到: 子骨骼初始位置 + (父骨骼实际位置 - 父骨骼初始位置)
+        offset = self.pos - self.init_pos
+        for child in self.children:
+            child.move(*(child.init_pos + offset))
+        self._mark_dirty()
 
     def resize(self, length):
         """
@@ -53,8 +57,13 @@ class Bone:
         :param length: 新长度
         :return: None
         """
+        scale = length / self.init_length
         self.length = length
-        ...
+        # 子骨骼到该骨骼的距离随缩放改变
+        for child in self.children:
+            new_pos = self.pos + (child.init_pos - self.init_pos) * scale
+            child.move(*new_pos)
+        self._mark_dirty()
 
     def turn(self, yaw, pitch, roll):
         """
@@ -65,7 +74,16 @@ class Bone:
         :return: None
         """
         self.toward = glm.vec3(yaw, pitch, roll)
-        ...
+        # 构建当前旋转矩阵（相对于初始旋转的增量）
+        init_rot = self._build_rotation_matrix(self.init_toward)
+        cur_rot = self._build_rotation_matrix(self.toward)
+        delta_rot = cur_rot * glm.inverse(init_rot)
+        # 子骨骼根绕该骨骼旋转
+        for child in self.children:
+            offset = child.init_pos - self.init_pos
+            rotated = delta_rot * glm.vec4(offset, 1.0)
+            child.move(*(self.pos + glm.vec3(rotated)))
+        self._mark_dirty()
 
     def get_bone_matrix(self):
         """
@@ -83,24 +101,30 @@ class Bone:
         self._update_matrix()
         return self._inverse_bind_matrix
 
+    def _build_rotation_matrix(self, toward):
+        """根据朝向构建旋转矩阵"""
+        m = glm.mat4(1.0)
+        m = glm.rotate(m, glm.radians(-toward.x), glm.vec3(0.0, 1.0, 0.0))
+        m = glm.rotate(m, glm.radians(toward.y), glm.vec3(1.0, 0.0, 0.0))
+        m = glm.rotate(m, glm.radians(toward.z), glm.vec3(0.0, 0.0, 1.0))
+        return m
+
     def _update_matrix(self):
         """更新骨骼变换矩阵"""
         if not self._matrix_dirty:
             return
 
-        # 构建初始姿态矩阵
-        bind_matrix = glm.mat4(1.0)
-        bind_matrix = glm.translate(bind_matrix, self.init_pos)
-        bind_matrix = glm.rotate(bind_matrix, glm.radians(-self.init_toward.x), glm.vec3(0.0, 1.0, 0.0))
-        bind_matrix = glm.rotate(bind_matrix, glm.radians(self.init_toward.y), glm.vec3(1.0, 0.0, 0.0))
-        bind_matrix = glm.rotate(bind_matrix, glm.radians(self.init_toward.z), glm.vec3(0.0, 0.0, 1.0))
+        # 缩放因子
+        scale = self.length / self.init_length
 
-        # 构建当前姿态矩阵
-        current_matrix = glm.mat4(1.0)
-        current_matrix = glm.translate(current_matrix, self.pos)
-        current_matrix = glm.rotate(current_matrix, glm.radians(-self.toward.x), glm.vec3(0.0, 1.0, 0.0))
-        current_matrix = glm.rotate(current_matrix, glm.radians(self.toward.y), glm.vec3(1.0, 0.0, 0.0))
-        current_matrix = glm.rotate(current_matrix, glm.radians(self.toward.z), glm.vec3(0.0, 0.0, 1.0))
+        # 初始姿态矩阵: 位移 * 旋转
+        bind_matrix = glm.translate(glm.mat4(1.0), self.init_pos)
+        bind_matrix = bind_matrix * self._build_rotation_matrix(self.init_toward)
+
+        # 当前姿态矩阵: 位移 * 旋转 * 缩放
+        current_matrix = glm.translate(glm.mat4(1.0), self.pos)
+        current_matrix = current_matrix * self._build_rotation_matrix(self.toward)
+        current_matrix = glm.scale(current_matrix, glm.vec3(scale))
 
         # 逆绑定矩阵
         self._inverse_bind_matrix = glm.inverse(bind_matrix)
@@ -126,7 +150,8 @@ class Bone:
         self.pos = glm.vec3(self.init_pos)
         self.toward = glm.vec3(self.init_toward)
         self.length = self.init_length
-        ...
+
+        self._mark_dirty()
 
 
 class Skeleton:
