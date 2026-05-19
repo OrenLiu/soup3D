@@ -1,5 +1,6 @@
 from pyglm import glm
 import math
+import weakref
 
 
 class Bone:
@@ -26,6 +27,9 @@ class Bone:
         self._matrix_dirty = True
         self._world_matrix = glm.mat4(1.0)
         self._inverse_bind_matrix = glm.mat4(1.0)
+
+        # 关联的着色器（弱引用，防止循环引用导致内存泄漏）
+        self._bound_shaders = weakref.WeakValueDictionary()
 
     def add_child(self, child):
         """
@@ -141,6 +145,9 @@ class Bone:
         # 递归标记所有子骨骼为dirty
         for child in self.children:
             child._mark_dirty()
+        # 通知所有关联的着色器骨骼已变化
+        for shader in self._bound_shaders.values():
+            shader.mark_bones_dirty()
 
     def reset(self):
         """

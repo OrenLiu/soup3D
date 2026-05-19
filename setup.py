@@ -36,7 +36,7 @@ setup(
         'imageio'
     ],
     package_data={
-        'soup3D': ['*.md', 'LICENSE', 'help.md', '*.png'],
+        'soup3D': ['*.md', 'LICENSE', '*.png'],
     },
     include_package_data=True,
     keywords='3D, OpenGL, pygame, graphics, game development',

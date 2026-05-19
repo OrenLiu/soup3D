@@ -1175,6 +1175,11 @@ class BoneBinderSP(AutoSP):
 
         super().__init__(base_color, normal, emission, double_side, max_light_count, shader_program)
 
+        # 将自身注册到所有骨骼的着色器通知列表
+        skeleton_obj = self._get_skeleton_obj()
+        for bone in skeleton_obj.bones.values():
+            bone._bound_shaders[id(self)] = self
+
     def create_shader_program(self):
         """根据参数创建着色器程序"""
         vertex_shader = """
@@ -1434,7 +1439,6 @@ class BoneBinderSP(AutoSP):
     def update(self):
         """更新着色器"""
         if self.dirty:
-            # 更新骨骼矩阵
             if self.bones_dirty:
                 self._update_bone_matrices()
                 self.bones_dirty = False

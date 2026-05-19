@@ -1,0 +1,9 @@
+# ShaderProgram.__del__   
+   
+[返回上级](./ShaderProgram.md)   
+   
+**签名**: `__del__(self)`   
+   
+深度清理着色器，清理该着色器本身及所有该着色器用到的元素。在确定不再使用该着色器时可使用该方法释放内存。   
+:return: None   
+   

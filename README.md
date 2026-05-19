@@ -93,7 +93,7 @@ Due to limited individual development capabilities, we welcome like-minded peopl
 
 ## More Information
 
-This library has many more methods for you to use. For more information, please refer to the [Help Document](help.md)
+This library has many more methods for you to use. For more information, please refer to the [Help Document](./docs/README_zh.md)
 
 ## License
 

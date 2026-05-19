@@ -1,5 +1,6 @@
 test/
 .venv/
 .idea/
+rules/
 soup3D/__pycache__/
 CLAUDE.md
