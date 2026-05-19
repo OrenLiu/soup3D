@@ -1,4 +1,4 @@
 PyOpenGL
 pyglm
 numpy
-pygame
+imageio

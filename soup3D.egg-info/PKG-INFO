@@ -1,13 +1,9 @@
 Metadata-Version: 2.4
 Name: soup3D
-Version: 5.0.0
+Version: 5.1.0
 Summary: A 3D engine based on OpenGL and pygame for beginners
 Author: OrangeSoup
-Author-email: OrangeSoup <contact@osoup.top>
-License: MIT
-Project-URL: Homepage, https://osoup.top
-Project-URL: Documentation, https://osoup.top
-Project-URL: Source, https://github.com/your-username/soup3D
+Author-email: deanliusy@163.com
 Keywords: 3D,OpenGL,pygame,graphics,game development
 Classifier: Development Status :: 4 - Beta
 Classifier: Intended Audience :: Developers
@@ -26,10 +22,17 @@ License-File: LICENSE
 Requires-Dist: PyOpenGL
 Requires-Dist: pyglm
 Requires-Dist: numpy
-Requires-Dist: pygame
+Requires-Dist: imageio
 Dynamic: author
+Dynamic: author-email
+Dynamic: classifier
+Dynamic: description
+Dynamic: description-content-type
+Dynamic: keywords
 Dynamic: license-file
+Dynamic: requires-dist
 Dynamic: requires-python
+Dynamic: summary
 
 # soup3D
 
@@ -99,13 +102,19 @@ Due to limited individual development capabilities, we welcome like-minded peopl
   
   Following these standards will increase the likelihood of your code being accepted:
   
-  1. All functions, classes, and class methods must have `Google` style `docstring` format comments
+  1. All functions, classes, and class methods must have `reStructuredText` format comments
     
   2. Test your code before submitting a PR. Please refer to the `Function Testing` section below for testing methods
     
   3. Confirm requirements with the author before developing any module
   
   4. New features should not affect the calling methods of existing features
+    
+  5. Do not import modules anywhere except at the beginning of files
+    
+  6. Do not nest function definitions. All functions except class member functions must be defined in the global scope of their files
+    
+  7. Class member variables can be accessed from outside the class, but do not modify them externally. If modification is needed, add class member functions instead
     
 - **Function Testing**
   
@@ -120,7 +129,7 @@ Due to limited individual development capabilities, we welcome like-minded peopl
 
 ## More Information
 
-This library has many more methods for you to use. For more information, please refer to the [Help Document](help.md)
+This library has many more methods for you to use. For more information, please refer to the [Help Document](./docs/README_zh.md)
 
 ## License
 
