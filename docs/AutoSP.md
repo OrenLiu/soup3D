@@ -5,7 +5,6 @@
 ## 方法   
    
 - [__init__(self, base_color, normal, emission, double_side, max_light_count, shader_program)](AutoSP___init__.md): `函数`   
-- [mk_shadow(self)](AutoSP_mk_shadow.md): `函数`   
 - [retexture(self, base_color, normal, emission)](AutoSP_retexture.md): `函数`   
 - [create_shader_program(self)](AutoSP_create_shader_program.md): `函数`   
 - [set_model_mat(self, mat)](AutoSP_set_model_mat.md): `函数`   

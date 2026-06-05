@@ -659,21 +659,6 @@ class AutoSP:
 
         self.light_dirty = True
 
-    def mk_shadow(self) -> "AutoSP":
-        """
-        创建原对象的影子对象，影子对象将会与原对象共用网格数据、着色器代码，但是拥有独立的矩阵数据。
-        :return: 影子对象
-        """
-        result = AutoSP(
-            self.base_color,
-            self.normal,
-            self.emission,
-            self.double_side,
-            self.max_light_count,
-            ShaderShadow(self.shader_program)
-        )
-        return result
-
     def retexture(self,
                   base_color: "None | Img" = None,
                   normal: "None | list | tuple | Img" = None,
@@ -1490,23 +1475,6 @@ class BoneBinderSP(AutoSP):
                 GL_FALSE,
                 mat_ptr
             )
-
-    def mk_shadow(self) -> "BoneBinderSP":
-        """
-        创建原对象的影子对象，影子对象将会与原对象共用网格数据、着色器代码，但是拥有独立的矩阵数据。
-        :return: 影子对象
-        """
-        result = BoneBinderSP(
-            self.base_color,
-            self.normal,
-            self.emission,
-            self.double_side,
-            self.max_light_count,
-            ShaderShadow(self.shader_program),
-            self.skeleton
-        )
-        result.max_bones = self.max_bones
-        return result
 
 
 Img = Texture | MixChannel

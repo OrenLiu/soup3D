@@ -12,5 +12,4 @@
 - [mark_bones_dirty(self)](BoneBinderSP_mark_bones_dirty.md): `函数`   
 - [_get_skeleton_obj(self)](BoneBinderSP__get_skeleton_obj.md): `函数`   
 - [_update_bone_matrices(self)](BoneBinderSP__update_bone_matrices.md): `函数`   
-- [mk_shadow(self)](BoneBinderSP_mk_shadow.md): `函数`   
    

@@ -7,7 +7,7 @@ long_description = (this_directory / "README.md").read_text(encoding='utf-8')
 
 setup(
     name='soup3D',
-    version='5.1.0',
+    version='5.2.0',
     author='OrangeSoup',
     author_email='deanliusy@163.com',
     description='A 3D engine based on OpenGL and pygame for beginners',

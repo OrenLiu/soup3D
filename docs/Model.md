@@ -8,7 +8,6 @@
 - [__add__(self, other)](Model___add__.md): `函数`   
 - [gen_dis_list(self)](Model_gen_dis_list.md): `函数`   
 - [del_dis_list(self)](Model_del_dis_list.md): `函数`   
-- [mk_shadow(self)](Model_mk_shadow.md): `函数`   
 - [paint(self)](Model_paint.md): `函数`   
 - [show(self)](Model_show.md): `函数`   
 - [hide(self)](Model_hide.md): `函数`   
