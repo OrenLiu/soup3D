@@ -600,22 +600,6 @@ class ShaderProgram:
         self.texture_val.clear()
 
 
-class ShaderShadow(ShaderProgram):
-    def __init__(self, father: ShaderProgram):
-        """
-        影子着色器，用于创建ShaderProgram的影子数据，可用于多个相同模型的创建。
-        :param father: 原着色器
-        """
-        super().__init__(father.vertex, father.fragment)
-
-        for v_name in father.uniform_loc:
-            v_type = father.uniform_type[v_name]
-            if v_type == "texture":
-                self.uniform_tex(v_name, *father.texture_val[v_name])
-            else:
-                self.uniform(v_name, father.uniform_type[v_name], *father.uniform_val[v_name])
-
-
 class AutoSP:
     def __init__(self,
                  base_color: "Img",
