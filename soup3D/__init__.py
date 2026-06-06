@@ -373,7 +373,7 @@ def _make_obj_data(data: dict) -> "Model":
             default_bc["R"], default_bc["G"], default_bc["B"], default_bc["A"]
         ),
         emission=data["default_material"]["emission"],
-        normal=data["default_material"]["normal"],
+        normal=data["default_material"]["normal"] or (0.5, 0.5, 1),
         double_side=data["default_material"]["double_side"],
         max_light_count=data["default_material"]["max_light_count"],
     )
@@ -982,7 +982,7 @@ def open_mtl(mtl: str,
 
 
 def open_obj(obj: str,
-             mtl: str | dict | None = None,
+             mtl: "str | dict | Data | None" = None,
              double_side: bool = True,
              roll_funk=None,
              encoding: str = "utf-8",
@@ -991,7 +991,7 @@ def open_obj(obj: str,
     """
     从obj文件导入模型
     :param obj:             *.obj模型文件路径
-    :param mtl:             *.mtl纹理文件路径或已加载的材质字典
+    :param mtl:             *.mtl纹理文件路径、已加载的材质字典或Data对象
     :param double_side:     是否启用双面渲染
     :param roll_funk:       每当读取一行时调用一次，方法需有，且仅有1个参数，用于接收已读取的行数
     :param encoding:        读取文本文件时使用的字符集(建议在建模软件里把所有元素命名为英文，这样就不用管这个参数了)
@@ -1006,6 +1006,12 @@ def open_obj(obj: str,
     # 如果mtl是字符串路径，则调用load_mtl加载
     if isinstance(mtl, str):
         mtl_dict = open_mtl(mtl, double_side, roll_funk, encoding, max_light_count, data_only=data_only)
+    elif isinstance(mtl, Data):
+        # 如果传入的是Data对象，根据data_only决定是否构建着色器
+        if data_only:
+            mtl_dict = mtl
+        else:
+            mtl_dict = mtl.make()
     elif isinstance(mtl, dict):
         # 如果已经是字典，则直接使用
         mtl_dict = mtl

@@ -1139,7 +1139,7 @@ class BoneBinderSP(AutoSP):
         else:
             self.skeleton = skeleton
 
-        self.max_bones = 128  # 最大骨骼数量
+        self.max_bones = len(self.skeleton.bones)  # 最大骨骼数量
         self.bones_dirty = True  # 骨骼矩阵更新标记
 
         super().__init__(base_color, normal, emission, double_side, max_light_count, shader_program)
@@ -1166,7 +1166,7 @@ class BoneBinderSP(AutoSP):
         uniform mat4 model;       // 模型矩阵
         uniform mat4 view;        // 相机矩阵
         uniform mat4 projection;  // 透视矩阵
-        uniform mat4 boneMatrices[128];
+        uniform mat4 boneMatrices[%d];
 
         void main()
         {
@@ -1285,6 +1285,8 @@ class BoneBinderSP(AutoSP):
             FragColor = vec4(result, base.a);
         }
         """
+
+        vertex_shader = vertex_shader % self.max_bones
 
         if self.double_side:
             fragment_shader = fragment_shader % (
