@@ -623,53 +623,55 @@ def _render_fullscreen_image(img: soup3D.shader.Img) -> None:
     # 获取视口尺寸
     viewport = glGetIntegerv(GL_VIEWPORT)
     width, height = viewport[2], viewport[3]
-    
+
     # 获取纹理 ID
     tex_id = img.get_texture_id()
-    
+
+    # 重置着色器管线状态，切换到固定功能管线
+    glUseProgram(0)
+    glActiveTexture(GL_TEXTURE0)
+    glBindVertexArray(0)
+
     # 保存当前矩阵状态
     glMatrixMode(GL_PROJECTION)
     glPushMatrix()
     glLoadIdentity()
-    
-    # 设置正交投影（与 UI 渲染一致）
+
+    # 设置正交投影
     gluOrtho2D(0, width, height, 0)
-    
+
     glMatrixMode(GL_MODELVIEW)
     glPushMatrix()
     glLoadIdentity()
-    
-    # 保存当前状态并禁用光照和深度测试
-    glPushAttrib(GL_ENABLE_BIT)
-    glDisable(GL_LIGHTING)
+
+    # 保存并重置 GL 状态
+    glPushAttrib(GL_ALL_ATTRIB_BITS)
     glDisable(GL_DEPTH_TEST)
-    
+    glDisable(GL_LIGHTING)
+
+    # 重置顶点颜色并设置纹理环境模式
+    # 骨骼蒙皮着色器的 vertex attribute 3 会污染 OpenGL 当前顶点颜色，
+    # 导致固定管线渲染时纹理颜色乘以接近零的颜色值变为不可见
+    glColor4f(1.0, 1.0, 1.0, 1.0)
+    glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_REPLACE)
+
     # 启用纹理和混合
     glEnable(GL_TEXTURE_2D)
     glBindTexture(GL_TEXTURE_2D, tex_id)
     glEnable(GL_BLEND)
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
-    
+
     # 绘制全屏四边形
     glBegin(GL_QUADS)
-    # 左上角
-    glTexCoord2f(0.0, 0.0)
-    glVertex2f(0.0, 0.0)
-    # 右上角
-    glTexCoord2f(1.0, 0.0)
-    glVertex2f(width, 0.0)
-    # 右下角
-    glTexCoord2f(1.0, 1.0)
-    glVertex2f(width, height)
-    # 左下角
-    glTexCoord2f(0.0, 1.0)
-    glVertex2f(0.0, height)
+    glTexCoord2f(0.0, 0.0); glVertex2f(0.0, 0.0)
+    glTexCoord2f(1.0, 0.0); glVertex2f(width, 0.0)
+    glTexCoord2f(1.0, 1.0); glVertex2f(width, height)
+    glTexCoord2f(0.0, 1.0); glVertex2f(0.0, height)
     glEnd()
-    
+
     # 恢复状态
-    glDisable(GL_BLEND)
     glPopAttrib()
-    
+
     # 恢复矩阵
     glMatrixMode(GL_PROJECTION)
     glPopMatrix()
@@ -725,7 +727,7 @@ def update():
     # 渲染 ui 界面
     for i in soup3D.ui.render_queue:
         _paint_ui(*i)
-    
+
     # 渲染全屏叠加图像
     if soup3D.ui.fullscreen_img is not None:
         _render_fullscreen_image(soup3D.ui.fullscreen_img)
