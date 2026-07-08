@@ -61,3 +61,8 @@ REPEAT = "repeat"      # 超出边缘后重复
 MIRRORED = "mirrored"  # 超出边缘后镜像
 EDGE = "edge"          # 超出边缘后延伸边缘颜色
 BORDER = "border"      # 超出边缘后
+
+# resource
+MESH = "mesh"
+SKELETON = "skeleton"
+ANIMATION = "animation"

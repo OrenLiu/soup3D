@@ -352,6 +352,72 @@ class MixChannel:
             self.texture_id = None
 
 
+class UniformBuffer:
+    def __init__(self, size: int, usage: int = GL_DYNAMIC_DRAW):
+        """
+        Uniform Buffer Object，用于高效上传大量uniform数据
+        
+        :param size: UBO大小（字节）
+        :param usage: 数据使用模式，可选：GL_STATIC_DRAW, GL_DYNAMIC_DRAW, GL_STREAM_DRAW
+        """
+        self.size = size
+        self.usage = usage
+        self.buffer_id = glGenBuffers(1)
+        glBindBuffer(GL_UNIFORM_BUFFER, self.buffer_id)
+        glBufferData(GL_UNIFORM_BUFFER, size, None, usage)
+        glBindBuffer(GL_UNIFORM_BUFFER, 0)
+
+    def bind(self, target: int = GL_UNIFORM_BUFFER) -> None:
+        """
+        绑定UBO到指定目标
+        
+        :param target: OpenGL绑定目标，默认GL_UNIFORM_BUFFER
+        """
+        glBindBuffer(target, self.buffer_id)
+
+    def unbind(self, target: int = GL_UNIFORM_BUFFER) -> None:
+        """
+        解绑UBO
+        
+        :param target: OpenGL绑定目标，默认GL_UNIFORM_BUFFER
+        """
+        glBindBuffer(target, 0)
+
+    def bind_base(self, binding_point: int) -> None:
+        """
+        将UBO绑定到指定绑定点
+        
+        :param binding_point: UBO绑定点编号（0-7或更高，取决于OpenGL实现）
+        """
+        glBindBufferBase(GL_UNIFORM_BUFFER, binding_point, self.buffer_id)
+
+    def update(self, data: bytes | np.ndarray, offset: int = 0, size: int | None = None) -> None:
+        """
+        使用glBufferSubData更新UBO数据
+        
+        :param data: 要上传的数据，可以是bytes或numpy数组
+        :param offset: 数据偏移量（字节）
+        :param size: 数据大小（字节），为None时使用data的完整大小
+        """
+        glBindBuffer(GL_UNIFORM_BUFFER, self.buffer_id)
+        
+        if isinstance(data, np.ndarray):
+            upload_data = data.tobytes()
+        else:
+            upload_data = data
+        
+        upload_size = size if size is not None else len(upload_data)
+        glBufferSubData(GL_UNIFORM_BUFFER, offset, upload_size, upload_data)
+        
+        glBindBuffer(GL_UNIFORM_BUFFER, 0)
+
+    def __del__(self):
+        """清理UBO资源"""
+        if self.buffer_id is not None:
+            glDeleteBuffers(1, [self.buffer_id])
+            self.buffer_id = None
+
+
 class ShaderProgram:
     def __init__(
             self, vertex: str, fragment: str,
@@ -594,10 +660,14 @@ class ShaderProgram:
             self.shader = None
 
         # 清空相关字典
-        self.uniform_loc.clear()
-        self.uniform_val.clear()
-        self.uniform_type.clear()
-        self.texture_val.clear()
+        if hasattr(self, 'uniform_loc'):
+            self.uniform_loc.clear()
+        if hasattr(self, 'uniform_val'):
+            self.uniform_val.clear()
+        if hasattr(self, 'uniform_type'):
+            self.uniform_type.clear()
+        if hasattr(self, 'texture_val'):
+            self.texture_val.clear()
 
 
 class AutoSP:
@@ -1139,10 +1209,14 @@ class BoneBinderSP(AutoSP):
         else:
             self.skeleton = skeleton
 
-        self.max_bones = len(self.skeleton.bones)  # 最大骨骼数量
+        self.max_bones = len(self.skeleton.bones) if self.skeleton else 0  # 最大骨骼数量
         self.bones_dirty = True  # 骨骼矩阵更新标记
+        self.bone_binding_point = 1  # UBO绑定点编号
 
         super().__init__(base_color, normal, emission, double_side, max_light_count, shader_program)
+
+        # 创建骨骼矩阵UBO
+        self.bone_ubo = self._create_bone_ubo()
 
         # 将自身注册到所有骨骼的着色器通知列表
         skeleton_obj = self._get_skeleton_obj()
@@ -1153,6 +1227,8 @@ class BoneBinderSP(AutoSP):
         """根据参数创建着色器程序"""
         vertex_shader = """
         #version 330 core
+        #define MAX_BONES %d
+
         layout(location = 0) in vec3 VertPos;
         layout(location = 1) in vec2 VertUV;
         layout(location = 2) in vec3 VertNormal;
@@ -1166,7 +1242,10 @@ class BoneBinderSP(AutoSP):
         uniform mat4 model;       // 模型矩阵
         uniform mat4 view;        // 相机矩阵
         uniform mat4 projection;  // 透视矩阵
-        uniform mat4 boneMatrices[%d];
+
+        layout(std140) uniform BoneBlock {
+            mat4 boneMatrices[MAX_BONES];
+        };
 
         void main()
         {
@@ -1312,6 +1391,11 @@ class BoneBinderSP(AutoSP):
             vbo_type=[soup3D.FLOAT, soup3D.FLOAT, soup3D.FLOAT, soup3D.INT_US, soup3D.FLOAT]
         )
 
+        # 绑定UBO块到着色器
+        bone_block_index = glGetUniformBlockIndex(shader_program.shader, b"BoneBlock")
+        if bone_block_index != GL_INVALID_INDEX:
+            glUniformBlockBinding(shader_program.shader, bone_block_index, self.bone_binding_point)
+
         # 设置基础颜色纹理
         shader_program.uniform_tex("baseColor", self.base_color, 0)
 
@@ -1414,6 +1498,10 @@ class BoneBinderSP(AutoSP):
                 self._update_bone_matrices()
                 self.bones_dirty = False
 
+        # 绑定UBO到着色器绑定点，确保渲染时使用正确的骨骼数据
+        if hasattr(self, 'bone_ubo') and self.bone_ubo is not None:
+            self.bone_ubo.bind_base(self.bone_binding_point)
+
         super().update()
 
     def set_skeleton(self, skeleton: soup3D.skeleton.Skeleton | dict):
@@ -1422,7 +1510,25 @@ class BoneBinderSP(AutoSP):
         :param skeleton: Skeleton对象或骨骼字典
         :return: None
         """
+        old_skeleton_obj = self._get_skeleton_obj()
+        
+        for bone in old_skeleton_obj.bones.values():
+            if id(self) in bone._bound_shaders:
+                del bone._bound_shaders[id(self)]
+        
         self.skeleton = skeleton
+        
+        skeleton_obj = self._get_skeleton_obj()
+        new_max_bones = skeleton_obj.get_max_bones()
+        
+        for bone in skeleton_obj.bones.values():
+            bone._bound_shaders[id(self)] = self
+        
+        if new_max_bones != self.max_bones:
+            self.max_bones = new_max_bones
+            self.bone_ubo = self._create_bone_ubo()
+            self.shader_program = self.create_shader_program()
+        
         self.bones_dirty = True
         self.dirty = True
 
@@ -1445,38 +1551,45 @@ class BoneBinderSP(AutoSP):
             # 返回空骨架
             return soup3D.skeleton.Skeleton()
 
+    def _create_bone_ubo(self) -> UniformBuffer:
+        """创建骨骼矩阵UBO
+        
+        :return: UniformBuffer实例
+        """
+        bytes_per_matrix = 16 * 4
+        ubo_size = self.max_bones * bytes_per_matrix
+        return UniformBuffer(ubo_size, GL_DYNAMIC_DRAW)
+
     def _update_bone_matrices(self):
-        """更新骨骼矩阵到着色器"""
+        """更新骨骼矩阵到UBO"""
         skeleton_obj = self._get_skeleton_obj()
 
-        # 获取最大骨骼数量
-        max_bones = min(skeleton_obj.get_max_bones(), self.max_bones)
-
-        # 获取骨骼矩阵
         bone_matrices = skeleton_obj.get_bone_matrices()
+        
+        total_size = self.max_bones * 16
+        bone_data = np.zeros(total_size, dtype=np.float32)
+        
+        for i, mat in enumerate(bone_matrices):
+            if i >= self.max_bones:
+                break
+            mat_array = np.ctypeslib.as_array(glm.value_ptr(mat), shape=(16,)).copy()
+            bone_data[i*16:(i+1)*16] = mat_array
+        
+        for i in range(len(bone_matrices), self.max_bones):
+            identity_offset = i * 16
+            bone_data[identity_offset] = 1.0
+            bone_data[identity_offset + 5] = 1.0
+            bone_data[identity_offset + 10] = 1.0
+            bone_data[identity_offset + 15] = 1.0
 
-        # 上传到着色器
-        for i in range(max_bones):
-            mat_ptr = glm.value_ptr(bone_matrices[i])
-            self.shader_program.uniform(
-                f"boneMatrices[{i}]",
-                soup3D.ARRAY_MATRIX_VEC4,
-                1,
-                GL_FALSE,
-                mat_ptr
-            )
+        self.bone_ubo.update(bone_data)
 
-        # 填充剩余骨骼矩阵为单位矩阵
-        for i in range(max_bones, self.max_bones):
-            identity_mat = glm.mat4(1.0)
-            mat_ptr = glm.value_ptr(identity_mat)
-            self.shader_program.uniform(
-                f"boneMatrices[{i}]",
-                soup3D.ARRAY_MATRIX_VEC4,
-                1,
-                GL_FALSE,
-                mat_ptr
-            )
+    def __del__(self):
+        """清理骨骼绑定着色器资源"""
+        if hasattr(self, 'bone_ubo') and self.bone_ubo is not None:
+            self.bone_ubo = None
+        
+        super().__del__()
 
 
 Img = Texture | MixChannel

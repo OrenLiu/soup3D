@@ -220,6 +220,18 @@ class Skeleton:
         """
         return self._max_bones
 
+    def make_pose(self, pose_data: dict):
+        """
+        根据数据调整每个骨骼的姿态
+        :param pose_data: 姿态数据
+        :return: None
+        """
+        for bone_name in pose_data:
+            bone = self.get_bone(bone_name)
+            bone.move(*pose_data[bone_name][:3])
+            bone.resize(pose_data[bone_name][3])
+            bone.turn(*pose_data[bone_name][4:])
+
     def reset_all(self):
         """
         重置所有骨骼到初始姿态
