@@ -121,19 +121,20 @@ class Bone:
         # 缩放因子
         scale = self.length / self.init_length
 
-        # 初始姿态矩阵: 位移 * 旋转
+        # 初始姿态矩阵: 位移 * 旋转 * 缩放（glTF规范要求包含所有变换）
         bind_matrix = glm.translate(glm.mat4(1.0), self.init_pos)
         bind_matrix = bind_matrix * self._build_rotation_matrix(self.init_toward)
+        bind_matrix = glm.scale(bind_matrix, glm.vec3(1.0))
 
         # 当前姿态矩阵: 位移 * 旋转 * 缩放
         current_matrix = glm.translate(glm.mat4(1.0), self.pos)
         current_matrix = current_matrix * self._build_rotation_matrix(self.toward)
         current_matrix = glm.scale(current_matrix, glm.vec3(scale))
 
-        # 逆绑定矩阵
+        # 逆绑定矩阵（glTF的inverseBindMatrix是绑定姿态世界矩阵的逆）
         self._inverse_bind_matrix = glm.inverse(bind_matrix)
 
-        # 世界矩阵 = 当前姿态 * 逆初始姿态
+        # 蒙皮矩阵 = 当前姿态世界矩阵 * 逆绑定矩阵
         # 当初始姿态与当前姿态相同时，结果为单位矩阵，顶点不会发生位移
         self._world_matrix = current_matrix * self._inverse_bind_matrix
 
@@ -228,9 +229,10 @@ class Skeleton:
         """
         for bone_name in pose_data:
             bone = self.get_bone(bone_name)
-            bone.move(*pose_data[bone_name][:3])
-            bone.resize(pose_data[bone_name][3])
-            bone.turn(*pose_data[bone_name][4:])
+            bone.pos = glm.vec3(*pose_data[bone_name][:3])
+            bone.length = pose_data[bone_name][3]
+            bone.toward = glm.vec3(*pose_data[bone_name][4:])
+            bone._mark_dirty()
 
     def reset_all(self):
         """

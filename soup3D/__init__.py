@@ -454,7 +454,7 @@ def _make_gltf_data(data: dict):
     """
     从存储的gltf数据生成模型和骨架，用于Data.make()内部调用
     :param data: 存储的gltf数据字典
-    :return: (模型对象, 骨架对象)
+    :return: 根据resources参数返回的资源组合
     """
     skeleton = _make_gltf_skeleton(data["skeleton_data"])
     materials_dict = {}
@@ -499,7 +499,31 @@ def _make_gltf_data(data: dict):
         face = Face(TRIANGLE_B, face_surface, prim_data["vertices"])
         all_faces.append(face)
     model = Model(0, 0, 0, *all_faces)
-    return model, skeleton
+
+    resources = data.get("resources", ("mesh", "skeleton"))
+    animation = data.get("animation")
+
+    if isinstance(resources, str):
+        if resources == "mesh":
+            return model
+        elif resources == "skeleton":
+            return skeleton
+        elif resources == "animation":
+            return animation
+        else:
+            return model, skeleton
+    else:
+        results = []
+        for res in resources:
+            if res == "mesh":
+                results.append(model)
+            elif res == "skeleton":
+                results.append(skeleton)
+            elif res == "animation":
+                results.append(animation)
+        if len(results) == 1:
+            return results[0]
+        return tuple(results)
 
 
 def init(width: int | float = 1920,
@@ -1233,6 +1257,330 @@ def _gltf_component_count(accessor_type: str) -> int:
     return count_map.get(accessor_type, 1)
 
 
+def _gltf_read_animation_sampler(gltf_data: dict, buffers_data: list, sampler: dict) -> tuple:
+    """
+    读取GLTF动画采样器数据
+    :param gltf_data:    GLTF JSON数据
+    :param buffers_data: 已加载的缓冲区数据列表
+    :param sampler:      采样器字典
+    :return: (时间戳列表, 值列表, 插值类型)
+    """
+    input_accessor = sampler.get("input", -1)
+    output_accessor = sampler.get("output", -1)
+    interpolation = sampler.get("interpolation", "LINEAR")
+
+    times = _gltf_read_accessor(gltf_data, buffers_data, input_accessor)
+    values = _gltf_read_accessor(gltf_data, buffers_data, output_accessor)
+
+    return times, values, interpolation
+
+
+def _gltf_interpolate_keyframe(times: list, values: list, interpolation: str, target_time: float):
+    """
+    在指定时间插值关键帧
+    :param times:        时间戳列表
+    :param values:       值列表
+    :param interpolation: 插值类型
+    :param target_time:  目标时间
+    :return: 插值结果
+    """
+    if not times or not values:
+        return None
+
+    if target_time <= times[0]:
+        return values[0]
+
+    if target_time >= times[-1]:
+        return values[-1]
+
+    for i in range(len(times) - 1):
+        if times[i] <= target_time < times[i + 1]:
+            t0, t1 = times[i], times[i + 1]
+            v0, v1 = values[i], values[i + 1]
+            alpha = (target_time - t0) / (t1 - t0)
+
+            if interpolation == "STEP":
+                return v0
+            elif interpolation == "CUBICSPLINE":
+                idx = i * 3
+                if idx + 5 < len(values):
+                    tan_in = values[idx + 1]
+                    tan_out = values[idx + 2]
+                    v0 = values[idx]
+                    v1 = values[idx + 3]
+                    t = alpha
+                    t2 = t * t
+                    t3 = t2 * t
+                    h00 = 2 * t3 - 3 * t2 + 1
+                    h10 = t3 - 2 * t2 + t
+                    h01 = -2 * t3 + 3 * t2
+                    h11 = t3 - t2
+                    result = []
+                    for j in range(len(v0)):
+                        result.append(
+                            h00 * v0[j] + h10 * tan_in[j] * (t1 - t0) +
+                            h01 * v1[j] + h11 * tan_out[j] * (t1 - t0)
+                        )
+                    return tuple(result)
+                else:
+                    interpolation = "LINEAR"
+
+            result = []
+            for j in range(len(v0)):
+                result.append(v0[j] + (v1[j] - v0[j]) * alpha)
+            return tuple(result)
+
+    return values[-1]
+
+
+def _gltf_transform_matrix_to_bone_params(transform_mat: glm.mat4, init_pos: glm.vec3, init_length: float):
+    """
+    将变换矩阵转换为Bone类的参数格式
+    :param transform_mat: 变换矩阵
+    :param init_pos:      初始位置
+    :param init_length:   初始长度
+    :return: (x, y, z, length, yaw, pitch, roll)
+    """
+    pos = glm.vec3(transform_mat[3])
+    rot_mat = glm.mat3(transform_mat)
+
+    raw_dir = rot_mat * glm.vec3(0, 1, 0)
+    if glm.length(raw_dir) < 1e-6:
+        direction = glm.vec3(0, 1, 0)
+    else:
+        direction = glm.normalize(raw_dir)
+
+    scale_mat = glm.mat3(transform_mat)
+    scale_x = glm.length(scale_mat[0])
+    scale_y = glm.length(scale_mat[1])
+    scale_z = glm.length(scale_mat[2])
+    avg_scale = (scale_x + scale_y + scale_z) / 3.0
+    length = init_length * avg_scale
+
+    dx, dy, dz = direction.x, direction.y, direction.z
+    h = math.sqrt(dx * dx + dz * dz)
+    if h > 1e-6:
+        yaw = math.degrees(math.atan2(-dx, dz))
+        pitch = math.degrees(math.atan2(-dy, h))
+    else:
+        yaw = 0.0
+        pitch = -90.0 if dy > 0 else 90.0
+
+    return (pos.x, pos.y, pos.z, length, yaw, pitch, 0.0)
+
+
+def _gltf_load_animation(gltf_data: dict, buffers_data: list, world_transforms: list):
+    """
+    加载GLTF动画数据，转换为可用于make_pose的格式
+    :param gltf_data:        GLTF JSON数据
+    :param buffers_data:     已加载的缓冲区数据列表
+    :param world_transforms: 节点世界变换矩阵列表
+    :return: 动画帧列表，每帧为{bone_name: (x, y, z, length, yaw, pitch, roll)}
+    """
+    animations = gltf_data.get("animations", [])
+    if not animations:
+        return []
+
+    nodes = gltf_data["nodes"]
+    skins = gltf_data.get("skins", [])
+    if not skins:
+        return []
+
+    skin_info = skins[0]
+    joints = skin_info["joints"]
+    joint_names = {}
+    name_to_idx = {}
+    for joint_idx in joints:
+        name = nodes[joint_idx].get("name", f"bone_{joint_idx}")
+        joint_names[joint_idx] = name
+        name_to_idx[name] = joint_idx
+
+    init_bone_params = {}
+    for joint_idx in joints:
+        world_mat = world_transforms[joint_idx]
+        pos = glm.vec3(world_mat[3])
+        rot_mat = glm.mat3(world_mat)
+
+        raw_dir = rot_mat * glm.vec3(0, 1, 0)
+        if glm.length(raw_dir) < 1e-6:
+            direction = glm.vec3(0, 1, 0)
+        else:
+            direction = glm.normalize(raw_dir)
+
+        child_joints = []
+        for child_idx in nodes[joint_idx].get("children", []):
+            if child_idx in joint_names:
+                child_joints.append(child_idx)
+
+        if child_joints:
+            child_pos = glm.vec3(world_transforms[child_joints[0]][3])
+            length = glm.length(child_pos - pos)
+            if length < 1e-6:
+                length = 1.0
+        else:
+            length = 1.0
+
+        init_bone_params[joint_names[joint_idx]] = {
+            "pos": pos,
+            "length": length,
+        }
+
+    all_channels = []
+    all_samplers = {}
+    max_time = 0.0
+
+    for anim in animations:
+        for sampler_idx, sampler in enumerate(anim.get("samplers", [])):
+            times, values, interpolation = _gltf_read_animation_sampler(gltf_data, buffers_data, sampler)
+            all_samplers[sampler_idx] = {
+                "times": times,
+                "values": values,
+                "interpolation": interpolation,
+            }
+            if times:
+                max_time = max(max_time, times[-1])
+
+        for channel in anim.get("channels", []):
+            sampler_idx = channel.get("sampler", -1)
+            target = channel.get("target", {})
+            node_idx = target.get("node", -1)
+            path = target.get("path", "")
+
+            if node_idx in joint_names and sampler_idx in all_samplers:
+                all_channels.append({
+                    "node_idx": node_idx,
+                    "bone_name": joint_names[node_idx],
+                    "path": path,
+                    "sampler": all_samplers[sampler_idx],
+                })
+
+    if not all_channels:
+        return []
+
+    frame_count = 60
+    frame_times = [i * max_time / (frame_count - 1) for i in range(frame_count)]
+
+    animation_frames = []
+    for frame_time in frame_times:
+        node_anim_transforms = {}
+
+        for channel in all_channels:
+            sampler = channel["sampler"]
+            interpolated_value = _gltf_interpolate_keyframe(
+                sampler["times"],
+                sampler["values"],
+                sampler["interpolation"],
+                frame_time,
+            )
+
+            if interpolated_value is None:
+                continue
+
+            node_idx = channel["node_idx"]
+            path = channel["path"]
+
+            if node_idx not in node_anim_transforms:
+                node_anim_transforms[node_idx] = {
+                    "translation": nodes[node_idx].get("translation", [0, 0, 0]),
+                    "rotation": nodes[node_idx].get("rotation", [0, 0, 0, 1]),
+                    "scale": nodes[node_idx].get("scale", [1, 1, 1]),
+                }
+
+            if path == "translation":
+                node_anim_transforms[node_idx]["translation"] = interpolated_value
+            elif path == "rotation":
+                node_anim_transforms[node_idx]["rotation"] = interpolated_value
+            elif path == "scale":
+                node_anim_transforms[node_idx]["scale"] = interpolated_value
+
+        anim_world_transforms = {}
+
+        def compute_anim_world(node_idx, parent_world):
+            if node_idx in anim_world_transforms:
+                return anim_world_transforms[node_idx]
+
+            if node_idx in node_anim_transforms:
+                t = node_anim_transforms[node_idx]["translation"]
+                r = node_anim_transforms[node_idx]["rotation"]
+                s = node_anim_transforms[node_idx]["scale"]
+            else:
+                t = nodes[node_idx].get("translation", [0, 0, 0])
+                r = nodes[node_idx].get("rotation", [0, 0, 0, 1])
+                s = nodes[node_idx].get("scale", [1, 1, 1])
+
+            local = glm.translate(glm.mat4(1.0), glm.vec3(*t))
+            rot_mat = _quat_to_mat4(r[0], r[1], r[2], r[3])
+            local = local * rot_mat
+            local = glm.scale(local, glm.vec3(*s))
+
+            world = parent_world * local
+            anim_world_transforms[node_idx] = world
+
+            for child_idx in nodes[node_idx].get("children", []):
+                compute_anim_world(child_idx, world)
+
+            return world
+
+        for joint_idx in joints:
+            parent_idx = None
+            for i, node in enumerate(nodes):
+                if joint_idx in node.get("children", []):
+                    parent_idx = i
+                    break
+
+            if parent_idx is None:
+                compute_anim_world(joint_idx, glm.mat4(1.0))
+            elif parent_idx in anim_world_transforms:
+                compute_anim_world(joint_idx, anim_world_transforms[parent_idx])
+            else:
+                if parent_idx in node_anim_transforms:
+                    pt = node_anim_transforms[parent_idx]["translation"]
+                    pr = node_anim_transforms[parent_idx]["rotation"]
+                    ps = node_anim_transforms[parent_idx]["scale"]
+                else:
+                    pt = nodes[parent_idx].get("translation", [0, 0, 0])
+                    pr = nodes[parent_idx].get("rotation", [0, 0, 0, 1])
+                    ps = nodes[parent_idx].get("scale", [1, 1, 1])
+
+                parent_local = glm.translate(glm.mat4(1.0), glm.vec3(*pt))
+                parent_rot_mat = _quat_to_mat4(pr[0], pr[1], pr[2], pr[3])
+                parent_local = parent_local * parent_rot_mat
+                parent_local = glm.scale(parent_local, glm.vec3(*ps))
+
+                grandparent_idx = None
+                for i, node in enumerate(nodes):
+                    if parent_idx in node.get("children", []):
+                        grandparent_idx = i
+                        break
+
+                if grandparent_idx is None:
+                    parent_world = parent_local
+                else:
+                    if grandparent_idx in anim_world_transforms:
+                        parent_world = anim_world_transforms[grandparent_idx] * parent_local
+                    else:
+                        parent_world = world_transforms[grandparent_idx] * parent_local
+
+                compute_anim_world(joint_idx, parent_world)
+
+        frame_data = {}
+        for bone_name, joint_idx in name_to_idx.items():
+            if joint_idx in anim_world_transforms:
+                world_mat = anim_world_transforms[joint_idx]
+            else:
+                world_mat = world_transforms[joint_idx]
+
+            frame_data[bone_name] = _gltf_transform_matrix_to_bone_params(
+                world_mat,
+                init_bone_params[bone_name]["pos"],
+                init_bone_params[bone_name]["length"],
+            )
+
+        animation_frames.append(frame_data)
+
+    return animation_frames
+
+
 def _gltf_read_accessor(gltf_data: dict, buffers_data: list, accessor_idx: int) -> list:
     """
     读取GLTF访问器数据
@@ -1904,6 +2252,14 @@ def open_gltf(
                 face = Face(TRIANGLE_B, face_surface, vertices)
                 all_faces.append(face)
 
+    animation = None
+    if "animation" in resources:
+        animation = _gltf_load_animation(gltf_data, buffers_data, world_transforms)
+
+    animation = None
+    if "animation" in resources:
+        animation = _gltf_load_animation(gltf_data, buffers_data, world_transforms)
+
     if data_only:
         gltf_stored = {
             "primitives": primitives_data,
@@ -1914,13 +2270,34 @@ def open_gltf(
             "surface": surface,
             "skin": skin,
             "default_surface_class": surface,
+            "animation": animation,
+            "resources": resources,
         }
         return Data("gltf", gltf_stored)
 
-    # 创建模型
     model = Model(0, 0, 0, *all_faces)
 
-    return model, skeleton
+    if isinstance(resources, str):
+        if resources == "mesh":
+            return model
+        elif resources == "skeleton":
+            return skeleton
+        elif resources == "animation":
+            return animation
+        else:
+            return model, skeleton
+    else:
+        results = []
+        for res in resources:
+            if res == "mesh":
+                results.append(model)
+            elif res == "skeleton":
+                results.append(skeleton)
+            elif res == "animation":
+                results.append(animation)
+        if len(results) == 1:
+            return results[0]
+        return tuple(results)
 
 
 def get_projection_mat() -> glm.fmat4x4:
