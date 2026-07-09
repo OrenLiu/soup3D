@@ -1275,13 +1275,14 @@ def _gltf_read_animation_sampler(gltf_data: dict, buffers_data: list, sampler: d
     return times, values, interpolation
 
 
-def _gltf_interpolate_keyframe(times: list, values: list, interpolation: str, target_time: float):
+def _gltf_interpolate_keyframe(times: list, values: list, interpolation: str, target_time: float, path: str = ""):
     """
     在指定时间插值关键帧
     :param times:        时间戳列表
     :param values:       值列表
     :param interpolation: 插值类型
     :param target_time:  目标时间
+    :param path:         通道路径（"rotation"表示四元数旋转）
     :return: 插值结果
     """
     if not times or not values:
@@ -1293,6 +1294,8 @@ def _gltf_interpolate_keyframe(times: list, values: list, interpolation: str, ta
     if target_time >= times[-1]:
         return values[-1]
 
+    is_rotation = path == "rotation"
+
     for i in range(len(times) - 1):
         if times[i] <= target_time < times[i + 1]:
             t0, t1 = times[i], times[i + 1]
@@ -1303,11 +1306,18 @@ def _gltf_interpolate_keyframe(times: list, values: list, interpolation: str, ta
                 return v0
             elif interpolation == "CUBICSPLINE":
                 idx = i * 3
-                if idx + 5 < len(values):
-                    tan_in = values[idx + 1]
+                if idx + 4 < len(values):
+                    v0 = values[idx + 1]
                     tan_out = values[idx + 2]
-                    v0 = values[idx]
-                    v1 = values[idx + 3]
+                    tan_in = values[idx + 3]
+                    v1 = values[idx + 4]
+                    
+                    if is_rotation:
+                        dot_product = sum(v0[j] * v1[j] for j in range(4))
+                        if dot_product < 0:
+                            v1 = tuple(-x for x in v1)
+                            tan_in = tuple(-x for x in tan_in)
+                    
                     t = alpha
                     t2 = t * t
                     t3 = t2 * t
@@ -1318,16 +1328,33 @@ def _gltf_interpolate_keyframe(times: list, values: list, interpolation: str, ta
                     result = []
                     for j in range(len(v0)):
                         result.append(
-                            h00 * v0[j] + h10 * tan_in[j] * (t1 - t0) +
-                            h01 * v1[j] + h11 * tan_out[j] * (t1 - t0)
+                            h00 * v0[j] + h10 * tan_out[j] * (t1 - t0) +
+                            h01 * v1[j] + h11 * tan_in[j] * (t1 - t0)
                         )
+                    
+                    if is_rotation:
+                        q_len = math.sqrt(sum(x * x for x in result))
+                        if q_len > 1e-6:
+                            result = [x / q_len for x in result]
+                    
                     return tuple(result)
                 else:
                     interpolation = "LINEAR"
 
+            if is_rotation:
+                dot_product = sum(v0[j] * v1[j] for j in range(4))
+                if dot_product < 0:
+                    v1 = tuple(-x for x in v1)
+
             result = []
             for j in range(len(v0)):
                 result.append(v0[j] + (v1[j] - v0[j]) * alpha)
+
+            if is_rotation:
+                q_len = math.sqrt(sum(x * x for x in result))
+                if q_len > 1e-6:
+                    result = [x / q_len for x in result]
+
             return tuple(result)
 
     return values[-1]
@@ -1474,6 +1501,7 @@ def _gltf_load_animation(gltf_data: dict, buffers_data: list, world_transforms: 
                 sampler["values"],
                 sampler["interpolation"],
                 frame_time,
+                channel["path"],
             )
 
             if interpolated_value is None:
@@ -2260,10 +2288,6 @@ def open_gltf(
 
                 face = Face(TRIANGLE_B, face_surface, vertices)
                 all_faces.append(face)
-
-    animation = None
-    if "animation" in resources:
-        animation = _gltf_load_animation(gltf_data, buffers_data, world_transforms)
 
     animation = None
     if "animation" in resources:
