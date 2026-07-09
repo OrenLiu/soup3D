@@ -1366,7 +1366,10 @@ def _gltf_transform_matrix_to_bone_params(transform_mat: glm.mat4, init_pos: glm
         yaw = 0.0
         pitch = -90.0 if dy > 0 else 90.0
 
-    return (pos.x, pos.y, pos.z, length, yaw, pitch, 0.0)
+    roll = 0
+    roll = roll - yaw  # 不知道为什么，roll需要减去yaw才会显示正确awa
+
+    return pos.x, pos.y, pos.z, length, yaw, pitch, roll
 
 
 def _gltf_load_animation(gltf_data: dict, buffers_data: list, world_transforms: list):
@@ -1911,10 +1914,13 @@ def _gltf_build_bone_recursive(joint_idx, nodes, world_transforms, joint_names, 
         yaw = 0.0
         pitch = -90.0 if dy > 0 else 90.0
 
+    roll = 0
+    roll = roll - yaw  # 不知道为什么，roll需要减去yaw才会显示正确awa
+
     bone = soup3D.skeleton.Bone(
         (pos.x, pos.y, pos.z),
         length,
-        (yaw, pitch, 0.0)
+        (yaw, pitch, roll)
     )
 
     # 构建子骨骼
@@ -1975,10 +1981,13 @@ def _gltf_store_bone_recursive(joint_idx, nodes, world_transforms, joint_names, 
         )
         child_names.append(child_name)
 
+    roll = 0
+    roll = roll - yaw  # 不知道为什么，roll需要减去yaw才会显示正确awa
+
     bones_data[name] = {
         "pos": (pos.x, pos.y, pos.z),
         "length": length,
-        "toward": (yaw, pitch, 0.0),
+        "toward": (yaw, pitch, roll),
         "children": child_names,
     }
     return name
