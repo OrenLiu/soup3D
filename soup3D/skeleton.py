@@ -110,7 +110,7 @@ class Bone:
         m = glm.mat4(1.0)
         m = glm.rotate(m, glm.radians(-toward.x), glm.vec3(0.0, 1.0, 0.0))
         m = glm.rotate(m, glm.radians(toward.y), glm.vec3(1.0, 0.0, 0.0))
-        m = glm.rotate(m, glm.radians(toward.z), glm.vec3(0.0, 0.0, 1.0))
+        m = glm.rotate(m, glm.radians(toward.z-toward.x), glm.vec3(0.0, 0.0, 1.0))
         return m
 
     def _update_matrix(self):
