@@ -32,6 +32,13 @@ def goto(x: int | float, y: int | float, z: int | float) -> None:
     :param z: 相机z坐标位置
     :return: None
     """
+    if not isinstance(x, (int, float)):
+        raise TypeError("x must be an int or float")
+    if not isinstance(y, (int, float)):
+        raise TypeError("y must be an int or float")
+    if not isinstance(z, (int, float)):
+        raise TypeError("z must be an int or float")
+
     global X, Y, Z, YAW, PITCH, ROLL
     X, Y, Z = x, y, z
     glMatrixMode(GL_MODELVIEW)
@@ -47,6 +54,13 @@ def turn(yaw: int | float, pitch: int | float, roll: int | float) -> None:
     :param roll:  相机旋转横滚角
     :return:
     """
+    if not isinstance(yaw, (int, float)):
+        raise TypeError("yaw must be an int or float")
+    if not isinstance(pitch, (int, float)):
+        raise TypeError("pitch must be an int or float")
+    if not isinstance(roll, (int, float)):
+        raise TypeError("roll must be an int or float")
+
     global X, Y, Z, YAW, PITCH, ROLL
     YAW, PITCH, ROLL = yaw, pitch, roll
     glMatrixMode(GL_MODELVIEW)
@@ -117,6 +131,17 @@ def _rotated(Xa : int | float, Ya : int | float, Xb : int | float, Yb : int | fl
     :param degree: 旋转角度
     :return: 点A旋转后的X坐标, 点A旋转后的Y坐标
     """
+    if not isinstance(Xa, (int, float)):
+        raise TypeError("Xa must be an int or float")
+    if not isinstance(Ya, (int, float)):
+        raise TypeError("Ya must be an int or float")
+    if not isinstance(Xb, (int, float)):
+        raise TypeError("Xb must be an int or float")
+    if not isinstance(Yb, (int, float)):
+        raise TypeError("Yb must be an int or float")
+    if not isinstance(degree, (int, float)):
+        raise TypeError("degree must be an int or float")
+
     degree = degree * pi / 180
     outx = (Xa - Xb) * cos(degree) - (Ya - Yb) * sin(degree) + Xb
     outy = (Xa - Xb) * sin(degree) + (Ya - Yb) * cos(degree) + Yb

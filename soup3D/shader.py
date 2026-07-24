@@ -68,6 +68,15 @@ class Texture:
         :param height: 图像高度（当 image_data 为二进制数据时需要提供）
         :param format: 图像格式，可以是 'RGBA', 'RGB', 'L' (灰度) 等
         """
+        if not isinstance(image_data, (str, bytes)):
+            raise TypeError("image_data must be a string path or bytes")
+        if width is not None and not isinstance(width, int):
+            raise TypeError("width must be an int or None")
+        if height is not None and not isinstance(height, int):
+            raise TypeError("height must be an int or None")
+        if not isinstance(format, str):
+            raise TypeError("format must be a string")
+
         self.width = width
         self.height = height
         self.format = format
@@ -89,6 +98,9 @@ class Texture:
         :param texture_unit: 纹理单元编号（0 表示 GL_TEXTURE0，1 表示 GL_TEXTURE1 等）
         :return: None
         """
+        if not isinstance(texture_unit, int):
+            raise TypeError("texture_unit must be an int")
+
         # 激活指定纹理单元
         glActiveTexture(GL_TEXTURE0 + texture_unit)
 
@@ -172,6 +184,11 @@ class Channel:
         :param texture:   提取通道的贴图
         :param channelID: 通道编号
         """
+        if not isinstance(texture, (Texture, MixChannel)):
+            raise TypeError("texture must be a Texture or MixChannel instance")
+        if not isinstance(channelID, int):
+            raise TypeError("channelID must be an int")
+
         self.texture = texture
         self.channelID = channelID
 
@@ -192,6 +209,20 @@ class MixChannel:
         :param B: 蓝色通道，可直接通过 0.0~1.0 的小数定义通道亮度，也可以引入 Channel 通道实现引入贴图通道
         :param A: 透明度通道，可直接通过 0.0~1.0 的小数定义通道亮度，也可以引入 Channel 通道实现引入贴图通道
         """
+        if not isinstance(resize, (list, tuple)) or len(resize) != 2:
+            raise TypeError("resize must be a list or tuple of 2 integers")
+        for r in resize:
+            if not isinstance(r, int):
+                raise TypeError("resize elements must be int")
+        if not isinstance(R, (int, float, Channel)):
+            raise TypeError("R must be an int, float, or Channel instance")
+        if not isinstance(G, (int, float, Channel)):
+            raise TypeError("G must be an int, float, or Channel instance")
+        if not isinstance(B, (int, float, Channel)):
+            raise TypeError("B must be an int, float, or Channel instance")
+        if not isinstance(A, (int, float, Channel)):
+            raise TypeError("A must be an int, float, or Channel instance")
+
         self.resize = resize
         self.R = R
         self.G = G
@@ -205,6 +236,9 @@ class MixChannel:
         :param texture_unit: 纹理单元编号（0 表示 GL_TEXTURE0，1 表示 GL_TEXTURE1 等）
         :return: None
         """
+        if not isinstance(texture_unit, int):
+            raise TypeError("texture_unit must be an int")
+
         # 激活指定纹理单元
         glActiveTexture(GL_TEXTURE0 + texture_unit)
 
@@ -439,13 +473,24 @@ class ShaderProgram:
             ...
         ]
         在着色器代码中，vbo的读取编号取决于vbo处于列表的位置，例如列表中第0个，也就是首个vbo，着色器代码中可以通过
-        “layout (location = 0) in <type> <value_name>”这段代码读取。
+        "layout (location = 0) in <type> <value_name>"这段代码读取。
         :param vertex:   顶点着色程序代码
         :param fragment: 片段着色程序代码
         :param vbo_type: 定义传入着色器程序的顶点列表(vbo)的数据类型。如每个定点列表数据类型相同，可通过填写一个字符串定义所有的定点列表的
                          数据类型；如果需要不同的数据类型，可通过填写一个列表来分别定义每个顶点列表的数据类型。在同一vbo下，所有vertex的
                          长度需一致，且长度范围在1-4个数据。
         """
+        if not isinstance(vertex, str):
+            raise TypeError("vertex must be a string")
+        if not isinstance(fragment, str):
+            raise TypeError("fragment must be a string")
+        if not isinstance(vbo_type, (str, list, tuple)):
+            raise TypeError("vbo_type must be a string, list, or tuple")
+        if isinstance(vbo_type, (list, tuple)):
+            for t in vbo_type:
+                if not isinstance(t, str):
+                    raise TypeError("vbo_type elements must be strings")
+
         self.vertex = vertex
         self.fragment = fragment
         self.vbo_type = vbo_type
@@ -561,6 +606,11 @@ class ShaderProgram:
                        (矩阵数量, 是否转置矩阵, 传入的矩阵)
         :return: 是否成功添加uniform
         """
+        if not isinstance(v_name, str):
+            raise TypeError("v_name must be a string")
+        if not isinstance(v_type, str):
+            raise TypeError("v_type must be a string")
+
         # 获取统一变量位置
         loc = glGetUniformLocation(self.shader, v_name)
         if loc == -1:
@@ -580,6 +630,13 @@ class ShaderProgram:
         :param texture_unit: 纹理单元编号
         :return: 是否成功添加文理
         """
+        if not isinstance(v_name, str):
+            raise TypeError("v_name must be a string")
+        if not isinstance(texture, (Texture, MixChannel)):
+            raise TypeError("texture must be a Texture or MixChannel instance")
+        if not isinstance(texture_unit, int):
+            raise TypeError("texture_unit must be an int")
+
         # 获取统一变量位置
         prev_program = glGetIntegerv(GL_CURRENT_PROGRAM)
         loc = glGetUniformLocation(self.shader, v_name)
@@ -700,6 +757,23 @@ class AutoSP:
         :param max_light_count: 该着色器使用时会同时出现的最多的光源数量
         :param shader_program:  被AutoSP管理的着色器程序，若为None，则生成着色器程序。该参数为内部调用参数，可以但不建议直接使用该参数。
         """
+        if not isinstance(base_color, (Texture, MixChannel)):
+            raise TypeError("base_color must be a Texture or MixChannel instance")
+        if not isinstance(normal, (list, tuple, Texture, MixChannel)):
+            raise TypeError("normal must be a list, tuple, Texture, or MixChannel instance")
+        if isinstance(normal, (list, tuple)) and len(normal) != 3:
+            raise TypeError("normal tuple/list must have 3 elements")
+        if not isinstance(emission, (list, tuple, Texture, MixChannel)):
+            raise TypeError("emission must be a list, tuple, Texture, or MixChannel instance")
+        if isinstance(emission, (list, tuple)) and len(emission) != 3:
+            raise TypeError("emission tuple/list must have 3 elements")
+        if not isinstance(double_side, bool):
+            raise TypeError("double_side must be a bool")
+        if not isinstance(max_light_count, int):
+            raise TypeError("max_light_count must be an int")
+        if shader_program is not None and not isinstance(shader_program, ShaderProgram):
+            raise TypeError("shader_program must be a ShaderProgram instance or None")
+
         self.base_color = base_color
         self.normal = normal
         self.emission = emission
@@ -742,6 +816,16 @@ class AutoSP:
                            当该参数为灰度图时，黑色为不发光，白色为完全发光
         :return: None
         """
+        if base_color is not None and not isinstance(base_color, (Texture, MixChannel)):
+            raise TypeError("base_color must be a Texture or MixChannel instance or None")
+        if normal is not None and not isinstance(normal, (list, tuple, Texture, MixChannel)):
+            raise TypeError("normal must be a list, tuple, Texture, MixChannel instance, or None")
+        if isinstance(normal, (list, tuple)) and len(normal) != 3:
+            raise TypeError("normal tuple/list must have 3 elements")
+        if emission is not None and not isinstance(emission, (list, tuple, Texture, MixChannel)):
+            raise TypeError("emission must be a list, tuple, Texture, MixChannel instance, or None")
+        if isinstance(emission, (list, tuple)) and len(emission) != 3:
+            raise TypeError("emission tuple/list must have 3 elements")
 
         # 更新基础颜色纹理
         if base_color is not None:
@@ -945,6 +1029,8 @@ class AutoSP:
         :param mat: 模型矩阵
         :return: None
         """
+        if not isinstance(mat, glm.mat4):
+            raise TypeError("mat must be a glm.mat4")
         self.model_mat = mat
         self.dirty = True
         self.model_dirty = True
@@ -955,6 +1041,8 @@ class AutoSP:
         :param mat: 投影矩阵
         :return: None
         """
+        if not isinstance(mat, glm.mat4):
+            raise TypeError("mat must be a glm.mat4")
         self.view_mat = mat
         self.dirty = True
         self.view_dirty = True
@@ -965,6 +1053,8 @@ class AutoSP:
         :param mat: 视图矩阵
         :return: None
         """
+        if not isinstance(mat, glm.mat4):
+            raise TypeError("mat must be a glm.mat4")
         self.projection_mat = mat
         self.dirty = True
         self.projection_dirty = True
@@ -1203,6 +1293,9 @@ class BoneBinderSP(AutoSP):
         :param shader_program:  被AutoSP管理的着色器程序，若为None，则生成着色器程序。该参数为内部调用参数，可以但不建议直接使用该参数。
         :param skeleton:        一个Skeleton对象或包含多个骨头的字典，格式：{name: bone, name: bone, ...}
         """
+        if skeleton is not None and not isinstance(skeleton, (soup3D.skeleton.Skeleton, dict)):
+            raise TypeError("skeleton must be a Skeleton instance, dict, or None")
+
         # 如果skeleton为None，创建一个空的Skeleton对象
         if skeleton is None:
             self.skeleton = soup3D.skeleton.Skeleton()
@@ -1510,6 +1603,9 @@ class BoneBinderSP(AutoSP):
         :param skeleton: Skeleton对象或骨骼字典
         :return: None
         """
+        if not isinstance(skeleton, (soup3D.skeleton.Skeleton, dict)):
+            raise TypeError("skeleton must be a Skeleton instance or dict")
+
         old_skeleton_obj = self._get_skeleton_obj()
         
         for bone in old_skeleton_obj.bones.values():

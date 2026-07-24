@@ -6,5 +6,5 @@
    
 从存储的gltf数据生成模型和骨架，用于Data.make()内部调用   
 :param data: 存储的gltf数据字典   
-:return: (模型对象, 骨架对象)   
+:return: 根据resources参数返回的资源组合   
    

@@ -30,6 +30,13 @@ class Shape:
         :param texture:    使用的纹理对象，默认为None
         :param vertex:     图形中所有的端点，每个参数的格式为：(x, y, u, v)
         """
+        if not isinstance(shape_type, str):
+            raise TypeError("shape_type must be a string")
+        if not isinstance(texture, (soup3D.shader.Texture, soup3D.shader.MixChannel)):
+            raise TypeError("texture must be a Texture or MixChannel instance")
+        if not isinstance(vertex, (list, tuple)):
+            raise TypeError("vertex must be a list or tuple")
+
         if not Shape.warned:
             print("[Warning] soup3D.ui.Shape is deprecated, please use soup3D.ui.full_display as replacement")
 
@@ -69,6 +76,11 @@ class Shape:
 
     def paint(self, x : float, y : float) -> None:
         """在单帧渲染该图形"""
+        if not isinstance(x, (int, float)):
+            raise TypeError("x must be an int or float")
+        if not isinstance(y, (int, float)):
+            raise TypeError("y must be an int or float")
+
         global render_queue
         render_queue.append((self, x, y))
 
@@ -82,6 +94,15 @@ class Group:
         :param arg:    组中所有的图形
         :param origin: 图形组在屏幕中的位置
         """
+        for shape in arg:
+            if not isinstance(shape, Shape):
+                raise TypeError("arg elements must be Shape instances")
+        if not isinstance(origin, (list, tuple)) or len(origin) != 2:
+            raise TypeError("origin must be a list or tuple of 2 numbers")
+        for o in origin:
+            if not isinstance(o, (int, float)):
+                raise TypeError("origin elements must be int or float")
+
         if not Group.warned:
             print("[Warning] soup3D.ui.Group is deprecated, please use soup3D.ui.Group as replacement")
 
@@ -90,11 +111,21 @@ class Group:
 
     def goto(self, x : float, y : float) -> None:
         """设置绝对位置"""
+        if not isinstance(x, (int, float)):
+            raise TypeError("x must be an int or float")
+        if not isinstance(y, (int, float)):
+            raise TypeError("y must be an int or float")
+
         self.origin[0] = x
         self.origin[1] = y
 
     def move(self, x : float, y : float) -> None:
         """相对移动"""
+        if not isinstance(x, (int, float)):
+            raise TypeError("x must be an int or float")
+        if not isinstance(y, (int, float)):
+            raise TypeError("y must be an int or float")
+
         self.origin[0] += x
         self.origin[1] += y
 
@@ -110,6 +141,9 @@ def full_display(img: soup3D.shader.Img):
     :param img: 需要全屏显示的图像
     :return: None
     """
+    if not isinstance(img, (soup3D.shader.Texture, soup3D.shader.MixChannel)):
+        raise TypeError("img must be a Texture or MixChannel instance")
+
     global fullscreen_img
     
     # 如果已经有图像资源，先清理

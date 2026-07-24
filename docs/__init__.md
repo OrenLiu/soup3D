@@ -35,6 +35,10 @@
 - [open_obj(obj, mtl, double_side, roll_funk, encoding, max_light_count, data_only)](open_obj.md): `函数`   
 - [_gltf_component_size(component_type)](_gltf_component_size.md): `函数`   
 - [_gltf_component_count(accessor_type)](_gltf_component_count.md): `函数`   
+- [_gltf_read_animation_sampler(gltf_data, buffers_data, sampler)](_gltf_read_animation_sampler.md): `函数`   
+- [_gltf_interpolate_keyframe(times, values, interpolation, target_time, path)](_gltf_interpolate_keyframe.md): `函数`   
+- [_gltf_transform_matrix_to_bone_params(transform_mat, init_pos, init_length)](_gltf_transform_matrix_to_bone_params.md): `函数`   
+- [_gltf_load_animation(gltf_data, buffers_data, world_transforms)](_gltf_load_animation.md): `函数`   
 - [_gltf_read_accessor(gltf_data, buffers_data, accessor_idx)](_gltf_read_accessor.md): `函数`   
 - [_gltf_load_buffers(gltf_data, base_dir)](_gltf_load_buffers.md): `函数`   
 - [_gltf_load_materials(gltf_data, base_dir, double_side, max_light_count, surface, data_only)](_gltf_load_materials.md): `函数`   
@@ -47,7 +51,7 @@
 - [_gltf_store_bone_recursive(joint_idx, nodes, world_transforms, joint_names, children_map, bones_data)](_gltf_store_bone_recursive.md): `函数`   
 - [_gltf_store_skeleton(gltf_data, world_transforms)](_gltf_store_skeleton.md): `函数`   
 - [_gltf_build_skeleton(gltf_data, world_transforms)](_gltf_build_skeleton.md): `函数`   
-- [open_gltf(gltf, double_side, max_light_count, surface, skin, data_only)](open_gltf.md): `函数`   
+- [open_gltf(gltf, double_side, max_light_count, surface, skin, data_only, resources)](open_gltf.md): `函数`   
 - [get_projection_mat()](get_projection_mat.md): `函数`   
 - [smart_split(line)](smart_split.md): `函数`   
    

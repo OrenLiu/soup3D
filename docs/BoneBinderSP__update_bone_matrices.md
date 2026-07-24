@@ -4,5 +4,5 @@
    
 **签名**: `_update_bone_matrices(self)`   
    
-更新骨骼矩阵到着色器   
+更新骨骼矩阵到UBO   
    

@@ -11,6 +11,19 @@ class Bone:
         :param init_length: 骨骼初始长度，用于参照缩放比例。
         :param init_toward: 骨骼初始方向，用于参照旋转方向。需填写：(yaw, pitch, roll)
         """
+        if not isinstance(init_pos, (list, tuple)) or len(init_pos) != 3:
+            raise TypeError("init_pos must be a list or tuple of 3 numbers")
+        for p in init_pos:
+            if not isinstance(p, (int, float)):
+                raise TypeError("init_pos elements must be int or float")
+        if not isinstance(init_length, (int, float)):
+            raise TypeError("init_length must be an int or float")
+        if not isinstance(init_toward, (list, tuple)) or len(init_toward) != 3:
+            raise TypeError("init_toward must be a list or tuple of 3 numbers")
+        for t in init_toward:
+            if not isinstance(t, (int, float)):
+                raise TypeError("init_toward elements must be int or float")
+
         self.init_pos = glm.vec3(*init_pos)
         self.init_length = init_length
         self.init_toward = glm.vec3(*init_toward)
@@ -38,6 +51,9 @@ class Bone:
         :param child: 需要添加为子骨骼的骨骼。
         :return: None
         """
+        if not isinstance(child, Bone):
+            raise TypeError("child must be a Bone instance")
+
         self.children.append(child)
 
     def move(self, x, y, z):
@@ -48,6 +64,13 @@ class Bone:
         :param z: z轴偏移量
         :return: None
         """
+        if not isinstance(x, (int, float)):
+            raise TypeError("x must be an int or float")
+        if not isinstance(y, (int, float)):
+            raise TypeError("y must be an int or float")
+        if not isinstance(z, (int, float)):
+            raise TypeError("z must be an int or float")
+
         self.pos = glm.vec3(x, y, z)
         # 子骨骼移动到: 子骨骼初始位置 + (父骨骼实际位置 - 父骨骼初始位置)
         offset = self.pos - self.init_pos
@@ -61,6 +84,9 @@ class Bone:
         :param length: 新长度
         :return: None
         """
+        if not isinstance(length, (int, float)):
+            raise TypeError("length must be an int or float")
+
         scale = length / self.init_length
         self.length = length
         # 子骨骼到该骨骼的距离随缩放改变
@@ -77,6 +103,13 @@ class Bone:
         :param roll:  横滚角度
         :return: None
         """
+        if not isinstance(yaw, (int, float)):
+            raise TypeError("yaw must be an int or float")
+        if not isinstance(pitch, (int, float)):
+            raise TypeError("pitch must be an int or float")
+        if not isinstance(roll, (int, float)):
+            raise TypeError("roll must be an int or float")
+
         self.toward = glm.vec3(yaw, pitch, roll)
         # 构建当前旋转矩阵（相对于初始旋转的增量）
         init_rot = self._build_rotation_matrix(self.init_toward)
@@ -178,6 +211,11 @@ class Skeleton:
         :param bone: 骨骼对象
         :return: None
         """
+        if not isinstance(name, str):
+            raise TypeError("name must be a string")
+        if not isinstance(bone, Bone):
+            raise TypeError("bone must be a Bone instance")
+
         self.bones[name] = bone
         self._bone_index_map[name] = len(self._bone_index_map)
         self._max_bones = max(self._max_bones, len(self._bone_index_map))
@@ -188,6 +226,8 @@ class Skeleton:
         :param name: 骨骼名称
         :return: 骨骼对象
         """
+        if not isinstance(name, str):
+            raise TypeError("name must be a string")
         return self.bones.get(name)
 
     def get_bone_index(self, name: str) -> int:
@@ -196,6 +236,8 @@ class Skeleton:
         :param name: 骨骼名称
         :return: 骨骼索引
         """
+        if not isinstance(name, str):
+            raise TypeError("name must be a string")
         return self._bone_index_map.get(name, -1)
 
     def get_bone_matrices(self) -> list:

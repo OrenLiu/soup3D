@@ -9,6 +9,7 @@
 - [Texture](Texture.md): `类型`   
 - [Channel](Channel.md): `类型`   
 - [MixChannel](MixChannel.md): `类型`   
+- [UniformBuffer](UniformBuffer.md): `类型`   
 - [ShaderProgram](ShaderProgram.md): `类型`   
 - [AutoSP](AutoSP.md): `类型`   
 - [BoneBinderSP](BoneBinderSP.md): `类型`   

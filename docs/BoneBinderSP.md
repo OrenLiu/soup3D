@@ -11,5 +11,7 @@
 - [set_skeleton(self, skeleton)](BoneBinderSP_set_skeleton.md): `函数`   
 - [mark_bones_dirty(self)](BoneBinderSP_mark_bones_dirty.md): `函数`   
 - [_get_skeleton_obj(self)](BoneBinderSP__get_skeleton_obj.md): `函数`   
+- [_create_bone_ubo(self)](BoneBinderSP__create_bone_ubo.md): `函数`   
 - [_update_bone_matrices(self)](BoneBinderSP__update_bone_matrices.md): `函数`   
+- [__del__(self)](BoneBinderSP___del__.md): `函数`   
    

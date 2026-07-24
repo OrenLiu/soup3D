@@ -50,6 +50,15 @@ class Face:
         :param surface:    表面使用的着色器
         :param vertex:     表面中所有的顶点，格式由surface参数指定的着色器决定
         """
+        if not isinstance(shape_type, str):
+            raise TypeError("shape_type must be a string")
+        
+        if not isinstance(surface, (soup3D.shader.ShaderProgram, soup3D.shader.AutoSP)):
+            raise TypeError("surface must be a ShaderProgram or AutoSP instance")
+        
+        if not isinstance(vertex, (list, tuple)):
+            raise TypeError("vertex must be a list or tuple")
+
         # 初始化类成员
         self.shape_type = shape_type  # 绘制方式
         self.surface = surface  # 表面着色器元
@@ -80,6 +89,16 @@ class Model:
         :param z:    模型原点对应z坐标
         :param face: 面
         """
+        if not isinstance(x, (int, float)):
+            raise TypeError("x must be an int or float")
+        if not isinstance(y, (int, float)):
+            raise TypeError("y must be an int or float")
+        if not isinstance(z, (int, float)):
+            raise TypeError("z must be an int or float")
+        for f in face:
+            if not isinstance(f, Face):
+                raise TypeError("face must be Face instances")
+
         self.x, self.y, self.z = x, y, z
         self.yaw, self.pitch, self.roll = 0, 0, 0
         self.width, self.height, self.length = 1, 1, 1
@@ -104,12 +123,15 @@ class Model:
 
     def __add__(self, other: "Model"):
         """
-        将多个模型组合成一个模型，当使用“model1 + model2”时，model2将会被组合到model1。需要注意的是，模型组合后，模型中其他模型的部分将与模
-        型2共享资源，所以模型组合后，不建议继续使用参与计算的模型，建议使用返回值进行操作，比如“model3 = model1 + model2”,则建议抛弃model1
+        将多个模型组合成一个模型，当使用"model1 + model2"时，model2将会被组合到model1。需要注意的是，模型组合后，模型中其他模型的部分将与模
+        型2共享资源，所以模型组合后，不建议继续使用参与计算的模型，建议使用返回值进行操作，比如"model3 = model1 + model2",则建议抛弃model1
         和model2，使用model3执行后续操作。当模型因为不可抗因素需要分开倒入时，可以用该方法进行合并。
         :param other: 组合到该模型的模型
         :return: 修改后的本模型
         """
+        if not isinstance(other, Model):
+            raise TypeError("other must be a Model instance")
+
         self.faces += other.faces
 
         # 将表面按照表面着色器分类
@@ -209,6 +231,13 @@ class Model:
         :param z: 新z坐标
         :return: None
         """
+        if not isinstance(x, (int, float)):
+            raise TypeError("x must be an int or float")
+        if not isinstance(y, (int, float)):
+            raise TypeError("y must be an int or float")
+        if not isinstance(z, (int, float)):
+            raise TypeError("z must be an int or float")
+
         self.x, self.y, self.z = x, y, z
         for face in self.faces:
             surface = face.surface
@@ -223,6 +252,13 @@ class Model:
         :param roll:  横滚角度，绕模型y轴旋转
         :return: None
         """
+        if not isinstance(yaw, (int, float)):
+            raise TypeError("yaw must be an int or float")
+        if not isinstance(pitch, (int, float)):
+            raise TypeError("pitch must be an int or float")
+        if not isinstance(roll, (int, float)):
+            raise TypeError("roll must be an int or float")
+
         self.yaw, self.pitch, self.roll = yaw, pitch, roll
         for face in self.faces:
             surface = face.surface
@@ -237,6 +273,13 @@ class Model:
         :param length: 模型长度倍数，沿模型z轴缩放的倍数
         :return: None
         """
+        if not isinstance(width, (int, float)):
+            raise TypeError("width must be an int or float")
+        if not isinstance(height, (int, float)):
+            raise TypeError("height must be an int or float")
+        if not isinstance(length, (int, float)):
+            raise TypeError("length must be an int or float")
+
         self.width, self.height, self.length = width, height, length
         for face in self.faces:
             surface = face.surface
@@ -282,6 +325,9 @@ class Data:
         :param data_type: 数据类型标识，"obj"表示obj模型数据，"mtl"表示材质数据，"gltf"表示gltf模型数据
         :param data:      存储的原始数据
         """
+        if not isinstance(data_type, str):
+            raise TypeError("data_type must be a string")
+
         self._data_type = data_type
         self._data = data
 
@@ -542,6 +588,22 @@ def init(width: int | float = 1920,
     :param far:      最远渲染距离
     :return: None
     """
+    if not isinstance(width, (int, float)):
+        raise TypeError("width must be an int or float")
+    if not isinstance(height, (int, float)):
+        raise TypeError("height must be an int or float")
+    if not isinstance(fov, (int, float)):
+        raise TypeError("fov must be an int or float")
+    if not isinstance(bg_color, (list, tuple)) or len(bg_color) != 3:
+        raise TypeError("bg_color must be a list or tuple of 3 floats")
+    for c in bg_color:
+        if not isinstance(c, (int, float)):
+            raise TypeError("bg_color elements must be int or float")
+    if not isinstance(near, (int, float)):
+        raise TypeError("near must be an int or float")
+    if not isinstance(far, (int, float)):
+        raise TypeError("far must be an int or float")
+
     global proj_fov, proj_near, proj_far
     global proj_width, proj_height
     proj_fov = fov
@@ -569,6 +631,11 @@ def resize(width: int | float, height: int | float) -> None:
     :param height: 窗口高度
     :return: None
     """
+    if not isinstance(width, (int, float)):
+        raise TypeError("width must be an int or float")
+    if not isinstance(height, (int, float)):
+        raise TypeError("height must be an int or float")
+
     global proj_width, proj_height
 
     proj_width = width
@@ -595,6 +662,13 @@ def background_color(r: int | float, g: int | float, b: int | float) -> None:
     :param b: 蓝色(0.0-1.0)
     :return: None
     """
+    if not isinstance(r, (int, float)):
+        raise TypeError("r must be an int or float")
+    if not isinstance(g, (int, float)):
+        raise TypeError("g must be an int or float")
+    if not isinstance(b, (int, float)):
+        raise TypeError("b must be an int or float")
+
     glClearColor(r, g, b, 1)
 
 
@@ -768,6 +842,13 @@ def gen_skeleton_model(_skeleton: soup3D.skeleton.Skeleton | dict, bone_color=No
     :param size:        骨骼模型的大小，默认0.01
     :return: 模型(Model类)
     """
+    if not isinstance(_skeleton, (soup3D.skeleton.Skeleton, dict)):
+        raise TypeError("_skeleton must be a Skeleton instance or dict")
+    if bone_color is not None and not isinstance(bone_color, dict):
+        raise TypeError("bone_color must be a dict or None")
+    if not isinstance(size, (int, float)):
+        raise TypeError("size must be an int or float")
+
     print("warning: skeleton model is not stable, use it in debug mode only.")
 
     if bone_color is None:
@@ -889,6 +970,19 @@ def open_mtl(mtl: str,
                             器时，则将该值设为True。
     :return: 所有生成出的表面着色器，当data_only为True时返回Data对象
     """
+    if not isinstance(mtl, str):
+        raise TypeError("mtl must be a string path")
+    if not isinstance(double_side, bool):
+        raise TypeError("double_side must be a bool")
+    if roll_funk is not None and not callable(roll_funk):
+        raise TypeError("roll_funk must be callable or None")
+    if not isinstance(encoding, str):
+        raise TypeError("encoding must be a string")
+    if not isinstance(max_light_count, int):
+        raise TypeError("max_light_count must be an int")
+    if not isinstance(data_only, bool):
+        raise TypeError("data_only must be a bool")
+
     mtl_dict = {}
 
     mtl_file = open(mtl, "r", encoding=encoding)
@@ -1026,6 +1120,21 @@ def open_obj(obj: str,
                             则将该值设为True。
     :return: 生成出来的模型数据(Model类)，当data_only为True时返回Data对象
     """
+    if not isinstance(obj, str):
+        raise TypeError("obj must be a string path")
+    if mtl is not None and not isinstance(mtl, (str, dict, Data)):
+        raise TypeError("mtl must be a string, dict, Data instance, or None")
+    if not isinstance(double_side, bool):
+        raise TypeError("double_side must be a bool")
+    if roll_funk is not None and not callable(roll_funk):
+        raise TypeError("roll_funk must be callable or None")
+    if not isinstance(encoding, str):
+        raise TypeError("encoding must be a string")
+    if not isinstance(max_light_count, int):
+        raise TypeError("max_light_count must be an int")
+    if not isinstance(data_only, bool):
+        raise TypeError("data_only must be a bool")
+
     # 处理mtl文件
     mtl_dict = {}
 
@@ -2139,6 +2248,17 @@ def open_gltf(
                             其中如果在单次调用时同时返回网格模型和骨架，则骨架与网格模型绑定，可直接通过骨架对模型造成形变。
     :return: (资源, 资源) | 资源 | Data对象
     """
+    if not isinstance(gltf, str):
+        raise TypeError("gltf must be a string path")
+    if not isinstance(double_side, bool):
+        raise TypeError("double_side must be a bool")
+    if not isinstance(max_light_count, int):
+        raise TypeError("max_light_count must be an int")
+    if not isinstance(data_only, bool):
+        raise TypeError("data_only must be a bool")
+    if not isinstance(resources, (str, list, tuple)):
+        raise TypeError("resources must be a string, list, or tuple")
+
     base_dir = os.path.dirname(os.path.abspath(gltf))
 
     # 读取GLTF文件

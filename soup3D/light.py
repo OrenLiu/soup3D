@@ -32,6 +32,26 @@ class Cone:
         :param attenuation:  线性衰减率
         :param angle:        锥形光线锥角
         """
+        if not isinstance(place, (list, tuple)) or len(place) != 3:
+            raise TypeError("place must be a list or tuple of 3 numbers")
+        for p in place:
+            if not isinstance(p, (int, float)):
+                raise TypeError("place elements must be int or float")
+        if not isinstance(toward, (list, tuple)) or len(toward) != 3:
+            raise TypeError("toward must be a list or tuple of 3 numbers")
+        for t in toward:
+            if not isinstance(t, (int, float)):
+                raise TypeError("toward elements must be int or float")
+        if not isinstance(color, (list, tuple)) or len(color) != 3:
+            raise TypeError("color must be a list or tuple of 3 numbers")
+        for c in color:
+            if not isinstance(c, (int, float)):
+                raise TypeError("color elements must be int or float")
+        if not isinstance(attenuation, (int, float)):
+            raise TypeError("attenuation must be an int or float")
+        if not isinstance(angle, (int, float)):
+            raise TypeError("angle must be an int or float")
+
         global dirty
 
         self.on = False
@@ -67,6 +87,13 @@ class Cone:
         :param z: 光源z坐标
         :return: None
         """
+        if not isinstance(x, (int, float)):
+            raise TypeError("x must be an int or float")
+        if not isinstance(y, (int, float)):
+            raise TypeError("y must be an int or float")
+        if not isinstance(z, (int, float)):
+            raise TypeError("z must be an int or float")
+
         global dirty
 
         self.place = (x, y, z)
@@ -81,6 +108,13 @@ class Cone:
         :param roll:  光线横滚角度
         :return: None
         """
+        if not isinstance(yaw, (int, float)):
+            raise TypeError("yaw must be an int or float")
+        if not isinstance(pitch, (int, float)):
+            raise TypeError("pitch must be an int or float")
+        if not isinstance(roll, (int, float)):
+            raise TypeError("roll must be an int or float")
+
         global dirty
 
         self.toward = (yaw, pitch, roll)
@@ -95,6 +129,13 @@ class Cone:
         :param b: 蓝色
         :return: None
         """
+        if not isinstance(r, (int, float)):
+            raise TypeError("r must be an int or float")
+        if not isinstance(g, (int, float)):
+            raise TypeError("g must be an int or float")
+        if not isinstance(b, (int, float)):
+            raise TypeError("b must be an int or float")
+
         global dirty
 
         self.color = (r, g, b)
@@ -144,6 +185,17 @@ class Direct:
         :param toward: 光源朝向(yaw, pitch, roll)
         :param color:  光源颜色(red, green, blue)
         """
+        if not isinstance(toward, (list, tuple)) or len(toward) != 3:
+            raise TypeError("toward must be a list or tuple of 3 numbers")
+        for t in toward:
+            if not isinstance(t, (int, float)):
+                raise TypeError("toward elements must be int or float")
+        if not isinstance(color, (list, tuple)) or len(color) != 3:
+            raise TypeError("color must be a list or tuple of 3 numbers")
+        for c in color:
+            if not isinstance(c, (int, float)):
+                raise TypeError("color elements must be int or float")
+
         global dirty
 
         self.on = False
@@ -174,6 +226,13 @@ class Direct:
         :param roll:  光线横滚角度
         :return: None
         """
+        if not isinstance(yaw, (int, float)):
+            raise TypeError("yaw must be an int or float")
+        if not isinstance(pitch, (int, float)):
+            raise TypeError("pitch must be an int or float")
+        if not isinstance(roll, (int, float)):
+            raise TypeError("roll must be an int or float")
+
         global dirty
 
         self.toward = (yaw, pitch, roll)
@@ -188,6 +247,13 @@ class Direct:
         :param b: 蓝色
         :return: None
         """
+        if not isinstance(r, (int, float)):
+            raise TypeError("r must be an int or float")
+        if not isinstance(g, (int, float)):
+            raise TypeError("g must be an int or float")
+        if not isinstance(b, (int, float)):
+            raise TypeError("b must be an int or float")
+
         global dirty
 
         self.color = (r, g, b)
@@ -236,6 +302,13 @@ def ambient(R: int | float, G: int | float, B: int | float) -> None:
     :param B: 蓝色环境光
     :return: None
     """
+    if not isinstance(R, (int, float)):
+        raise TypeError("R must be an int or float")
+    if not isinstance(G, (int, float)):
+        raise TypeError("G must be an int or float")
+    if not isinstance(B, (int, float)):
+        raise TypeError("B must be an int or float")
+
     global dirty
 
     glLightModelfv(GL_LIGHT_MODEL_AMBIENT, (R, G, B, 1))
@@ -269,6 +342,17 @@ def rotated(Xa: int | float, Ya: int | float,
     :param degree: 旋转角度
     :return: 点A旋转后的X坐标, 点A旋转后的Y坐标
     """
+    if not isinstance(Xa, (int, float)):
+        raise TypeError("Xa must be an int or float")
+    if not isinstance(Ya, (int, float)):
+        raise TypeError("Ya must be an int or float")
+    if not isinstance(Xb, (int, float)):
+        raise TypeError("Xb must be an int or float")
+    if not isinstance(Yb, (int, float)):
+        raise TypeError("Yb must be an int or float")
+    if not isinstance(degree, (int, float)):
+        raise TypeError("degree must be an int or float")
+
     degree = degree * pi / 180
     outx = (Xa - Xb) * cos(degree) - (Ya - Yb) * sin(degree) + Xb
     outy = (Xa - Xb) * sin(degree) + (Ya - Yb) * cos(degree) + Yb

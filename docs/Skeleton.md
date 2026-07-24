@@ -10,5 +10,6 @@
 - [get_bone_index(self, name)](Skeleton_get_bone_index.md): `函数`   
 - [get_bone_matrices(self)](Skeleton_get_bone_matrices.md): `函数`   
 - [get_max_bones(self)](Skeleton_get_max_bones.md): `函数`   
+- [make_pose(self, pose_data)](Skeleton_make_pose.md): `函数`   
 - [reset_all(self)](Skeleton_reset_all.md): `函数`   
    

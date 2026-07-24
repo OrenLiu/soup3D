@@ -19,7 +19,7 @@
     ...   
 ]   
 在着色器代码中，vbo的读取编号取决于vbo处于列表的位置，例如列表中第0个，也就是首个vbo，着色器代码中可以通过   
-“layout (location = 0) in <type> <value_name>”这段代码读取。   
+"layout (location = 0) in <type> <value_name>"这段代码读取。   
 :param vertex:   顶点着色程序代码   
 :param fragment: 片段着色程序代码   
 :param vbo_type: 定义传入着色器程序的顶点列表(vbo)的数据类型。如每个定点列表数据类型相同，可通过填写一个字符串定义所有的定点列表的   
