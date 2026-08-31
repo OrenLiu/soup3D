@@ -3,6 +3,7 @@
 这是一个基于OpenGL和pygame开发的3D引擎，易于新手学习，可
 用于3D游戏开发、数据可视化、3D图形的绘制等开发。
 """
+from OpenGL.GL import *
 from OpenGL.GLU import *
 from pyglm import glm
 import os
@@ -23,6 +24,41 @@ from soup3D.name import *
 render_queue: list["Model"] = []  # 单次渲染队列
 stable_shapes = {}                # 固定渲染队列
 EAU = []                          # 更新执行队列
+
+
+def _glu_perspective_fallback(fovy: int | float,
+                              aspect: int | float,
+                              z_near: int | float,
+                              z_far: int | float) -> None:
+    """
+    在 GLU 的 gluPerspective 不可用时，使用 glFrustum 回退实现透视矩阵。
+    :param fovy: 视野角度
+    :param aspect: 宽高比
+    :param z_near: 近平面
+    :param z_far: 远平面
+    :return: None
+    """
+    fH = math.tan(fovy / 360.0 * math.pi) * z_near
+    fW = fH * aspect
+    glFrustum(-fW, fW, -fH, fH, z_near, z_far)
+
+
+def _safe_glu_perspective(fovy: int | float,
+                          aspect: int | float,
+                          z_near: int | float,
+                          z_far: int | float) -> None:
+    """
+    优先使用 GLU 的 gluPerspective，若当前环境绑定不可用则自动回退。
+    :param fovy: 视野角度
+    :param aspect: 宽高比
+    :param z_near: 近平面
+    :param z_far: 远平面
+    :return: None
+    """
+    if bool(gluPerspective):
+        gluPerspective(fovy, aspect, z_near, z_far)
+    else:
+        _glu_perspective_fallback(fovy, aspect, z_near, z_far)
 
 
 proj_fov = 45
@@ -619,7 +655,7 @@ def init(width: int | float = 1920,
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)  # 设置混合函数
     glMatrixMode(GL_PROJECTION)
     glLoadIdentity()
-    gluPerspective(fov, (width / height), near, far)
+    _safe_glu_perspective(fov, (width / height), near, far)
     soup3D.camera.goto(0, 0, 0)
     soup3D.camera.turn(0, 0, 0)
 
@@ -645,7 +681,7 @@ def resize(width: int | float, height: int | float) -> None:
     glMatrixMode(GL_PROJECTION)
     glLoadIdentity()
     aspect_ratio = width / height
-    gluPerspective(proj_fov, aspect_ratio, proj_near, proj_far)
+    _safe_glu_perspective(proj_fov, aspect_ratio, proj_near, proj_far)
     glMatrixMode(GL_MODELVIEW)
 
     for surface_id in soup3D.shader.set_mat_queue:

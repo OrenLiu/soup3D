@@ -6,6 +6,7 @@ from OpenGL.GL import *
 from OpenGL.GLU import *
 from pyglm import glm
 from math import *
+import ctypes
 
 import soup3D.shader
 
@@ -22,6 +23,66 @@ Z : int | float = 0.0
 YAW : int | float = 0.0
 PITCH : int | float = 0.0
 ROLL : int | float = 0.0
+
+
+def _normalize(v: list[float]) -> list[float]:
+    """归一化三维向量。"""
+    length = sqrt(sum(i * i for i in v))
+    if length == 0:
+        return [0.0, 0.0, 0.0]
+    return [i / length for i in v]
+
+
+def _cross(a: list[float], b: list[float]) -> list[float]:
+    """计算三维向量叉乘。"""
+    return [
+        a[1] * b[2] - a[2] * b[1],
+        a[2] * b[0] - a[0] * b[2],
+        a[0] * b[1] - a[1] * b[0],
+    ]
+
+
+def _glu_look_at_fallback(ex: int | float,
+                          ey: int | float,
+                          ez: int | float,
+                          cx: int | float,
+                          cy: int | float,
+                          cz: int | float,
+                          ux: int | float,
+                          uy: int | float,
+                          uz: int | float) -> None:
+    """
+    在 GLU 的 gluLookAt 不可用时，使用等价矩阵乘法回退实现。
+    """
+    f = _normalize([cx - ex, cy - ey, cz - ez])
+    up = _normalize([ux, uy, uz])
+    s = _normalize(_cross(f, up))
+    u = _cross(s, f)
+
+    matrix = [
+        s[0], u[0], -f[0], 0.0,
+        s[1], u[1], -f[1], 0.0,
+        s[2], u[2], -f[2], 0.0,
+        0.0,  0.0,   0.0,  1.0,
+    ]
+    glMultMatrixf((ctypes.c_float * 16)(*matrix))
+    glTranslatef(-ex, -ey, -ez)
+
+
+def _safe_glu_look_at(ex: int | float,
+                      ey: int | float,
+                      ez: int | float,
+                      cx: int | float,
+                      cy: int | float,
+                      cz: int | float,
+                      ux: int | float,
+                      uy: int | float,
+                      uz: int | float) -> None:
+    """优先使用 gluLookAt，不可用时自动回退。"""
+    if bool(gluLookAt):
+        gluLookAt(ex, ey, ez, cx, cy, cz, ux, uy, uz)
+    else:
+        _glu_look_at_fallback(ex, ey, ez, cx, cy, cz, ux, uy, uz)
 
 
 def goto(x: int | float, y: int | float, z: int | float) -> None:
@@ -87,7 +148,7 @@ def update() -> None:
     centerX, centerZ = _rotated(centerX, centerZ, 0, 0, YAW)
     upX, upZ = _rotated(upX, upZ, 0, 0, YAW)
 
-    gluLookAt(X, Y, Z, centerX+X, centerY+Y, centerZ+Z, upX, upY, upZ)
+    _safe_glu_look_at(X, Y, Z, centerX+X, centerY+Y, centerZ+Z, upX, upY, upZ)
 
     for surface_id in soup3D.shader.set_mat_queue:
         surface = soup3D.shader.set_mat_queue[surface_id]
