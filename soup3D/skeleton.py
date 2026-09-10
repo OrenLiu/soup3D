@@ -1,6 +1,7 @@
 from pyglm import glm
 import math
 import weakref
+import soup3D.s3dm
 
 
 class Bone:
@@ -18,20 +19,27 @@ class Bone:
                 raise TypeError("init_pos elements must be int or float")
         if not isinstance(init_length, (int, float)):
             raise TypeError("init_length must be an int or float")
-        if not isinstance(init_toward, (list, tuple)) or len(init_toward) != 3:
-            raise TypeError("init_toward must be a list or tuple of 3 numbers")
+        if not isinstance(init_toward, (list, tuple)) or len(init_toward) not in (3, 4):
+            raise TypeError("init_toward must be a list or tuple of 3 or 4 numbers")
         for t in init_toward:
             if not isinstance(t, (int, float)):
                 raise TypeError("init_toward elements must be int or float")
+        if len(init_toward) == 3:
+            self.quat = soup3D.s3dm.bone_euler_to_quat(*init_toward)
+            e = init_toward
+        else:
+            self.quat = soup3D.s3dm.parse_rotation(init_toward)
+            e = soup3D.s3dm.bone_quat_to_euler(self.quat)
+        self.init_toward = glm.vec3(*e)
+        self.toward = glm.vec3(*e)
+        self.init_quat = self.quat
 
         self.init_pos = glm.vec3(*init_pos)
         self.init_length = init_length
-        self.init_toward = glm.vec3(*init_toward)
 
         # 当前变换
         self.pos = glm.vec3(*init_pos)
         self.length = init_length
-        self.toward = glm.vec3(*init_toward)
 
         # 层级结构
         self.children = []
@@ -110,12 +118,35 @@ class Bone:
         if not isinstance(roll, (int, float)):
             raise TypeError("roll must be an int or float")
 
+        self.quat = soup3D.s3dm.bone_euler_to_quat(yaw, pitch, roll)
         self.toward = glm.vec3(yaw, pitch, roll)
-        # 构建当前旋转矩阵（相对于初始旋转的增量）
-        init_rot = self._build_rotation_matrix(self.init_toward)
-        cur_rot = self._build_rotation_matrix(self.toward)
+        init_rot = self._build_rotation_matrix(self.init_quat)
+        cur_rot = self._build_rotation_matrix(self.quat)
         delta_rot = cur_rot * glm.inverse(init_rot)
-        # 子骨骼根绕该骨骼旋转
+        # 子骨骼根绕该骨骼的旋转增量传播
+        for child in self.children:
+            offset = child.init_pos - self.init_pos
+            rotated = delta_rot * glm.vec4(offset, 1.0)
+            child.move(*(self.pos + glm.vec3(rotated)))
+        self._mark_dirty()
+
+    def turn_quat(self, quat) -> None:
+        """
+        旋转骨骼（四元数）
+        :param quat: glm.quat 或 (w, x, y, z) 的 list/tuple，按 init_toward 同一约定理解
+        :return: None
+        """
+        if not isinstance(quat, (glm.quat, list, tuple)):
+            raise TypeError("quat must be a glm.quat or a list/tuple of 4 numbers")
+        if isinstance(quat, (list, tuple)):
+            if len(quat) != 4 or not all(isinstance(t, (int, float)) for t in quat):
+                raise ValueError("quat list/tuple must be 4 numbers (w, x, y, z)")
+        self.quat = soup3D.s3dm.parse_rotation(quat)
+        self.toward = glm.vec3(*soup3D.s3dm.bone_quat_to_euler(self.quat))
+        init_rot = self._build_rotation_matrix(self.init_quat)
+        cur_rot = self._build_rotation_matrix(self.quat)
+        delta_rot = cur_rot * glm.inverse(init_rot)
+        # 子骨骼根绕该骨骼的旋转增量传播
         for child in self.children:
             offset = child.init_pos - self.init_pos
             rotated = delta_rot * glm.vec4(offset, 1.0)
@@ -138,13 +169,9 @@ class Bone:
         self._update_matrix()
         return self._inverse_bind_matrix
 
-    def _build_rotation_matrix(self, toward):
-        """根据朝向构建旋转矩阵"""
-        m = glm.mat4(1.0)
-        m = glm.rotate(m, glm.radians(-toward.x), glm.vec3(0.0, 1.0, 0.0))
-        m = glm.rotate(m, glm.radians(toward.y), glm.vec3(1.0, 0.0, 0.0))
-        m = glm.rotate(m, glm.radians(toward.z-toward.x), glm.vec3(0.0, 0.0, 1.0))
-        return m
+    def _build_rotation_matrix(self, quat):
+        """根据四元数构建旋转矩阵"""
+        return glm.mat4_cast(quat)
 
     def _update_matrix(self):
         """更新骨骼变换矩阵"""
@@ -156,12 +183,12 @@ class Bone:
 
         # 初始姿态矩阵: 位移 * 旋转 * 缩放（glTF规范要求包含所有变换）
         bind_matrix = glm.translate(glm.mat4(1.0), self.init_pos)
-        bind_matrix = bind_matrix * self._build_rotation_matrix(self.init_toward)
+        bind_matrix = bind_matrix * self._build_rotation_matrix(self.init_quat)
         bind_matrix = glm.scale(bind_matrix, glm.vec3(1.0))
 
         # 当前姿态矩阵: 位移 * 旋转 * 缩放
         current_matrix = glm.translate(glm.mat4(1.0), self.pos)
-        current_matrix = current_matrix * self._build_rotation_matrix(self.toward)
+        current_matrix = current_matrix * self._build_rotation_matrix(self.quat)
         current_matrix = glm.scale(current_matrix, glm.vec3(scale))
 
         # 逆绑定矩阵（glTF的inverseBindMatrix是绑定姿态世界矩阵的逆）
@@ -189,9 +216,9 @@ class Bone:
         :return: None
         """
         self.pos = glm.vec3(self.init_pos)
+        self.quat = self.init_quat
         self.toward = glm.vec3(self.init_toward)
         self.length = self.init_length
-
         self._mark_dirty()
 
 
@@ -266,14 +293,20 @@ class Skeleton:
     def make_pose(self, pose_data: dict):
         """
         根据数据调整每个骨骼的姿态
-        :param pose_data: 姿态数据
+        :param pose_data: 姿态数据，每项为 (x, y, z, length, 姿态...)，姿态部分为 3 个欧拉角或 4 个四元数分量 (w, x, y, z)
         :return: None
         """
         for bone_name in pose_data:
             bone = self.get_bone(bone_name)
             bone.pos = glm.vec3(*pose_data[bone_name][:3])
             bone.length = pose_data[bone_name][3]
-            bone.toward = glm.vec3(*pose_data[bone_name][4:])
+            vals = pose_data[bone_name][4:]
+            if len(vals) == 3:
+                bone.quat = soup3D.s3dm.bone_euler_to_quat(*vals)
+                bone.toward = glm.vec3(*vals)
+            else:
+                bone.quat = soup3D.s3dm.parse_rotation(vals)
+                bone.toward = glm.vec3(*soup3D.s3dm.bone_quat_to_euler(bone.quat))
             bone._mark_dirty()
 
     def reset_all(self):
