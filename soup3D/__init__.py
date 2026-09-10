@@ -19,6 +19,7 @@ import soup3D.camera
 import soup3D.light
 import soup3D.ui
 import soup3D.skeleton
+import soup3D.s3dm
 from soup3D.name import *
 
 render_queue: list["Model"] = []  # 单次渲染队列
@@ -136,6 +137,7 @@ class Model:
                 raise TypeError("face must be Face instances")
 
         self.x, self.y, self.z = x, y, z
+        self.quat = glm.quat(1.0, 0.0, 0.0, 0.0)
         self.yaw, self.pitch, self.roll = 0, 0, 0
         self.width, self.height, self.length = 1, 1, 1
         self.faces = list(face)
@@ -295,7 +297,25 @@ class Model:
         if not isinstance(roll, (int, float)):
             raise TypeError("roll must be an int or float")
 
+        self.quat = soup3D.s3dm.euler_to_quat(yaw, pitch, roll)
         self.yaw, self.pitch, self.roll = yaw, pitch, roll
+        for face in self.faces:
+            surface = face.surface
+            if hasattr(surface, "set_model_mat"):
+                surface.set_model_mat(self.get_model_mat())
+
+    def turn_quat(self, quat) -> None:
+        """
+        用四元数旋转模型
+        :param quat: 四元数，接受 glm.quat 或 (w, x, y, z) 的 list/tuple
+        :return: None
+        """
+        if not isinstance(quat, (glm.quat, list, tuple)):
+            raise TypeError("quat must be a glm.quat or a list/tuple of 4 numbers")
+        if isinstance(quat, (list, tuple)) and len(quat) != 4:
+            raise ValueError("quat must be a list/tuple of 4 numbers")
+        self.quat = soup3D.s3dm.parse_rotation(quat)
+        self.yaw, self.pitch, self.roll = soup3D.s3dm.quat_to_euler(self.quat)
         for face in self.faces:
             surface = face.surface
             if hasattr(surface, "set_model_mat"):
@@ -333,13 +353,8 @@ class Model:
         # 应用平移变换
         model = glm.translate(model, glm.vec3(self.x, self.y, self.z))
 
-        # 应用旋转变换
-        # Yaw旋转（绕y轴）
-        model = glm.rotate(model, glm.radians(-self.yaw), glm.vec3(0.0, 1.0, 0.0))
-        # Pitch旋转（绕x轴）
-        model = glm.rotate(model, glm.radians(self.pitch), glm.vec3(1.0, 0.0, 0.0))
-        # Roll旋转（绕z轴）
-        model = glm.rotate(model, glm.radians(self.roll), glm.vec3(0.0, 0.0, 1.0))
+        # 应用旋转变换（四元数转旋转矩阵）
+        model = model * glm.mat4_cast(self.quat)
 
         # 应用缩放变换
         model = glm.scale(model, glm.vec3(self.width, self.height, self.length))
