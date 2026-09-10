@@ -4,8 +4,11 @@
 """
 from OpenGL.GL import *
 from math import *
+from pyglm import glm
 
 import soup3D
+import soup3D.s3dm
+from soup3D.s3dm import rotated
 
 
 __all__ : list[str] = [
@@ -21,13 +24,13 @@ light_queue = {}
 class Cone:
     def __init__(self,
                  place: tuple[int | float, int | float, int | float],
-                 toward: tuple[int | float, int | float, int | float],
+                 toward: tuple[int | float, ...],
                  color: tuple[int | float, int | float, int | float],
                  attenuation: float, angle=180):
         """
         锥形光线，类似灯泡光线
         :param place:        光源位置(x, y, z)
-        :param toward:       光源朝向(yaw, pitch, roll)
+        :param toward:       光源朝向，欧拉角(yaw, pitch, roll)或四元数(w, x, y, z)
         :param color:        光源颜色(red, green, blue)
         :param attenuation:  线性衰减率
         :param angle:        锥形光线锥角
@@ -37,11 +40,13 @@ class Cone:
         for p in place:
             if not isinstance(p, (int, float)):
                 raise TypeError("place elements must be int or float")
-        if not isinstance(toward, (list, tuple)) or len(toward) != 3:
-            raise TypeError("toward must be a list or tuple of 3 numbers")
+        if not isinstance(toward, (list, tuple)) or len(toward) not in (3, 4):
+            raise TypeError("toward must be a list or tuple of 3 or 4 numbers")
         for t in toward:
             if not isinstance(t, (int, float)):
                 raise TypeError("toward elements must be int or float")
+        self.quat = soup3D.s3dm.parse_rotation(toward)
+        self.toward = tuple(soup3D.s3dm.quat_to_euler(self.quat))
         if not isinstance(color, (list, tuple)) or len(color) != 3:
             raise TypeError("color must be a list or tuple of 3 numbers")
         for c in color:
@@ -56,7 +61,6 @@ class Cone:
 
         self.on = False
         self.place = place
-        self.toward = toward
         self.color = color
         self.attenuation = attenuation
         self.angle = angle
@@ -65,19 +69,11 @@ class Cone:
         if not dirty:
             dirty = True
 
-    def _calc_direction(self) -> tuple[int | float, int | float, int | float]:
-        """根据欧拉角计算方向向量"""
-        x, y, z = 0, 0, -1  # 初始Z轴负方向
-        yaw, pitch, roll = self.toward
-
-        # 应用旋转顺序：roll -> pitch -> yaw
-        x, y = rotated(x, y, 0, 0, roll)
-        y, z = rotated(y, z, 0, 0, pitch)
-        x, z = rotated(x, z, 0, 0, yaw)
-
-        # 归一化
-        length = sqrt(x ** 2 + y ** 2 + z ** 2)
-        return (x / length, y / length, z / length) if length != 0 else (0, 0, 1)
+    def _calc_direction(self) -> tuple:
+        """根据四元数计算方向向量"""
+        d = self.quat * glm.vec3(0, 0, -1)
+        length = sqrt(d.x ** 2 + d.y ** 2 + d.z ** 2)
+        return (d.x / length, d.y / length, d.z / length) if length != 0 else (0, 0, 1)
 
     def goto(self, x : int | float, y : int | float, z : int | float) -> None:
         """
@@ -117,7 +113,24 @@ class Cone:
 
         global dirty
 
+        self.quat = soup3D.s3dm.euler_to_quat(yaw, pitch, roll)
         self.toward = (yaw, pitch, roll)
+        if not dirty:
+            dirty = True
+
+    def turn_quat(self, quat) -> None:
+        """
+        更改光线朝向（四元数）
+        :param quat: 四元数，接受 glm.quat 或 (w, x, y, z) 的 list/tuple
+        :return: None
+        """
+        if not isinstance(quat, (glm.quat, list, tuple)):
+            raise TypeError("quat must be a glm.quat or a list/tuple of 4 numbers")
+        if isinstance(quat, (list, tuple)) and len(quat) != 4:
+            raise ValueError("quat must be a list/tuple of 4 numbers")
+        global dirty
+        self.quat = soup3D.s3dm.parse_rotation(quat)
+        self.toward = tuple(soup3D.s3dm.quat_to_euler(self.quat))
         if not dirty:
             dirty = True
 
@@ -178,18 +191,20 @@ class Cone:
 
 class Direct:
     def __init__(self,
-                 toward: tuple[int | float, int | float, int | float],
+                 toward: tuple[int | float, ...],
                  color: tuple[int | float, int | float, int | float]) -> None:
         """
         方向光线，类似太阳光线
-        :param toward: 光源朝向(yaw, pitch, roll)
+        :param toward: 光源朝向，欧拉角(yaw, pitch, roll)或四元数(w, x, y, z)
         :param color:  光源颜色(red, green, blue)
         """
-        if not isinstance(toward, (list, tuple)) or len(toward) != 3:
-            raise TypeError("toward must be a list or tuple of 3 numbers")
+        if not isinstance(toward, (list, tuple)) or len(toward) not in (3, 4):
+            raise TypeError("toward must be a list or tuple of 3 or 4 numbers")
         for t in toward:
             if not isinstance(t, (int, float)):
                 raise TypeError("toward elements must be int or float")
+        self.quat = soup3D.s3dm.parse_rotation(toward)
+        self.toward = tuple(soup3D.s3dm.quat_to_euler(self.quat))
         if not isinstance(color, (list, tuple)) or len(color) != 3:
             raise TypeError("color must be a list or tuple of 3 numbers")
         for c in color:
@@ -199,24 +214,17 @@ class Direct:
         global dirty
 
         self.on = False
-        self.toward = toward
         self.color = color
 
         light_queue[id(self)] = self
         if not dirty:
             dirty = True
 
-    def _calc_direction(self) -> tuple[int | float, int | float, int | float]:
-        """计算逆向方向向量"""
-        x, y, z = 0, 0, -1  # OpenGL方向光约定方向
-        yaw, pitch, roll = self.toward
-
-        x, y = rotated(x, y, 0, 0, roll)
-        y, z = rotated(y, z, 0, 0, pitch)
-        x, z = rotated(x, z, 0, 0, yaw)
-
-        length = sqrt(x ** 2 + y ** 2 + z ** 2)
-        return (-x / length, -y / length, -z / length) if length != 0 else (0, 0, 1)
+    def _calc_direction(self) -> tuple:
+        """根据四元数计算逆向方向向量"""
+        d = self.quat * glm.vec3(0, 0, -1)
+        length = sqrt(d.x ** 2 + d.y ** 2 + d.z ** 2)
+        return (-d.x / length, -d.y / length, -d.z / length) if length != 0 else (0, 0, 1)
 
     def turn(self, yaw : int | float, pitch : int | float, roll : int | float) -> None:
         """
@@ -235,7 +243,24 @@ class Direct:
 
         global dirty
 
+        self.quat = soup3D.s3dm.euler_to_quat(yaw, pitch, roll)
         self.toward = (yaw, pitch, roll)
+        if not dirty:
+            dirty = True
+
+    def turn_quat(self, quat) -> None:
+        """
+        更改光线朝向（四元数）
+        :param quat: 四元数，接受 glm.quat 或 (w, x, y, z) 的 list/tuple
+        :return: None
+        """
+        if not isinstance(quat, (glm.quat, list, tuple)):
+            raise TypeError("quat must be a glm.quat or a list/tuple of 4 numbers")
+        if isinstance(quat, (list, tuple)) and len(quat) != 4:
+            raise ValueError("quat must be a list/tuple of 4 numbers")
+        global dirty
+        self.quat = soup3D.s3dm.parse_rotation(quat)
+        self.toward = tuple(soup3D.s3dm.quat_to_euler(self.quat))
         if not dirty:
             dirty = True
 
@@ -328,32 +353,3 @@ def set_surface_light():
         if hasattr(surface, "set_light"):
             surface.set_light()
     dirty = False
-
-
-def rotated(Xa: int | float, Ya: int | float,
-            Xb: int | float, Yb: int | float,
-            degree: int | float) -> tuple[float, float]:
-    """
-    点A绕点B旋转特定角度后，点A的坐标
-    :param Xa:     环绕点(点A)X坐标
-    :param Ya:     环绕点(点A)Y坐标
-    :param Xb:     被环绕点(点B)X坐标
-    :param Yb:     被环绕点(点B)Y坐标
-    :param degree: 旋转角度
-    :return: 点A旋转后的X坐标, 点A旋转后的Y坐标
-    """
-    if not isinstance(Xa, (int, float)):
-        raise TypeError("Xa must be an int or float")
-    if not isinstance(Ya, (int, float)):
-        raise TypeError("Ya must be an int or float")
-    if not isinstance(Xb, (int, float)):
-        raise TypeError("Xb must be an int or float")
-    if not isinstance(Yb, (int, float)):
-        raise TypeError("Yb must be an int or float")
-    if not isinstance(degree, (int, float)):
-        raise TypeError("degree must be an int or float")
-
-    degree = degree * pi / 180
-    outx = (Xa - Xb) * cos(degree) - (Ya - Yb) * sin(degree) + Xb
-    outy = (Xa - Xb) * sin(degree) + (Ya - Yb) * cos(degree) + Yb
-    return outx, outy
