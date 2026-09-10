@@ -20,6 +20,7 @@ import soup3D.light
 import soup3D.ui
 import soup3D.skeleton
 import soup3D.s3dm
+from soup3D.s3dm import quat_to_mat4 as _quat_to_mat4
 from soup3D.name import *
 
 render_queue: list["Model"] = []  # 单次渲染队列
@@ -905,7 +906,9 @@ def gen_skeleton_model(_skeleton: soup3D.skeleton.Skeleton | dict, bone_color=No
     if bone_color is None:
         bone_color = {}
 
-    if isinstance(_skeleton, soup3D.skeleton.Skeleton):
+    # 记录原始数据类型：Skeleton 实例读 bone.quat，dict 数据的 toward 仍是欧拉 3 元组
+    is_skeleton = isinstance(_skeleton, soup3D.skeleton.Skeleton)
+    if is_skeleton:
         _skeleton = _skeleton.bones
 
     faces = []
@@ -915,13 +918,18 @@ def gen_skeleton_model(_skeleton: soup3D.skeleton.Skeleton | dict, bone_color=No
         if bone_name in bone_color:
             color = bone_color[bone_name]
         # 计算骨骼末端位置（用于可视化）
-        _m = glm.mat4(1.0)
-        _m = glm.translate(_m, bone.pos)
-        _m = glm.rotate(_m, glm.radians(-bone.toward.x), glm.vec3(0, 1, 0))
-        _m = glm.rotate(_m, glm.radians(bone.toward.y), glm.vec3(1, 0, 0))
-        _m = glm.rotate(_m, glm.radians(bone.toward.z), glm.vec3(0, 0, 1))
-        _ep = _m * glm.vec4(0, 0, bone.length, 1.0)
-        end_pos = (_ep.x, _ep.y, _ep.z)
+        if is_skeleton:
+            rot = glm.mat4_cast(bone.quat)
+            endpoint = glm.vec3(rot * glm.vec4(0, 0, bone.length, 1.0))
+            end_pos = (bone.pos.x + endpoint.x, bone.pos.y + endpoint.y, bone.pos.z + endpoint.z)
+        else:
+            _m = glm.mat4(1.0)
+            _m = glm.translate(_m, bone.pos)
+            _m = glm.rotate(_m, glm.radians(-bone.toward.x), glm.vec3(0, 1, 0))
+            _m = glm.rotate(_m, glm.radians(bone.toward.y), glm.vec3(1, 0, 0))
+            _m = glm.rotate(_m, glm.radians(bone.toward.z), glm.vec3(0, 0, 1))
+            _ep = _m * glm.vec4(0, 0, bone.length, 1.0)
+            end_pos = (_ep.x, _ep.y, _ep.z)
         faces.append(
             Face(
                 TRIANGLE_B,
@@ -1945,55 +1953,6 @@ def _gltf_load_materials(gltf_data: dict, base_dir: str, double_side: bool, max_
             )
 
     return materials_dict
-
-
-def _quat_to_euler(qx, qy, qz, qw):
-    """
-    将四元数转换为欧拉角(yaw, pitch, roll)，单位为角度
-    :param qx: 四元数x分量
-    :param qy: 四元数y分量
-    :param qz: 四元数z分量
-    :param qw: 四元数w分量
-    :return: (yaw, pitch, roll) 角度
-    """
-    # Yaw (绕Y轴)
-    siny_cosp = 2 * (qw * qy + qx * qz)
-    cosy_cosp = 1 - 2 * (qy * qy + qz * qz)
-    yaw = math.degrees(math.atan2(siny_cosp, cosy_cosp))
-
-    # Pitch (绕X轴)
-    sinp = 2 * (qw * qx - qz * qy)
-    sinp = max(-1.0, min(1.0, sinp))
-    pitch = math.degrees(math.asin(sinp))
-
-    # Roll (绕Z轴)
-    sinr_cosp = 2 * (qw * qz + qx * qy)
-    cosr_cosp = 1 - 2 * (qz * qz + qy * qy)
-    roll = math.degrees(math.atan2(sinr_cosp, cosr_cosp))
-
-    return yaw, pitch, roll
-
-
-def _quat_to_mat4(qx, qy, qz, qw):
-    """
-    将四元数转换为4x4旋转矩阵
-    :param qx: 四元数x分量
-    :param qy: 四元数y分量
-    :param qz: 四元数z分量
-    :param qw: 四元数w分量
-    :return: 4x4矩阵
-    """
-    mat = glm.mat4(1.0)
-    mat[0][0] = 1 - 2 * (qy * qy + qz * qz)
-    mat[0][1] = 2 * (qx * qy + qw * qz)
-    mat[0][2] = 2 * (qx * qz - qw * qy)
-    mat[1][0] = 2 * (qx * qy - qw * qz)
-    mat[1][1] = 1 - 2 * (qx * qx + qz * qz)
-    mat[1][2] = 2 * (qy * qz + qw * qx)
-    mat[2][0] = 2 * (qx * qz + qw * qy)
-    mat[2][1] = 2 * (qy * qz - qw * qx)
-    mat[2][2] = 1 - 2 * (qx * qx + qy * qy)
-    return mat
 
 
 def _gltf_build_node_transform(node: dict) -> glm.mat4:
