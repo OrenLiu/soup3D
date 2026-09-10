@@ -91,6 +91,17 @@ class Texture:
             self.image_data = image_data
             if width is None or height is None:
                 raise ValueError("When providing binary data, width and height must be specified")
+            # 数据长度与格式不符会使 glTexImage2D 越界读取，必须快速失败
+            bytes_per_pixel = {"RGBA": 4, "RGB": 3, "L": 1, "A": 1}
+            if self.format in bytes_per_pixel:
+                expected = width * height * bytes_per_pixel[self.format]
+                if len(image_data) != expected:
+                    raise ValueError(
+                        "image_data length " + str(len(image_data))
+                        + " does not match format " + self.format
+                        + " at " + str(width) + "x" + str(height)
+                        + " (expected " + str(expected) + ")"
+                    )
 
     def gen_gl_texture(self, texture_unit: int = 0):
         """

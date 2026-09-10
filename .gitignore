@@ -5,3 +5,5 @@ dist/*
 rules/
 soup3D/__pycache__/
 CLAUDE.md
+.claude
+.omc
