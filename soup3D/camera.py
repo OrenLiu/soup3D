@@ -13,7 +13,7 @@ import soup3D.shader
 from soup3D.s3dm import normalize, cross
 
 __all__ : list[str] = [
-    "X", "Y", "Z", "YAW", "PITCH", "ROLL", "QUAT",
+    "X", "Y", "Z", "QUAT",
     "goto",
     "turn",
     "turn_quat",
@@ -23,11 +23,8 @@ __all__ : list[str] = [
 X : int | float = 0.0
 Y : int | float = 0.0
 Z : int | float = 0.0
-YAW : int | float = 0.0
-PITCH : int | float = 0.0
-ROLL : int | float = 0.0
-# 相机旋转的四元数主存储 (w, x, y, z)，与 YAW/PITCH/ROLL 镜像同步
 QUAT : glm.quat = glm.quat(1.0, 0.0, 0.0, 0.0)
+# 相机旋转的四元数主存储 (w, x, y, z)
 
 
 def _glu_look_at_fallback(ex: int | float,
@@ -110,8 +107,7 @@ def turn(yaw: int | float, pitch: int | float, roll: int | float) -> None:
     if not isinstance(roll, (int, float)):
         raise TypeError("roll must be an int or float")
 
-    global X, Y, Z, YAW, PITCH, ROLL, QUAT
-    YAW, PITCH, ROLL = yaw, pitch, roll
+    global X, Y, Z, QUAT
     QUAT = soup3D.s3dm.euler_to_quat(yaw, pitch, roll)
     glMatrixMode(GL_MODELVIEW)
     glLoadIdentity()
@@ -128,9 +124,8 @@ def turn_quat(quat) -> None:
         raise TypeError("quat must be a glm.quat or a list/tuple of 4 numbers")
     if isinstance(quat, (list, tuple)) and len(quat) != 4:
         raise TypeError("quat must be a list/tuple of 4 numbers")
-    global X, Y, Z, YAW, PITCH, ROLL, QUAT
+    global X, Y, Z, QUAT
     QUAT = soup3D.s3dm.parse_rotation(quat)
-    YAW, PITCH, ROLL = soup3D.s3dm.quat_to_euler(QUAT)
     glMatrixMode(GL_MODELVIEW)
     glLoadIdentity()
     update()

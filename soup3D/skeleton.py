@@ -26,12 +26,8 @@ class Bone:
                 raise TypeError("init_toward elements must be int or float")
         if len(init_toward) == 3:
             self.quat = soup3D.s3dm.bone_euler_to_quat(*init_toward)
-            e = init_toward
         else:
             self.quat = soup3D.s3dm.parse_rotation(init_toward)
-            e = soup3D.s3dm.bone_quat_to_euler(self.quat)
-        self.init_toward = glm.vec3(*e)
-        self.toward = glm.vec3(*e)
         self.init_quat = self.quat
 
         self.init_pos = glm.vec3(*init_pos)
@@ -119,7 +115,6 @@ class Bone:
             raise TypeError("roll must be an int or float")
 
         self.quat = soup3D.s3dm.bone_euler_to_quat(yaw, pitch, roll)
-        self.toward = glm.vec3(yaw, pitch, roll)
         init_rot = self._build_rotation_matrix(self.init_quat)
         cur_rot = self._build_rotation_matrix(self.quat)
         delta_rot = cur_rot * glm.inverse(init_rot)
@@ -142,7 +137,6 @@ class Bone:
             if len(quat) != 4 or not all(isinstance(t, (int, float)) for t in quat):
                 raise ValueError("quat list/tuple must be 4 numbers (w, x, y, z)")
         self.quat = soup3D.s3dm.parse_rotation(quat)
-        self.toward = glm.vec3(*soup3D.s3dm.bone_quat_to_euler(self.quat))
         init_rot = self._build_rotation_matrix(self.init_quat)
         cur_rot = self._build_rotation_matrix(self.quat)
         delta_rot = cur_rot * glm.inverse(init_rot)
@@ -217,7 +211,6 @@ class Bone:
         """
         self.pos = glm.vec3(self.init_pos)
         self.quat = self.init_quat
-        self.toward = glm.vec3(self.init_toward)
         self.length = self.init_length
         self._mark_dirty()
 
@@ -303,10 +296,8 @@ class Skeleton:
             vals = pose_data[bone_name][4:]
             if len(vals) == 3:
                 bone.quat = soup3D.s3dm.bone_euler_to_quat(*vals)
-                bone.toward = glm.vec3(*vals)
             else:
                 bone.quat = soup3D.s3dm.parse_rotation(vals)
-                bone.toward = glm.vec3(*soup3D.s3dm.bone_quat_to_euler(bone.quat))
             bone._mark_dirty()
 
     def reset_all(self):

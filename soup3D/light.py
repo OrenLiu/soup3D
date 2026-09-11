@@ -46,7 +46,6 @@ class Cone:
             if not isinstance(t, (int, float)):
                 raise TypeError("toward elements must be int or float")
         self.quat = soup3D.s3dm.parse_rotation(toward)
-        self.toward = tuple(soup3D.s3dm.quat_to_euler(self.quat))
         if not isinstance(color, (list, tuple)) or len(color) != 3:
             raise TypeError("color must be a list or tuple of 3 numbers")
         for c in color:
@@ -114,7 +113,6 @@ class Cone:
         global dirty
 
         self.quat = soup3D.s3dm.euler_to_quat(yaw, pitch, roll)
-        self.toward = (yaw, pitch, roll)
         if not dirty:
             dirty = True
 
@@ -130,7 +128,6 @@ class Cone:
             raise ValueError("quat must be a list/tuple of 4 numbers")
         global dirty
         self.quat = soup3D.s3dm.parse_rotation(quat)
-        self.toward = tuple(soup3D.s3dm.quat_to_euler(self.quat))
         if not dirty:
             dirty = True
 
@@ -204,7 +201,6 @@ class Direct:
             if not isinstance(t, (int, float)):
                 raise TypeError("toward elements must be int or float")
         self.quat = soup3D.s3dm.parse_rotation(toward)
-        self.toward = tuple(soup3D.s3dm.quat_to_euler(self.quat))
         if not isinstance(color, (list, tuple)) or len(color) != 3:
             raise TypeError("color must be a list or tuple of 3 numbers")
         for c in color:
@@ -244,7 +240,6 @@ class Direct:
         global dirty
 
         self.quat = soup3D.s3dm.euler_to_quat(yaw, pitch, roll)
-        self.toward = (yaw, pitch, roll)
         if not dirty:
             dirty = True
 
@@ -260,7 +255,6 @@ class Direct:
             raise ValueError("quat must be a list/tuple of 4 numbers")
         global dirty
         self.quat = soup3D.s3dm.parse_rotation(quat)
-        self.toward = tuple(soup3D.s3dm.quat_to_euler(self.quat))
         if not dirty:
             dirty = True
 

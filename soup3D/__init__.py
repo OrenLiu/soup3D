@@ -139,7 +139,6 @@ class Model:
 
         self.x, self.y, self.z = x, y, z
         self.quat = glm.quat(1.0, 0.0, 0.0, 0.0)
-        self.yaw, self.pitch, self.roll = 0, 0, 0
         self.width, self.height, self.length = 1, 1, 1
         self.faces = list(face)
 
@@ -299,7 +298,6 @@ class Model:
             raise TypeError("roll must be an int or float")
 
         self.quat = soup3D.s3dm.euler_to_quat(yaw, pitch, roll)
-        self.yaw, self.pitch, self.roll = yaw, pitch, roll
         for face in self.faces:
             surface = face.surface
             if hasattr(surface, "set_model_mat"):
@@ -316,7 +314,6 @@ class Model:
         if isinstance(quat, (list, tuple)) and len(quat) != 4:
             raise ValueError("quat must be a list/tuple of 4 numbers")
         self.quat = soup3D.s3dm.parse_rotation(quat)
-        self.yaw, self.pitch, self.roll = soup3D.s3dm.quat_to_euler(self.quat)
         for face in self.faces:
             surface = face.surface
             if hasattr(surface, "set_model_mat"):
