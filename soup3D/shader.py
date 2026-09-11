@@ -1199,7 +1199,8 @@ class AutoSP:
                 )
                 self.projection_dirty = False
             if self.light_dirty:
-                ambient = glGetFloatv(GL_LIGHT_MODEL_AMBIENT)[:3]
+                # 环境光直接读 light 模块的缓存(ambient() 写入),不再逐 surface 做 glGetFloatv 读回
+                ambient = soup3D.light.ambient_val
                 self.shader_program.uniform("ambient", soup3D.FLOAT_VEC3, *ambient)
 
                 # 收集有效光源

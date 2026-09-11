@@ -20,6 +20,11 @@ EAU = []
 
 light_queue = {}
 
+# 环境光颜色缓存(RGB)。ambient() 是引擎内唯一的环境光写入点,着色器侧直接读取该值,
+# 避免每个脏 surface 每帧都走 glGetFloatv 读回 GL 状态。
+# 默认值取 OpenGL 默认环境光 (0.2, 0.2, 0.2, 1) 的 RGB 分量,与未调用 ambient() 时的 GL 状态一致
+ambient_val = (0.2, 0.2, 0.2)
+
 
 class Cone:
     def __init__(self,
@@ -328,9 +333,11 @@ def ambient(R: int | float, G: int | float, B: int | float) -> None:
     if not isinstance(B, (int, float)):
         raise TypeError("B must be an int or float")
 
-    global dirty
+    global dirty, ambient_val
 
     glLightModelfv(GL_LIGHT_MODEL_AMBIENT, (R, G, B, 1))
+    # 同步 Python 侧缓存,着色器上传环境光 uniform 时直接读它,不再做 GL 读回
+    ambient_val = (R, G, B)
     dirty = True
 
 
