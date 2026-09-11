@@ -88,7 +88,7 @@ def goto(x: int | float, y: int | float, z: int | float) -> None:
     if not isinstance(z, (int, float)):
         raise TypeError("z must be an int or float")
 
-    global X, Y, Z, YAW, PITCH, ROLL
+    global X, Y, Z
     X, Y, Z = x, y, z
     glMatrixMode(GL_MODELVIEW)
     glLoadIdentity()
