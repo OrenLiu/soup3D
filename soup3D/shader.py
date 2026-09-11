@@ -514,6 +514,9 @@ class ShaderProgram:
         self.uniform_loc = {}
         self.uniform_val = {}
         self.uniform_type = {}
+        # uniform 位置持久缓存。uniform_loc 会被 update() 末尾清空（它只是待上传队列），
+        # 而 location 与着色器程序一一对应，必须单独缓存，避免每帧重复执行字符串查询
+        self.uniform_loc_cache = {}
 
         self.texture_val = {}
 
@@ -622,8 +625,11 @@ class ShaderProgram:
         if not isinstance(v_type, str):
             raise TypeError("v_type must be a string")
 
-        # 获取统一变量位置
-        loc = glGetUniformLocation(self.shader, v_name)
+        # 获取统一变量位置（优先读缓存，未命中才查询；-1 也缓存，避免重复查询不存在的变量）
+        loc = self.uniform_loc_cache.get(v_name)
+        if loc is None:
+            loc = glGetUniformLocation(self.shader, v_name)
+            self.uniform_loc_cache[v_name] = loc
         if loc == -1:
             return False
         self.uniform_loc[v_name] = loc
@@ -648,9 +654,12 @@ class ShaderProgram:
         if not isinstance(texture_unit, int):
             raise TypeError("texture_unit must be an int")
 
-        # 获取统一变量位置
+        # 获取统一变量位置（优先读缓存）
         prev_program = glGetIntegerv(GL_CURRENT_PROGRAM)
-        loc = glGetUniformLocation(self.shader, v_name)
+        loc = self.uniform_loc_cache.get(v_name)
+        if loc is None:
+            loc = glGetUniformLocation(self.shader, v_name)
+            self.uniform_loc_cache[v_name] = loc
         if loc == -1:
             return False
 
