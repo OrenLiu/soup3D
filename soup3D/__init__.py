@@ -502,7 +502,7 @@ def _make_gltf_skeleton(data: dict) -> soup3D.skeleton.Skeleton:
         bone = soup3D.skeleton.Bone(
             bone_data["pos"],
             bone_data["length"],
-            bone_data["toward"],
+            bone_data["quat"],
         )
         all_bones[name] = bone
     for name, bone_data in data["bones"].items():
@@ -1521,7 +1521,7 @@ def _gltf_transform_matrix_to_bone_params(transform_mat: glm.mat4, init_pos: glm
     :param transform_mat: 变换矩阵
     :param init_pos:      初始位置
     :param init_length:   初始长度
-    :return: (x, y, z, length, yaw, pitch, roll)
+    :return: (x, y, z, length, qw, qx, qy, qz)，其中 (qw, qx, qy, qz) 为骨骼朝向四元数
     """
     pos = glm.vec3(transform_mat[3])
     rot_mat = glm.mat3(transform_mat)
@@ -1548,9 +1548,10 @@ def _gltf_transform_matrix_to_bone_params(transform_mat: glm.mat4, init_pos: glm
         yaw = 0.0
         pitch = -90.0 if dy > 0 else 90.0
 
-    roll = 0
+    # 边界转换产物立即并入四元数，不存储欧拉角
+    q = soup3D.s3dm.bone_euler_to_quat(yaw, pitch, 0)
 
-    return pos.x, pos.y, pos.z, length, yaw, pitch, roll
+    return pos.x, pos.y, pos.z, length, q.w, q.x, q.y, q.z
 
 
 def _gltf_load_animation(gltf_data: dict, buffers_data: list, world_transforms: list):
@@ -1559,7 +1560,7 @@ def _gltf_load_animation(gltf_data: dict, buffers_data: list, world_transforms: 
     :param gltf_data:        GLTF JSON数据
     :param buffers_data:     已加载的缓冲区数据列表
     :param world_transforms: 节点世界变换矩阵列表
-    :return: 动画帧列表，每帧为{bone_name: (x, y, z, length, yaw, pitch, roll)}
+    :return: 动画帧列表，每帧为{bone_name: (x, y, z, length, qw, qx, qy, qz)}
     """
     animations = gltf_data.get("animations", [])
     if not animations:
@@ -2037,7 +2038,7 @@ def _gltf_build_bone_recursive(joint_idx, nodes, world_transforms, joint_names, 
     else:
         length = 1.0
 
-    # 将方向向量转换为Bone类的(yaw, pitch, roll)约定
+    # 将骨骼方向（gltf 的 +Y 列）经边界转换并入引擎四元数（Bone 沿四元数作用于 (0,0,1) 延伸）
     dx, dy, dz = direction.x, direction.y, direction.z
     h = math.sqrt(dx * dx + dz * dz)
     if h > 1e-6:
@@ -2047,12 +2048,13 @@ def _gltf_build_bone_recursive(joint_idx, nodes, world_transforms, joint_names, 
         yaw = 0.0
         pitch = -90.0 if dy > 0 else 90.0
 
-    roll = 0
+    # 边界转换产物立即并入四元数，不存储欧拉角
+    q = soup3D.s3dm.bone_euler_to_quat(yaw, pitch, 0)
 
     bone = soup3D.skeleton.Bone(
         (pos.x, pos.y, pos.z),
         length,
-        (yaw, pitch, roll)
+        (q.w, q.x, q.y, q.z)
     )
 
     # 构建子骨骼
@@ -2113,12 +2115,13 @@ def _gltf_store_bone_recursive(joint_idx, nodes, world_transforms, joint_names, 
         )
         child_names.append(child_name)
 
-    roll = 0
+    # 边界转换产物立即并入四元数，不存储欧拉角
+    q = soup3D.s3dm.bone_euler_to_quat(yaw, pitch, 0)
 
     bones_data[name] = {
         "pos": (pos.x, pos.y, pos.z),
         "length": length,
-        "toward": (yaw, pitch, roll),
+        "quat": (q.w, q.x, q.y, q.z),
         "children": child_names,
     }
     return name
