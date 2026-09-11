@@ -903,9 +903,8 @@ def gen_skeleton_model(_skeleton: soup3D.skeleton.Skeleton | dict, bone_color=No
     if bone_color is None:
         bone_color = {}
 
-    # 记录原始数据类型：Skeleton 实例读 bone.quat，dict 数据的 toward 仍是欧拉 3 元组
-    is_skeleton = isinstance(_skeleton, soup3D.skeleton.Skeleton)
-    if is_skeleton:
+    # Skeleton 实例取其骨骼字典；dict 输入的值需为具有 pos/quat/length 属性的骨骼对象
+    if isinstance(_skeleton, soup3D.skeleton.Skeleton):
         _skeleton = _skeleton.bones
 
     faces = []
@@ -914,19 +913,10 @@ def gen_skeleton_model(_skeleton: soup3D.skeleton.Skeleton | dict, bone_color=No
         color = (1, 0, 0)
         if bone_name in bone_color:
             color = bone_color[bone_name]
-        # 计算骨骼末端位置（用于可视化）
-        if is_skeleton:
-            rot = glm.mat4_cast(bone.quat)
-            endpoint = glm.vec3(rot * glm.vec4(0, 0, bone.length, 1.0))
-            end_pos = (bone.pos.x + endpoint.x, bone.pos.y + endpoint.y, bone.pos.z + endpoint.z)
-        else:
-            _m = glm.mat4(1.0)
-            _m = glm.translate(_m, bone.pos)
-            _m = glm.rotate(_m, glm.radians(-bone.toward.x), glm.vec3(0, 1, 0))
-            _m = glm.rotate(_m, glm.radians(bone.toward.y), glm.vec3(1, 0, 0))
-            _m = glm.rotate(_m, glm.radians(bone.toward.z), glm.vec3(0, 0, 1))
-            _ep = _m * glm.vec4(0, 0, bone.length, 1.0)
-            end_pos = (_ep.x, _ep.y, _ep.z)
+        # 计算骨骼末端位置（用于可视化），统一读取骨骼四元数
+        rot = glm.mat4_cast(bone.quat)
+        endpoint = glm.vec3(rot * glm.vec4(0, 0, bone.length, 1.0))
+        end_pos = (bone.pos.x + endpoint.x, bone.pos.y + endpoint.y, bone.pos.z + endpoint.z)
         faces.append(
             Face(
                 TRIANGLE_B,
