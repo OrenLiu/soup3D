@@ -13,6 +13,7 @@ import json
 import struct
 import base64
 import math
+from typing import Protocol
 
 import soup3D.shader
 import soup3D.camera
@@ -20,8 +21,12 @@ import soup3D.light
 import soup3D.ui
 import soup3D.skeleton
 import soup3D.s3dm
+import soup3D.render_target
 from soup3D.s3dm import quat_to_mat4 as _quat_to_mat4
 from soup3D.name import *
+
+# 顶层导出渲染目标类，供文档示例与消费方直接以 soup3D.RenderTarget 使用
+RenderTarget = render_target.RenderTarget
 
 render_queue: list["Model"] = []  # 单次渲染队列
 stable_shapes = {}                # 固定渲染队列
@@ -826,61 +831,162 @@ def _render_fullscreen_image(img: soup3D.shader.Img) -> None:
     glPopMatrix()
 
 
-def update():
+class FrameRenderer(Protocol):
     """
-    更新画布
+    帧级渲染器协议（FrameRenderer Protocol）。实现 on_frame 方法的对象即视为实现该协议，
+    通过 update(render=渲染器对象) 传入后接管一帧的完整画面输出。
+    引擎在 on_frame 前后保存/恢复自身依赖的 GL 状态
+    （BLEND、深度测试、清屏色、viewport、FBO 绑定），渲染器内部可自由修改这些状态；
+    矩阵栈与着色器程序绑定不在恢复范围内。
+    自定义帧不会自动消费 render_queue / EAU（单帧模型与更新回调的处置权在渲染器，
+    可在 on_frame 内调用 soup3D.update() 复用默认渲染主体）。
+    渲染器可访问的数据：
+    - 相机：soup3D.camera.X/Y/Z（位置）、soup3D.camera.QUAT（朝向四元数）、soup3D.proj_fov（视野角）
+    - 场景：soup3D.stable_shapes / soup3D.render_queue 中的模型（Model.face_groups
+      按表面分组的面数据，材质 Kd=surface.base_color，Ke=surface.emission）
     """
-    global render_queue, EAU
 
-    # 清空画布
-    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
+    def on_frame(self) -> None:
+        """
+        接管本帧全部画面输出，包括清屏。
+        :return: None
+        """
+        ...
 
-    # 设置光源
-    if soup3D.light.dirty:
-        soup3D.light.set_surface_light()
 
-    # 执行更新执行列队
-    EAU += soup3D.light.EAU
+class DefaultFrameRenderer:
+    """
+    引擎内置默认渲染器：原 update() 的渲染主体（清屏+渲染队列+UI）原样迁入，
+    render=None 时与修改前的 update() 逐像素一致。
+    """
 
-    EAU_len = len(EAU)  # 调用列队前列队的长度
-    for args in EAU:
-        args[0](*args[1:])
-        if EAU_len != len(EAU):
-            raise Exception(f"EAU length changed while running: {args[0].__name__}{(*args[1:],)}")
+    def on_frame(self) -> None:
+        global render_queue, EAU
 
-    EAU = []
-    light.EAU = []
+        # 清空画布
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
 
-    # 渲染固定渲染物体
-    for shape_id in stable_shapes:
-        model = stable_shapes[shape_id]
-        for shape in model.faces:
-            surface: soup3D.shader.Surface = shape.surface
-            if surface.is_dirty():
-                surface.update()
-        glCallList(model.list_id)
+        # 设置光源
+        if soup3D.light.dirty:
+            soup3D.light.set_surface_light()
 
-    # 渲染单帧渲染物体
-    for model in render_queue:
-        for shape in model.faces:
-            surface: soup3D.shader.Surface = shape.surface
-            if surface.is_dirty():
-                surface.update()
-        glCallList(model.list_id)
+        # 执行更新执行列队
+        EAU += soup3D.light.EAU
 
-    # 清空渲染队列
-    render_queue = []
+        EAU_len = len(EAU)  # 调用列队前列队的长度
+        for args in EAU:
+            args[0](*args[1:])
+            if EAU_len != len(EAU):
+                raise Exception(f"EAU length changed while running: {args[0].__name__}{(*args[1:],)}")
 
-    # 渲染 ui 界面
-    for i in soup3D.ui.render_queue:
-        _paint_ui(*i)
+        EAU = []
+        light.EAU = []
 
-    # 渲染全屏叠加图像
-    if soup3D.ui.fullscreen_img is not None:
-        _render_fullscreen_image(soup3D.ui.fullscreen_img)
-    
-    # 清空 ui 渲染列队
-    soup3D.ui.render_queue = []
+        # 渲染固定渲染物体
+        for shape_id in stable_shapes:
+            model = stable_shapes[shape_id]
+            for shape in model.faces:
+                surface: soup3D.shader.Surface = shape.surface
+                if surface.is_dirty():
+                    surface.update()
+            glCallList(model.list_id)
+
+        # 渲染单帧渲染物体
+        for model in render_queue:
+            for shape in model.faces:
+                surface: soup3D.shader.Surface = shape.surface
+                if surface.is_dirty():
+                    surface.update()
+            glCallList(model.list_id)
+
+        # 清空渲染队列
+        render_queue = []
+
+        # 渲染 ui 界面
+        for i in soup3D.ui.render_queue:
+            _paint_ui(*i)
+
+        # 渲染全屏叠加图像
+        if soup3D.ui.fullscreen_img is not None:
+            _render_fullscreen_image(soup3D.ui.fullscreen_img)
+
+        # 清空 ui 渲染列队
+        soup3D.ui.render_queue = []
+
+
+# 引擎内置默认渲染器实例（update(render=None) 时调用其 on_frame）
+_default_frame_renderer = DefaultFrameRenderer()
+
+
+def _gl_scalar(value) -> int:
+    """把 PyOpenGL 标量查询结果归一化为 int（不同绑定可能返回数组、numpy 标量或 int）"""
+    try:
+        return int(value[0])
+    except (TypeError, IndexError):
+        return int(value)
+
+
+def _save_frame_gl_state() -> tuple:
+    """
+    保存引擎依赖的 GL 状态，供 update(render=...) 调用自定义帧级渲染器前使用。
+    attrib 状态栈（glPushAttrib）覆盖 BLEND、深度测试、清屏色、viewport 等大部分引擎依赖状态；
+    FBO 绑定不在 attrib 栈内，单独查询保存。
+    :return: 状态句柄，需传给 _restore_frame_gl_state 恢复
+    """
+    glPushAttrib(GL_ALL_ATTRIB_BITS)
+    draw_fbo = _gl_scalar(glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING))
+    read_fbo = _gl_scalar(glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING))
+    return (draw_fbo, read_fbo)
+
+
+def _restore_frame_gl_state(state: tuple) -> None:
+    """
+    恢复 _save_frame_gl_state 保存的 GL 状态。
+    :param state: _save_frame_gl_state 返回的状态句柄
+    :return: None
+    """
+    draw_fbo, read_fbo = state
+    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, draw_fbo)
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, read_fbo)
+    glPopAttrib()
+
+
+def update(render: FrameRenderer | None = None, target: "RenderTarget | None" = None) -> None:
+    """
+    更新画布。
+    :param render: 帧级渲染器（实现 FrameRenderer 协议：有 on_frame 方法即可）。
+                   传入后本帧全部画面输出（含清屏）交给该渲染器接管，
+                   引擎仅在其前后保存/恢复自身依赖的 GL 状态；
+                   None 时使用引擎内置默认渲染器，与修改前行为逐像素一致
+    :param target: 渲染目标（RenderTarget 实例）。传入后本帧默认渲染管线原样渲进该目标，
+                   viewport 跟随目标尺寸，不显示到窗口；与 render 同时传入抛 ValueError；None 时渲到窗口与修改前逐像素一致
+    :return: None
+    """
+    if render is not None and target is not None:
+        raise ValueError("render and target are mutually exclusive")
+    if render is None and target is None:
+        _default_frame_renderer.on_frame()
+        return
+
+    if target is not None:
+        # 渲染目标路径：目标未绑定时由本函数管理绑定（bind 保存状态 → 渲染主体原样执行 → finally unbind 恢复）；
+        # 调用方已通过 with / bind() 绑定时沿用当前绑定（bind 重复绑定会抛错，文档示例即 with + update(target=) 组合）
+        if target._bound:
+            _default_frame_renderer.on_frame()
+        else:
+            target.bind()
+            try:
+                _default_frame_renderer.on_frame()
+            finally:
+                target.unbind()
+        return
+
+    # 自定义帧级渲染器：保存状态 → 渲染器接管整帧 → finally 恢复状态
+    state = _save_frame_gl_state()
+    try:
+        render.on_frame()
+    finally:
+        _restore_frame_gl_state(state)
 
 
 def gen_skeleton_model(_skeleton: soup3D.skeleton.Skeleton | dict, bone_color=None, size=0.01):

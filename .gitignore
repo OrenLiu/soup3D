@@ -1,9 +1,19 @@
+# 测试目录
 test/
+
+# 产物目录
 dist/*
+
+# 环境文件
 .venv/
 .idea/
-rules/
 soup3D/__pycache__/
+
+# claude
+rules/
 CLAUDE.md
 .claude
 .omc
+soup3D/.omc
+.superpowers
+superpowers

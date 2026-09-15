@@ -13,6 +13,7 @@ import imageio.v2 as imageio
 
 import soup3D.name
 import soup3D.skeleton
+import soup3D.render_target
 
 
 set_mat_queue = weakref.WeakValueDictionary()
@@ -111,6 +112,12 @@ class Texture:
         """
         if not isinstance(texture_unit, int):
             raise TypeError("texture_unit must be an int")
+        # 已创建过纹理则仅重新绑定到目标单元（uniform_tex 每次注册都会调用本方法，重复创建会泄漏并使旧 id 失效）
+        if self.texture_id is not None:
+            glActiveTexture(GL_TEXTURE0 + texture_unit)
+            glBindTexture(GL_TEXTURE_2D, self.texture_id)
+            return self.texture_id
+
 
         # 激活指定纹理单元
         glActiveTexture(GL_TEXTURE0 + texture_unit)
@@ -151,6 +158,77 @@ class Texture:
         self.texture_id = texture_id
         return texture_id
     
+    @classmethod
+    def from_array(cls, arr, color=None):
+        """
+        从 numpy 数组创建数据纹理，立即创建 GL 纹理对象（需 GL 上下文就绪，如 soup3D.init() 之后调用）
+        数组第 0 行为图像顶行，与 to_pixels/present 的顶原点一致
+        :param arr: (h, w, 4)/(h, w, 3)/(h, w) 的 uint8 或 float32 数组
+        :param color: 内部格式。None 时按 dtype/shape 推断：uint8 → rgba8/rgb8/l8，float32 → rgba32f/rgb32f/r32f；
+                      显式指定可覆盖，如浮点数据指定 rgba16f。格式须与通道数匹配：rgba*=4 通道、rgb*=3 通道、l8/r32f=1 通道
+        :return: Texture 实例
+        """
+        if not isinstance(arr, np.ndarray):
+            raise TypeError("arr must be a numpy array")
+        if color is not None and not isinstance(color, str):
+            raise TypeError("color must be a string or None")
+        if arr.ndim not in (2, 3):
+            raise ValueError("arr must be 2D (h, w) or 3D (h, w, 3 or 4 channels)")
+        channels = 1 if arr.ndim == 2 else arr.shape[2]
+        if channels not in (1, 3, 4):
+            raise ValueError("arr must have 1, 3 or 4 channels")
+        if arr.dtype == np.uint8:
+            suffix = "8"
+        elif arr.dtype == np.float32:
+            suffix = "32f"
+        else:
+            raise ValueError("arr.dtype must be uint8 or float32; float64 must be cast to float32 first")
+        if color is None:
+            if channels == 4:
+                color = "rgba" + suffix
+            elif channels == 3:
+                color = "rgb" + suffix
+            else:
+                color = ("l" if suffix == "8" else "r") + suffix
+        else:
+            if color.startswith("rgba"):
+                need = 4
+            elif color.startswith("rgb"):
+                need = 3
+            else:
+                need = 1
+            if need != channels:
+                raise ValueError("color=" + color + " needs " + str(need) + " channels but arr has " + str(channels))
+        u8 = GL_UNSIGNED_BYTE
+        fmt_map = {
+            "rgba8": (GL_RGBA8, GL_RGBA, u8),
+            "rgb8": (GL_RGB8, GL_RGB, u8),
+            "l8": (GL_R8, GL_RED, u8),
+            "rgba16f": (GL_RGBA16F, GL_RGBA, GL_FLOAT),
+            "rgba32f": (GL_RGBA32F, GL_RGBA, GL_FLOAT),
+            "rgb32f": (GL_RGB32F, GL_RGB, GL_FLOAT),
+            "r32f": (GL_R32F, GL_RED, GL_FLOAT),
+        }
+        if color not in fmt_map:
+            raise ValueError("color must be one of: " + ", ".join(sorted(fmt_map)) + " (got " + str(color) + ")")
+        internal_format, data_format, gl_type = fmt_map[color]
+        arr_c = np.ascontiguousarray(arr)
+        tex = cls.__new__(cls)
+        tex.width = int(arr_c.shape[1])
+        tex.height = int(arr_c.shape[0])
+        tex.format = color
+        tex.texture_id = glGenTextures(1)
+        prev_align = glGetIntegerv(GL_UNPACK_ALIGNMENT)
+        glPixelStorei(GL_UNPACK_ALIGNMENT, 1)
+        glBindTexture(GL_TEXTURE_2D, tex.texture_id)
+        glTexImage2D(GL_TEXTURE_2D, 0, internal_format, tex.width, tex.height, 0, data_format, gl_type, arr_c)
+        glPixelStorei(GL_UNPACK_ALIGNMENT, int(prev_align))
+        # 数据纹理采样参数：NEAREST + CLAMP_TO_EDGE，无 mipmap（数据纹理不做插值与越界重复）
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST)
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST)
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE)
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE)
+        return tex
     def _load_image(self):
         """
         从文件路径加载图像数据
@@ -466,7 +544,8 @@ class UniformBuffer:
 class ShaderProgram:
     def __init__(
             self, vertex: str, fragment: str,
-            vbo_type: str | list[str] | tuple[str] = "float"
+            vbo_type: str | list[str] | tuple[str] = "float",
+            depth_test: bool = True
         ):
         """
         代码着色器，作为表面着色器渲染时使用的顶点列表格式：
@@ -501,6 +580,10 @@ class ShaderProgram:
             for t in vbo_type:
                 if not isinstance(t, str):
                     raise TypeError("vbo_type elements must be strings")
+
+        if not isinstance(depth_test, bool):
+            raise TypeError("depth_test must be a bool")
+        self.depth_test = depth_test
 
         self.vertex = vertex
         self.fragment = fragment
@@ -549,7 +632,10 @@ class ShaderProgram:
             glActiveTexture(GL_TEXTURE0 + texture_unit)
             glBindTexture(GL_TEXTURE_2D, texture.get_texture_id())
 
-        glEnable(GL_DEPTH_TEST)
+        if self.depth_test:
+            glEnable(GL_DEPTH_TEST)
+        else:
+            glDisable(GL_DEPTH_TEST)
 
         num_buffers = len(vertex)
         vbo_ids = glGenBuffers(num_buffers)
@@ -643,14 +729,14 @@ class ShaderProgram:
         """
         在下一帧向着色器传递纹理
         :param v_name:       在着色器内该纹理对应的变量名
-        :param texture:      贴图类
+        :param texture:      贴图类（Texture / MixChannel / RenderTargetTexture，如 RenderTarget.color）
         :param texture_unit: 纹理单元编号
         :return: 是否成功添加文理
         """
         if not isinstance(v_name, str):
             raise TypeError("v_name must be a string")
-        if not isinstance(texture, (Texture, MixChannel)):
-            raise TypeError("texture must be a Texture or MixChannel instance")
+        if not isinstance(texture, (Texture, MixChannel, soup3D.render_target.RenderTargetTexture)):
+            raise TypeError("texture must be a Texture, MixChannel or RenderTargetTexture instance")
         if not isinstance(texture_unit, int):
             raise TypeError("texture_unit must be an int")
 
