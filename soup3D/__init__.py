@@ -22,11 +22,16 @@ import soup3D.ui
 import soup3D.skeleton
 import soup3D.s3dm
 import soup3D.render_target
+import soup3D.scene  # 场景快照：供外部渲染消费方零侵入导出引擎场景状态
 from soup3D.s3dm import quat_to_mat4 as _quat_to_mat4
 from soup3D.name import *
 
 # 顶层导出渲染目标类，供文档示例与消费方直接以 soup3D.RenderTarget 使用
 RenderTarget = render_target.RenderTarget
+
+# 顶层导出场景快照接口，供外部渲染消费方以 soup3D.scene_snapshot 使用
+scene_snapshot = scene.scene_snapshot
+SceneSnapshot = scene.SceneSnapshot
 
 render_queue: list["Model"] = []  # 单次渲染队列
 stable_shapes = {}                # 固定渲染队列

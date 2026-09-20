@@ -162,7 +162,7 @@ class Texture:
     def from_array(cls, arr, color=None):
         """
         从 numpy 数组创建数据纹理，立即创建 GL 纹理对象（需 GL 上下文就绪，如 soup3D.init() 之后调用）
-        数组第 0 行为图像顶行，与 to_pixels/present 的顶原点一致
+        数组第 0 行为图像顶行（上传前内部垂直翻转，与 to_pixels/present 的顶原点一致）
         :param arr: (h, w, 4)/(h, w, 3)/(h, w) 的 uint8 或 float32 数组
         :param color: 内部格式。None 时按 dtype/shape 推断：uint8 → rgba8/rgb8/l8，float32 → rgba32f/rgb32f/r32f；
                       显式指定可覆盖，如浮点数据指定 rgba16f。格式须与通道数匹配：rgba*=4 通道、rgb*=3 通道、l8/r32f=1 通道
@@ -213,6 +213,8 @@ class Texture:
             raise ValueError("color must be one of: " + ", ".join(sorted(fmt_map)) + " (got " + str(color) + ")")
         internal_format, data_format, gl_type = fmt_map[color]
         arr_c = np.ascontiguousarray(arr)
+        # GL 上传以底行为第 0 行：上传前垂直翻转，使「第 0 行 = 顶行」语义成立
+        arr_c = np.ascontiguousarray(arr_c[::-1])
         tex = cls.__new__(cls)
         tex.width = int(arr_c.shape[1])
         tex.height = int(arr_c.shape[0])
@@ -261,9 +263,13 @@ class Texture:
         return self.texture_id
 
     def __del__(self):
-        if self.texture_id is not None:
-            glDeleteTextures([self.texture_id])
+        # GL 上下文可能在对象销毁前已释放（解释器关闭期），删除失败时静默
+        try:
+            if self.texture_id is not None:
+                glDeleteTextures([self.texture_id])
             self.texture_id = None
+        except Exception:
+            pass
 
 
 class Channel:
@@ -470,9 +476,13 @@ class MixChannel:
         return self.texture_id
 
     def __del__(self):
-        if self.texture_id is not None:
-            glDeleteTextures([self.texture_id])
+        # GL 上下文可能在对象销毁前已释放（解释器关闭期），删除失败时静默
+        try:
+            if self.texture_id is not None:
+                glDeleteTextures([self.texture_id])
             self.texture_id = None
+        except Exception:
+            pass
 
 
 class UniformBuffer:
@@ -801,6 +811,27 @@ class ShaderProgram:
 
         self.uniform_loc = {}
         self.dirty = False
+
+    def has_uniform(self, v_name: str) -> bool:
+        """
+        查询着色器中是否存在指定 uniform（不存在返回 False）
+        :param v_name: uniform 名称
+        :return: bool，是否存在
+        """
+        return self.get_uniform_loc(v_name) != -1
+
+    def get_uniform_loc(self, v_name: str) -> int:
+        """
+        查询 uniform 位置（location），不存在的 uniform 返回 -1
+        :param v_name: uniform 名称
+        :return: int，uniform 位置
+        """
+        # 优先读缓存（与 uniform() 的位置缓存同源），未命中才查询并写入缓存
+        loc = self.uniform_loc_cache.get(v_name)
+        if loc is None:
+            loc = glGetUniformLocation(self.shader, v_name)
+            self.uniform_loc_cache[v_name] = loc
+        return int(loc)
 
     def __del__(self):
         """

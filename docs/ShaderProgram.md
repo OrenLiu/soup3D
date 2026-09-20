@@ -10,6 +10,8 @@
 - [unuse(self)](ShaderProgram_unuse.md): `函数`   
 - [uniform(self, v_name, v_type)](ShaderProgram_uniform.md): `函数`   
 - [uniform_tex(self, v_name, texture, texture_unit)](ShaderProgram_uniform_tex.md): `函数`   
+- [has_uniform(self, v_name)](ShaderProgram_has_uniform.md): `函数`   
+- [get_uniform_loc(self, v_name)](ShaderProgram_get_uniform_loc.md): `函数`   
 - [is_dirty(self)](ShaderProgram_is_dirty.md): `函数`   
 - [dirty_update(self)](ShaderProgram_dirty_update.md): `函数`   
 - [update(self)](ShaderProgram_update.md): `函数`   
