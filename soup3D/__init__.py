@@ -95,14 +95,15 @@ class Face:
                            "triangle_b": 不相连三角形
                            "triangle_s": 相连三角形
                            "triangle_l": 头尾相连的连续三角形
-        :param surface:    表面使用的着色器
+        :param surface:    表面使用的着色器，可以是ShaderProgram、AutoSP，或任何提供rend(mode, vertex)方法的对象
         :param vertex:     表面中所有的顶点，格式由surface参数指定的着色器决定
         """
         if not isinstance(shape_type, str):
             raise TypeError("shape_type must be a string")
-        
-        if not isinstance(surface, (soup3D.shader.ShaderProgram, soup3D.shader.AutoSP)):
-            raise TypeError("surface must be a ShaderProgram or AutoSP instance")
+
+        if not (isinstance(surface, (soup3D.shader.ShaderProgram, soup3D.shader.AutoSP))
+                or (hasattr(surface, "rend") and callable(surface.rend))):
+            raise TypeError("surface must be a shader object with a rend(mode, vertex) method (ShaderProgram, AutoSP or compatible)")
         
         if not isinstance(vertex, (list, tuple)):
             raise TypeError("vertex must be a list or tuple")
@@ -440,6 +441,20 @@ def _build_surface_arg(val):
     return val
 
 
+def _build_stored_surface(mat_info: dict):
+    """
+    从存储的材质数据字典构建表面着色器实例，用于Data.make()内部调用
+    :param mat_info: 存储的材质数据字典，含params(参数字典)与surface(着色器类)
+    :return: 表面着色器实例
+    """
+    params = dict(mat_info["params"])
+    params["base_color"] = _build_base_color(params["base_color"])
+    params["emission"] = _build_surface_arg(params["emission"])
+    normal = _build_surface_arg(params["normal"])
+    params["normal"] = normal if normal is not None else (0.5, 0.5, 1)
+    return soup3D.shader.make_surface(mat_info["surface"], params)
+
+
 def _make_mtl_data(data: dict) -> dict:
     """
     从存储的材质数据生成着色器字典，用于Data.make()内部调用
@@ -448,19 +463,7 @@ def _make_mtl_data(data: dict) -> dict:
     """
     mtl_dict = {}
     for name, mat_info in data.items():
-        base_color = _build_base_color(mat_info["base_color"])
-        emission = _build_surface_arg(mat_info["emission"])
-        normal = _build_surface_arg(mat_info["normal"])
-        if normal is None:
-            normal = (0.5, 0.5, 1)
-        surface_class = mat_info["surface"]
-        mtl_dict[name] = surface_class(
-            base_color=base_color,
-            emission=emission,
-            normal=normal,
-            double_side=mat_info["double_side"],
-            max_light_count=mat_info["max_light_count"],
-        )
+        mtl_dict[name] = _build_stored_surface(mat_info)
     return mtl_dict
 
 
@@ -471,17 +474,7 @@ def _make_obj_data(data: dict) -> "Model":
     :return: 模型对象
     """
     mtl_dict = _make_mtl_data(data["mtl_data"])
-    default_bc = data["default_material"]["base_color"]
-    default_material = data["default_material"]["surface"](
-        base_color=soup3D.shader.MixChannel(
-            (default_bc["width"], default_bc["height"]),
-            default_bc["R"], default_bc["G"], default_bc["B"], default_bc["A"]
-        ),
-        emission=data["default_material"]["emission"],
-        normal=data["default_material"]["normal"] or (0.5, 0.5, 1),
-        double_side=data["default_material"]["double_side"],
-        max_light_count=data["default_material"]["max_light_count"],
-    )
+    default_material = _build_stored_surface(data["default_material"])
     faces = []
     for group in data["face_groups"]:
         mat_name = group["material_name"]
@@ -555,6 +548,31 @@ def _build_gltf_emission(emi_data) -> tuple | soup3D.shader.Texture:
     return emi_data
 
 
+def _build_gltf_normal(nd) -> "tuple | soup3D.shader.Texture":
+    """
+    从存储的gltf法线数据构建参数值，用于Data.make()内部调用
+    :param nd: 存储的法线数据，数据元组("normal_tex", bytes, w, h, fmt)或普通元组/None
+    :return: 法线参数值
+    """
+    if isinstance(nd, tuple) and len(nd) == 5 and nd[0] == "normal_tex":
+        _, img_bytes, w, h, fmt = nd
+        return soup3D.shader.Texture(img_bytes, width=w, height=h, format=fmt)
+    return nd
+
+
+def _build_gltf_params(mat_info: dict) -> dict:
+    """
+    从存储的gltf材质数据构建表面着色器参数字典，用于Data.make()内部调用
+    :param mat_info: 存储的材质数据字典，含params与surface
+    :return: 表面着色器参数字典
+    """
+    params = dict(mat_info["params"])
+    params["base_color"] = _build_gltf_base_color(params["base_color"])
+    params["emission"] = _build_gltf_emission(params["emission"])
+    params["normal"] = _build_gltf_normal(params["normal"])
+    return params
+
+
 def _make_gltf_data(data: dict):
     """
     从存储的gltf数据生成模型和骨架，用于Data.make()内部调用
@@ -564,23 +582,14 @@ def _make_gltf_data(data: dict):
     skeleton = _make_gltf_skeleton(data["skeleton_data"])
     materials_dict = {}
     for mat_idx, mat_info in data["materials"].items():
-        base_color = _build_gltf_base_color(mat_info["base_color"])
-        emission = _build_gltf_emission(mat_info["emission"])
-        surface_class = mat_info["surface"]
-        materials_dict[mat_idx] = surface_class(
-            base_color=base_color,
-            emission=emission,
-            normal=mat_info["normal"],
-            double_side=mat_info["double_side"],
-            max_light_count=mat_info["max_light_count"],
-        )
-    default_surface = data["default_surface_class"](
-        base_color=soup3D.shader.MixChannel((1, 1), 0.8, 0.8, 0.8, 1.0),
-        emission=(0, 0, 0),
-        normal=(0.5, 0.5, 1),
-        double_side=data["double_side"],
-        max_light_count=data["max_light_count"],
-    )
+        materials_dict[mat_idx] = soup3D.shader.make_surface(mat_info["surface"], _build_gltf_params(mat_info))
+    default_surface = soup3D.shader.make_surface(data["default_surface_class"], {
+        "base_color": soup3D.shader.MixChannel((1, 1), 0.8, 0.8, 0.8, 1.0),
+        "emission": (0, 0, 0),
+        "normal": (0.5, 0.5, 1),
+        "double_side": data["double_side"],
+        "max_light_count": data["max_light_count"],
+    })
     all_faces = []
     skin_class = data["skin"]
     for prim_data in data["primitives"]:
@@ -591,14 +600,7 @@ def _make_gltf_data(data: dict):
         else:
             prim_surface = default_surface
         if has_skin and skin_class is not None:
-            face_surface = skin_class(
-                base_color=prim_surface.base_color if hasattr(prim_surface, 'base_color') else soup3D.shader.MixChannel((1, 1), 0.8, 0.8, 0.8, 1.0),
-                normal=prim_surface.normal if hasattr(prim_surface, 'normal') else (0.5, 0.5, 1),
-                emission=prim_surface.emission if hasattr(prim_surface, 'emission') else (0, 0, 0),
-                double_side=prim_surface.double_side if hasattr(prim_surface, 'double_side') else data["double_side"],
-                max_light_count=data["max_light_count"],
-                skeleton=skeleton,
-            )
+            face_surface = _transfer_surface_params(prim_surface, skin_class, skeleton=skeleton)
         else:
             face_surface = prim_surface
         face = Face(TRIANGLE_B, face_surface, prim_data["vertices"])
@@ -1046,28 +1048,54 @@ def gen_skeleton_model(_skeleton: soup3D.skeleton.Skeleton | dict, bone_color=No
     return model
 
 
-def _store_mtl_material(width, height, R, G, B, A, emission, bump_texture, double_side, max_light_count, surface):
+def _mtl_params(width, height, R, G, B, A, emission, bump_texture, double_side, max_light_count, ior, roughness, metallic, data_only) -> dict:
     """
-    将材质数据存储为数据字典，用于data_only模式
+    根据MTL解析状态构建表面着色器参数字典，数据模式(data_only)下产出可存储的数据形式
     :param width:           纹理宽度
     :param height:          纹理高度
-    :param R:               红色通道值
+    :param R:               红色通道值(数据模式下可为数据元组)
     :param G:               绿色通道值
     :param B:               蓝色通道值
     :param A:               透明度通道值
-    :param emission:        自发光数据
-    :param bump_texture:    法线贴图数据
+    :param emission:        自发光参数
+    :param bump_texture:    法线贴图参数
     :param double_side:     是否启用双面渲染
     :param max_light_count: 最大光源数量
-    :param surface:         表面着色器类型
+    :param ior:             MTL的Ni值(折射率)，文件未提供时为None
+    :param roughness:       MTL的Pr值(粗糙度)，文件未提供时为None
+    :param metallic:        MTL的Pm值(金属度)，文件未提供时为None
+    :param data_only:       是否为数据存储模式
+    :return: 材质数据字典
+    """
+    if data_only:
+        base_color = {"width": width, "height": height, "R": R, "G": G, "B": B, "A": A}
+    else:
+        base_color = soup3D.shader.MixChannel((width, height), R, G, B, A)
+    params = {
+        "base_color": base_color,
+        "emission": emission,
+        "normal": bump_texture if bump_texture else (0.5, 0.5, 1),
+        "double_side": double_side,
+        "max_light_count": max_light_count,
+    }
+    if ior is not None:
+        params["ior"] = ior
+    if roughness is not None:
+        params["roughness"] = roughness
+    if metallic is not None:
+        params["metallic"] = metallic
+    return params
+
+
+def _store_mtl_material(params, surface):
+    """
+    将材质参数字典与着色器类打包为可存储的材质数据字典，用于data_only模式
+    :param params:  材质参数字典
+    :param surface: 表面着色器类型
     :return: 材质数据字典
     """
     return {
-        "base_color": {"width": width, "height": height, "R": R, "G": G, "B": B, "A": A},
-        "emission": emission,
-        "normal": bump_texture,
-        "double_side": double_side,
-        "max_light_count": max_light_count,
+        "params": dict(params),
         "surface": surface,
     }
 
@@ -1086,8 +1114,9 @@ def open_mtl(mtl: str,
     :param roll_funk:       每当读取一行时调用一次，方法需有，且仅有1个参数，用于接收已读取的行数
     :param encoding:        读取文本文件时使用的字符集(建议在建模软件里把所有元素命名为英文，这样就不用管这个参数了)
     :param max_light_count: 这些着色器出现时会同时出现的最多的光源数量，大了会导致性能问题
-    :param surface:         模型使用的表面着色器类型，着色器需要有base_color, emission, normal, double_side, max_light_count等
-                            参数
+    :param surface:         模型使用的表面着色器类。加载器通过 shader.make_surface 动态适配其构造参数，只传入该类
+                            可接收的参数，不强制要求任何参数。可按需声明接收这些标准材质参数：base_color, normal,
+                            emission, double_side, max_light_count, roughness, metallic, ior, transmission
     :param data_only:       是否只创建模型数据结构，当为True时，则返回着色器相关的数据，而不是着色器本身。当需要用一个文件创建多组独立的着色
                             器时，则将该值设为True。
     :return: 所有生成出的表面着色器，当data_only为True时返回Data对象
@@ -1118,6 +1147,9 @@ def open_mtl(mtl: str,
     width, height = 1, 1
     emission = 0, 0, 0
     bump_texture = None
+    ior = None
+    roughness = None
+    metallic = None
     roll_count = 0
 
     for row in command_lines:
@@ -1129,23 +1161,20 @@ def open_mtl(mtl: str,
         if len(args) > 0:
             if args[0] == "newmtl":
                 if now_mtl is not None:
+                    params = _mtl_params(width, height, R, G, B, A, emission, bump_texture,
+                                         double_side, max_light_count, ior, roughness, metallic, data_only)
                     if data_only:
-                        mtl_dict[now_mtl] = _store_mtl_material(
-                            width, height, R, G, B, A, emission, bump_texture,
-                            double_side, max_light_count, surface)
+                        mtl_dict[now_mtl] = _store_mtl_material(params, surface)
                     else:
-                        mtl_dict[now_mtl] = surface(
-                            base_color=soup3D.shader.MixChannel((width, height), R, G, B, A),
-                            emission=emission,
-                            normal=bump_texture if bump_texture else (0.5, 0.5, 1),
-                            double_side=double_side,
-                            max_light_count=max_light_count
-                        )
+                        mtl_dict[now_mtl] = soup3D.shader.make_surface(surface, params)
 
                     R, G, B, A = 1.0, 1.0, 1.0, 1.0
                     width, height = 1, 1
                     emission = 0, 0, 0
                     bump_texture = None
+                    ior = None
+                    roughness = None
+                    metallic = None
                 now_mtl = args[1]
             if args[0] == "Kd":
                 R, G, B = float(args[1]), float(args[2]), float(args[3])
@@ -1153,6 +1182,12 @@ def open_mtl(mtl: str,
                 A = float(args[1])
             if args[0] == "Ke":
                 emission = (float(args[1]), float(args[2]), float(args[3]))
+            if args[0] == "Ni":
+                ior = float(args[1])
+            if args[0] == "Pr":
+                roughness = float(args[1])
+            if args[0] == "Pm":
+                metallic = float(args[1])
             if args[0] == "map_Kd":
                 base_dir = os.path.dirname(mtl)
                 tex_path = (os.path.join(base_dir, args[1]))
@@ -1185,7 +1220,8 @@ def open_mtl(mtl: str,
                     emission = ("texture", tex_path)
                 else:
                     emission = soup3D.shader.Texture(tex_path)
-            if args[0] == "map_Bump":
+            # map_Bump 与 Blender PBR 扩展的 norm 关键字均按法线贴图处理
+            if args[0] in ("map_Bump", "norm"):
                 tex_path = None
                 arg_name = None
                 for arg in args[1:]:
@@ -1205,18 +1241,12 @@ def open_mtl(mtl: str,
 
     # 添加最后一个材质
     if now_mtl is not None:
+        params = _mtl_params(width, height, R, G, B, A, emission, bump_texture,
+                             double_side, max_light_count, ior, roughness, metallic, data_only)
         if data_only:
-            mtl_dict[now_mtl] = _store_mtl_material(
-                width, height, R, G, B, A, emission, bump_texture,
-                double_side, max_light_count, surface)
+            mtl_dict[now_mtl] = _store_mtl_material(params, surface)
         else:
-            mtl_dict[now_mtl] = surface(
-                base_color=soup3D.shader.MixChannel((width, height), R, G, B, A),
-                emission=emission,
-                normal=bump_texture if bump_texture else (0.5, 0.5, 1),
-                double_side=double_side,
-                max_light_count=max_light_count
-            )
+            mtl_dict[now_mtl] = soup3D.shader.make_surface(surface, params)
 
     if data_only:
         return Data("mtl", mtl_dict)
@@ -1229,7 +1259,8 @@ def open_obj(obj: str,
              roll_funk=None,
              encoding: str = "utf-8",
              max_light_count: int = 8,
-             data_only: bool = False) -> "Model | Data":
+             data_only: bool = False,
+             surface = soup3D.shader.AutoSP) -> "Model | Data":
     """
     从obj文件导入模型
     :param obj:             *.obj模型文件路径
@@ -1238,6 +1269,8 @@ def open_obj(obj: str,
     :param roll_funk:       每当读取一行时调用一次，方法需有，且仅有1个参数，用于接收已读取的行数
     :param encoding:        读取文本文件时使用的字符集(建议在建模软件里把所有元素命名为英文，这样就不用管这个参数了)
     :param max_light_count: 该模型出现时会同时出现的最多的光源数量，大了会导致性能问题
+    :param surface:         模型使用的表面着色器类，默认为AutoSP。加载器只传入该类可接收的材质参数
+                            (动态适配，不强制任何参数，详见 shader.make_surface)
     :param data_only:       是否只创建模型数据结构，当为True时，则返回模型相关的数据，而不是模型本身。当需要用一个文件创建多个独立的模型时，
                             则将该值设为True。
     :return: 生成出来的模型数据(Model类)，当data_only为True时返回Data对象
@@ -1246,6 +1279,8 @@ def open_obj(obj: str,
         raise TypeError("obj must be a string path")
     if mtl is not None and not isinstance(mtl, (str, dict, Data)):
         raise TypeError("mtl must be a string, dict, Data instance, or None")
+    if not callable(surface):
+        raise TypeError("surface must be a surface shader class (callable)")
     if not isinstance(double_side, bool):
         raise TypeError("double_side must be a bool")
     if roll_funk is not None and not callable(roll_funk):
@@ -1262,7 +1297,7 @@ def open_obj(obj: str,
 
     # 如果mtl是字符串路径，则调用load_mtl加载
     if isinstance(mtl, str):
-        mtl_dict = open_mtl(mtl, double_side, roll_funk, encoding, max_light_count, data_only=data_only)
+        mtl_dict = open_mtl(mtl, double_side, roll_funk, encoding, max_light_count, surface=surface, data_only=data_only)
     elif isinstance(mtl, Data):
         # 如果传入的是Data对象，根据data_only决定是否构建着色器
         if data_only:
@@ -1276,13 +1311,13 @@ def open_obj(obj: str,
     # 创建默认材质（如果未提供MTL或材质未定义时使用），data_only模式下不创建着色器对象
     default_material = None
     if not data_only:
-        default_material = soup3D.shader.AutoSP(
-            base_color=soup3D.shader.MixChannel((1, 1), 1.0, 1.0, 1.0, 1.0),
-            emission=(0, 0, 0),
-            normal=(0.5, 0.5, 1),
-            double_side=double_side,
-            max_light_count=max_light_count
-        )
+        default_material = soup3D.shader.make_surface(surface, {
+            "base_color": soup3D.shader.MixChannel((1, 1), 1.0, 1.0, 1.0, 1.0),
+            "emission": (0, 0, 0),
+            "normal": (0.5, 0.5, 1),
+            "double_side": double_side,
+            "max_light_count": max_light_count
+        })
 
     # 处理obj文件
     obj_file = open(obj, 'r', encoding=encoding)
@@ -1344,7 +1379,7 @@ def open_obj(obj: str,
             if mtl is None and data:
                 mtl_path = os.path.join(os.path.dirname(obj), data[0])
                 if os.path.exists(mtl_path):
-                    mtl_dict = open_mtl(mtl_path, double_side, roll_funk, encoding, max_light_count, data_only=data_only)
+                    mtl_dict = open_mtl(mtl_path, double_side, roll_funk, encoding, max_light_count, surface=surface, data_only=data_only)
 
         # 处理材质使用
         elif prefix == 'usemtl':
@@ -1453,8 +1488,9 @@ def open_obj(obj: str,
             "face_groups": face_groups,
             "mtl_data": mtl_data,
             "default_material": _store_mtl_material(
-                1, 1, 1.0, 1.0, 1.0, 1.0, (0, 0, 0), None,
-                double_side, max_light_count, soup3D.shader.AutoSP),
+                _mtl_params(1, 1, 1.0, 1.0, 1.0, 1.0, (0, 0, 0), None,
+                            double_side, max_light_count, None, None, None, True),
+                surface),
             "double_side": double_side,
             "max_light_count": max_light_count,
         }
@@ -1924,7 +1960,7 @@ def _gltf_load_materials(gltf_data: dict, base_dir: str, double_side: bool, max_
     :param base_dir:       GLTF文件所在目录
     :param double_side:    是否启用双面渲染
     :param max_light_count: 最大光源数量
-    :param surface:        表面着色器类型
+    :param surface:        表面着色器类，加载器通过 shader.make_surface 动态适配其构造参数
     :param data_only:      是否只存储材质数据而不创建着色器对象
     :return: 材质字典 {材质索引: 着色器对象或材质数据字典}
     """
@@ -1954,6 +1990,16 @@ def _gltf_load_materials(gltf_data: dict, base_dir: str, double_side: bool, max_
         base_color = soup3D.shader.MixChannel((1, 1), 0.8, 0.8, 0.8, 1.0)
         base_color_data = ("solid", 1, 1, 0.8, 0.8, 0.8, 1.0)
         pbr = mat_info.get("pbrMetallicRoughness", {})
+        # PBR 参数(GLTF规范默认值: metallicFactor=1.0, roughnessFactor=1.0)
+        metallic = pbr.get("metallicFactor", 1.0)
+        roughness = pbr.get("roughnessFactor", 1.0)
+        ior = None
+        transmission = None
+        extensions = mat_info.get("extensions", {})
+        if "KHR_materials_ior" in extensions:
+            ior = float(extensions["KHR_materials_ior"].get("ior", 1.5))
+        if "KHR_materials_transmission" in extensions:
+            transmission = float(extensions["KHR_materials_transmission"].get("transmissionFactor", 1.0))
         base_color_tex = pbr.get("baseColorTexture", {})
         if base_color_tex:
             tex_idx = base_color_tex.get("index", -1)
@@ -1998,23 +2044,47 @@ def _gltf_load_materials(gltf_data: dict, base_dir: str, double_side: bool, max_
                         tex = soup3D.shader.Texture(img_bytes, width=w, height=h, format=fmt)
                         emission = tex
 
+        # 尝试获取法线贴图
+        normal = (0.5, 0.5, 1)
+        normal_tex = mat_info.get("normalTexture", {})
+        if normal_tex:
+            tex_idx = normal_tex.get("index", -1)
+            if 0 <= tex_idx < len(textures_data):
+                source_idx = textures_data[tex_idx].get("source", -1)
+                if 0 <= source_idx < len(loaded_images):
+                    img_array = loaded_images[source_idx]
+                    h, w = img_array.shape[:2]
+                    if len(img_array.shape) == 3 and img_array.shape[2] == 4:
+                        fmt = "RGBA"
+                    elif len(img_array.shape) == 3:
+                        fmt = "RGB"
+                    else:
+                        fmt = "L"
+                    img_bytes = img_array.tobytes()
+                    if data_only:
+                        normal = ("normal_tex", img_bytes, w, h, fmt)
+                    else:
+                        normal = soup3D.shader.Texture(img_bytes, width=w, height=h, format=fmt)
+
+        # 组装标准材质参数字典
+        params = {
+            "base_color": base_color_data if data_only else base_color,
+            "emission": emission,
+            "normal": normal,
+            "double_side": mat_double_side,
+            "max_light_count": max_light_count,
+            "metallic": metallic,
+            "roughness": roughness,
+        }
+        if ior is not None:
+            params["ior"] = ior
+        if transmission is not None:
+            params["transmission"] = transmission
+
         if data_only:
-            materials_dict[mat_idx] = {
-                "base_color": base_color_data,
-                "emission": emission,
-                "normal": (0.5, 0.5, 1),
-                "double_side": mat_double_side,
-                "max_light_count": max_light_count,
-                "surface": surface,
-            }
+            materials_dict[mat_idx] = {"params": params, "surface": surface}
         else:
-            materials_dict[mat_idx] = surface(
-                base_color=base_color,
-                emission=emission,
-                normal=(0.5, 0.5, 1),
-                double_side=mat_double_side,
-                max_light_count=max_light_count
-            )
+            materials_dict[mat_idx] = soup3D.shader.make_surface(surface, params)
 
     return materials_dict
 
@@ -2296,6 +2366,30 @@ def _gltf_build_skeleton(gltf_data: dict, world_transforms: list) -> soup3D.skel
     return skeleton
 
 
+def _transfer_surface_params(src_surface, dst_surface_class, **extra):
+    """
+    将表面着色器实例的材质参数转移到另一个表面着色器类的新实例，用于加载器的蒙皮转换
+    只转移双方共同支持的标准材质参数(SURFACE_MATERIAL_PARAMS)，extra中的额外参数
+    (如skeleton)也仅在目标类可接收时传入
+    :param src_surface:       来源表面着色器实例
+    :param dst_surface_class: 目标表面着色器类
+    :param extra:             额外参数
+    :return: 新的表面着色器实例
+    """
+    params = {}
+    for name in soup3D.shader.SURFACE_MATERIAL_PARAMS:
+        if name in vars(src_surface):
+            params[name] = vars(src_surface)[name]
+        elif hasattr(src_surface, name):
+            # 鸭子类型实例可能把参数存在其他属性组织里，回退到属性读取
+            try:
+                params[name] = getattr(src_surface, name)
+            except Exception:
+                pass
+    params.update(extra)
+    return soup3D.shader.make_surface(dst_surface_class, params)
+
+
 def open_gltf(
         gltf: str,
         double_side: bool = True,
@@ -2310,10 +2404,10 @@ def open_gltf(
     :param gltf:            gltf模型文件路径
     :param double_side:     是否启用双面渲染
     :param max_light_count: 该模型出现时会同时出现的最多的光源数量，大了会导致性能问题
-    :param surface:         模型使用的表面着色器类型，着色器需要有base_color, emission, normal, double_side,max_light_count等参
-                            数
-    :param skin:            模型使用的蒙皮着色器类型，着色器需要有skeleton, base_color, emission, normal, double_side,
-                            max_light_count等参数
+    :param surface:         模型使用的表面着色器类型，加载器会按其构造签名动态提供材质参数(base_color、emission、normal、double_side、
+                            max_light_count、roughness、metallic、ior、transmission)，不强制要求任何参数，不接收的参数会被自动过滤；
+                            也可以接收**kwargs以获取全部参数
+    :param skin:            模型使用的蒙皮着色器类型，参数规则同surface，另可在签名中声明skeleton参数以接收骨架
     :param data_only:       是否只创建模型和骨骼的数据结构，当为True时，则返回模型相关的数据，而不是模型和骨骼本身。当需要用一个文件创建多个
                             独立的模型时，则将该值设为True。
     :param resources:       需要返回的资源，当为列表或数组时，则按顺序返回带有所有需要的资源的数组。当为字符串时，则只返回一个需要的资源。字
@@ -2376,13 +2470,13 @@ def open_gltf(
     # 创建默认材质（data_only模式下不创建着色器对象）
     default_surface = None
     if not data_only:
-        default_surface = surface(
-            base_color=soup3D.shader.MixChannel((1, 1), 0.8, 0.8, 0.8, 1.0),
-            emission=(0, 0, 0),
-            normal=(0.5, 0.5, 1),
-            double_side=double_side,
-            max_light_count=max_light_count
-        )
+        default_surface = soup3D.shader.make_surface(surface, {
+            "base_color": soup3D.shader.MixChannel((1, 1), 0.8, 0.8, 0.8, 1.0),
+            "emission": (0, 0, 0),
+            "normal": (0.5, 0.5, 1),
+            "double_side": double_side,
+            "max_light_count": max_light_count
+        })
 
     # 处理所有网格
     all_faces = []
@@ -2466,16 +2560,9 @@ def open_gltf(
                     "material_idx": mat_idx,
                 })
             else:
-                # 根据是否有骨骼选择着色器类型
+                # 根据是否有骨骼选择着色器类型，蒙皮时按目标类动态转移材质参数
                 if prim_has_skin:
-                    face_surface = skin(
-                        base_color=prim_surface.base_color if hasattr(prim_surface, 'base_color') else soup3D.shader.MixChannel((1, 1), 0.8, 0.8, 0.8, 1.0),
-                        normal=prim_surface.normal if hasattr(prim_surface, 'normal') else (0.5, 0.5, 1),
-                        emission=prim_surface.emission if hasattr(prim_surface, 'emission') else (0, 0, 0),
-                        double_side=prim_surface.double_side if hasattr(prim_surface, 'double_side') else double_side,
-                        max_light_count=max_light_count,
-                        skeleton=skeleton
-                    )
+                    face_surface = _transfer_surface_params(prim_surface, skin, skeleton=skeleton)
                 else:
                     face_surface = prim_surface
 

@@ -17,10 +17,13 @@
 - [_build_channel_value(val)](_build_channel_value.md): `函数`   
 - [_build_base_color(bc_data)](_build_base_color.md): `函数`   
 - [_build_surface_arg(val)](_build_surface_arg.md): `函数`   
+- [_build_stored_surface(mat_info)](_build_stored_surface.md): `函数`
 - [_make_mtl_data(data)](_make_mtl_data.md): `函数`   
 - [_make_obj_data(data)](_make_obj_data.md): `函数`   
 - [_make_gltf_skeleton(data)](_make_gltf_skeleton.md): `函数`   
 - [_build_gltf_base_color(bc_data)](_build_gltf_base_color.md): `函数`   
+- [_build_gltf_normal(nd)](_build_gltf_normal.md): `函数`
+- [_build_gltf_params(mat_info)](_build_gltf_params.md): `函数`
 - [_build_gltf_emission(emi_data)](_build_gltf_emission.md): `函数`   
 - [_make_gltf_data(data)](_make_gltf_data.md): `函数`   
 - [init(width, height, fov, bg_color, near, far)](init.md): `函数`   
@@ -30,9 +33,10 @@
 - [_render_fullscreen_image(img)](_render_fullscreen_image.md): `函数`   
 - [update()](update.md): `函数`   
 - [gen_skeleton_model(_skeleton, bone_color, size)](gen_skeleton_model.md): `函数`   
-- [_store_mtl_material(width, height, R, G, B, A, emission, bump_texture, double_side, max_light_count, surface)](_store_mtl_material.md): `函数`   
+- [_mtl_params(width, height, R, G, B, A, emission, bump_texture, double_side, max_light_count, ior, roughness, metallic, data_only)](_mtl_params.md): `函数`
+- [_store_mtl_material(params, surface)](_store_mtl_material.md): `函数`
 - [open_mtl(mtl, double_side, roll_funk, encoding, max_light_count, surface, data_only)](open_mtl.md): `函数`   
-- [open_obj(obj, mtl, double_side, roll_funk, encoding, max_light_count, data_only)](open_obj.md): `函数`   
+- [open_obj(obj, mtl, double_side, roll_funk, encoding, max_light_count, data_only, surface)](open_obj.md): `函数`
 - [_gltf_component_size(component_type)](_gltf_component_size.md): `函数`   
 - [_gltf_component_count(accessor_type)](_gltf_component_count.md): `函数`   
 - [_gltf_read_animation_sampler(gltf_data, buffers_data, sampler)](_gltf_read_animation_sampler.md): `函数`   
@@ -51,6 +55,7 @@
 - [_gltf_store_bone_recursive(joint_idx, nodes, world_transforms, joint_names, children_map, bones_data)](_gltf_store_bone_recursive.md): `函数`   
 - [_gltf_store_skeleton(gltf_data, world_transforms)](_gltf_store_skeleton.md): `函数`   
 - [_gltf_build_skeleton(gltf_data, world_transforms)](_gltf_build_skeleton.md): `函数`   
+- [_transfer_surface_params(src_surface, dst_surface_class, **extra)](_transfer_surface_params.md): `函数`
 - [open_gltf(gltf, double_side, max_light_count, surface, skin, data_only, resources)](open_gltf.md): `函数`   
 - [get_projection_mat()](get_projection_mat.md): `函数`   
 - [smart_split(line)](smart_split.md): `函数`   

@@ -8,10 +8,8 @@
 :param gltf:            gltf模型文件路径   
 :param double_side:     是否启用双面渲染   
 :param max_light_count: 该模型出现时会同时出现的最多的光源数量，大了会导致性能问题   
-:param surface:         模型使用的表面着色器类型，着色器需要有base_color, emission, normal, double_side,max_light_count等参   
-                        数   
-:param skin:            模型使用的蒙皮着色器类型，着色器需要有skeleton, base_color, emission, normal, double_side,   
-                        max_light_count等参数   
+:param surface: 模型使用的表面着色器类型，加载器按其构造签名动态提供材质参数(base_color、emission、normal、double_side、max_light_count、roughness、metallic、ior、transmission)，不强制任何参数，不接收的参数自动过滤，可声明**kwargs接收全部
+:param skin: 模型使用的蒙皮着色器，参数规则同surface，另可在签名行声明skeleton参数以接收骨架
 :param data_only:       是否只创建模型和骨骼的数据结构，当为True时，则返回模型相关的数据，而不是模型和骨骼本身。当需要用一个文件创建多个   
                         独立的模型时，则将该值设为True。   
 :param resources:       需要返回的资源，当为列表或数组时，则按顺序返回带有所有需要的资源的数组。当为字符串时，则只返回一个需要的资源。字   

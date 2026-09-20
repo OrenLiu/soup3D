@@ -12,6 +12,6 @@
                    "triangle_b": 不相连三角形   
                    "triangle_s": 相连三角形   
                    "triangle_l": 头尾相连的连续三角形   
-:param surface:    表面使用的着色器   
+:param surface:    表面使用的着色器，可以是ShaderProgram、AutoSP，或任何提供rend(mode, vertex)方法的对象
 :param vertex:     表面中所有的顶点，格式由surface参数指定的着色器决定   
    
