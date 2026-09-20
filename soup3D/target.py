@@ -6,33 +6,14 @@
 """
 from OpenGL.GL import *
 import numpy as np
+import soup3D.name
 
 # 颜色格式映射：名称 -> (内部格式, 数据上传/回读类型, 回读 numpy dtype)
 _COLOR_FORMATS = {
-    "rgba8": (GL_RGBA8, GL_UNSIGNED_BYTE, np.uint8),
-    "rgba16f": (GL_RGBA16F, GL_FLOAT, np.float32),
-    "rgba32f": (GL_RGBA32F, GL_FLOAT, np.float32),
+    soup3D.name.RGBA8: (GL_RGBA8, GL_UNSIGNED_BYTE, np.uint8),
+    soup3D.name.RGBA16F: (GL_RGBA16F, GL_FLOAT, np.float32),
+    soup3D.name.RGBA32F: (GL_RGBA32F, GL_FLOAT, np.float32),
 }
-
-# present() 用的直通着色器：全屏三角形（gl_VertexID，无需顶点缓冲）
-_PRESENT_VS = """#version 330 core
-out vec2 UV;
-void main() {
-    vec2 pos = vec2(float((gl_VertexID << 1) & 2), float(gl_VertexID & 2));
-    UV = pos;
-    gl_Position = vec4(pos * 2.0 - 1.0, 0.0, 1.0);
-}
-"""
-
-_PRESENT_FS = """#version 330 core
-in vec2 UV;
-out vec4 FragColor;
-uniform sampler2D targetTex;
-void main() {
-    // 直通采样：不做任何色彩空间转换
-    FragColor = texture(targetTex, UV);
-}
-"""
 
 # 惰性创建的共享 present 着色器程序（模块级缓存；需在 GL 上下文就绪后创建）
 _present_program = None
@@ -67,11 +48,30 @@ def _ensure_present_program() -> int:
     if _present_program is not None:
         return _present_program
     vs = glCreateShader(GL_VERTEX_SHADER)
-    glShaderSource(vs, _PRESENT_VS)
+    present_vs = """
+        #version 330 core
+        out vec2 UV;
+        void main() {
+            vec2 pos = vec2(float((gl_VertexID << 1) & 2), float(gl_VertexID & 2));
+            UV = pos;
+            gl_Position = vec4(pos * 2.0 - 1.0, 0.0, 1.0);
+        }
+    """
+    glShaderSource(vs, present_vs)
     glCompileShader(vs)
     _check_shader_compile(vs, "vertex")
     fs = glCreateShader(GL_FRAGMENT_SHADER)
-    glShaderSource(fs, _PRESENT_FS)
+    present_fs = """
+        #version 330 core
+        in vec2 UV;
+        out vec4 FragColor;
+        uniform sampler2D targetTex;
+        void main() {
+            // 直通采样：不做任何色彩空间转换
+            FragColor = texture(targetTex, UV);
+        }
+    """
+    glShaderSource(fs, present_fs)
     glCompileShader(fs)
     _check_shader_compile(fs, "fragment")
     _present_program = int(glCreateProgram())
@@ -156,10 +156,10 @@ class RenderTarget:
 
         self.width = width
         self.height = height
-        self._format = color
-        self._depth_mode = depth
-        self._bound = False
-        self._saved_state = None
+        self.format = color
+        self.depth_mode = depth
+        self.bound = False
+        self.saved_state = None
 
         internal_format, upload_type, read_dtype = _COLOR_FORMATS[color]
 
@@ -224,9 +224,9 @@ class RenderTarget:
         绑定渲染目标：保存当前 viewport / FBO 绑定 / draw buffer 状态并切换到本目标，
         viewport 跟随目标尺寸；不修改深度测试等绘制状态。
         """
-        if self._bound:
+        if self.bound:
             raise RuntimeError("RenderTarget is already bound")
-        self._saved_state = (
+        self.saved_state = (
             tuple(int(v) for v in glGetIntegerv(GL_VIEWPORT)),
             _gl_scalar(glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING)),
             _gl_scalar(glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING)),
@@ -235,22 +235,22 @@ class RenderTarget:
         )
         glBindFramebuffer(GL_FRAMEBUFFER, self._fbo)
         glViewport(0, 0, self.width, self.height)
-        self._bound = True
+        self.bound = True
 
     def unbind(self):
         """
         解绑渲染目标：恢复 bind 保存的 viewport / FBO 绑定 / draw buffer 状态
         """
-        if not self._bound:
+        if not self.bound:
             raise RuntimeError("RenderTarget is not bound")
-        viewport, draw_fbo, read_fbo, draw_buf, read_buf = self._saved_state
+        viewport, draw_fbo, read_fbo, draw_buf, read_buf = self.saved_state
         glBindFramebuffer(GL_DRAW_FRAMEBUFFER, draw_fbo)
         glBindFramebuffer(GL_READ_FRAMEBUFFER, read_fbo)
         glDrawBuffer(draw_buf)
         glReadBuffer(read_buf)
         glViewport(viewport[0], viewport[1], viewport[2], viewport[3])
-        self._bound = False
-        self._saved_state = None
+        self.bound = False
+        self.saved_state = None
 
     def __enter__(self):
         self.bind()
@@ -265,7 +265,7 @@ class RenderTarget:
         回读颜色附着像素（顶原点行序），供测试与截图
         :return: (height, width, 4) numpy 数组；rgba8 为 uint8，浮点格式为 float32
         """
-        _, read_type, read_dtype = _COLOR_FORMATS[self._format]
+        _, read_type, read_dtype = _COLOR_FORMATS[self.format]
         prev_read_fbo = _gl_scalar(glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING))
         glBindFramebuffer(GL_READ_FRAMEBUFFER, self._fbo)
         raw = glReadPixels(0, 0, self.width, self.height, GL_RGBA, read_type)

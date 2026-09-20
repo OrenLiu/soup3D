@@ -13,7 +13,7 @@ import imageio.v2 as imageio
 
 import soup3D.name
 import soup3D.skeleton
-import soup3D.render_target
+import soup3D.target
 
 
 set_mat_queue = weakref.WeakValueDictionary()
@@ -745,7 +745,7 @@ class ShaderProgram:
         """
         if not isinstance(v_name, str):
             raise TypeError("v_name must be a string")
-        if not isinstance(texture, (Texture, MixChannel, soup3D.render_target.RenderTargetTexture)):
+        if not isinstance(texture, (Texture, MixChannel, soup3D.target.RenderTargetTexture)):
             raise TypeError("texture must be a Texture, MixChannel or RenderTargetTexture instance")
         if not isinstance(texture_unit, int):
             raise TypeError("texture_unit must be an int")

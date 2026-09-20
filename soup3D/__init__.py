@@ -21,17 +21,17 @@ import soup3D.light
 import soup3D.ui
 import soup3D.skeleton
 import soup3D.s3dm
-import soup3D.render_target
-import soup3D.scene  # 场景快照：供外部渲染消费方零侵入导出引擎场景状态
-from soup3D.s3dm import quat_to_mat4 as _quat_to_mat4
+import soup3D.target
+import soup3D.scene
+from soup3D.s3dm import *
 from soup3D.name import *
 
 # 顶层导出渲染目标类，供文档示例与消费方直接以 soup3D.RenderTarget 使用
-RenderTarget = render_target.RenderTarget
+RenderTarget = soup3D.target.RenderTarget
 
 # 顶层导出场景快照接口，供外部渲染消费方以 soup3D.scene_snapshot 使用
-scene_snapshot = scene.scene_snapshot
-SceneSnapshot = scene.SceneSnapshot
+scene_snapshot = soup3D.scene.scene_snapshot
+SceneSnapshot = soup3D.scene.SceneSnapshot
 
 render_queue: list["Model"] = []  # 单次渲染队列
 stable_shapes = {}                # 固定渲染队列
@@ -836,91 +836,58 @@ def _render_fullscreen_image(img: soup3D.shader.Img) -> None:
     glPopMatrix()
 
 
-class FrameRenderer(Protocol):
-    """
-    帧级渲染器协议（FrameRenderer Protocol）。实现 on_frame 方法的对象即视为实现该协议，
-    通过 update(render=渲染器对象) 传入后接管一帧的完整画面输出。
-    引擎在 on_frame 前后保存/恢复自身依赖的 GL 状态
-    （BLEND、深度测试、清屏色、viewport、FBO 绑定），渲染器内部可自由修改这些状态；
-    矩阵栈与着色器程序绑定不在恢复范围内。
-    自定义帧不会自动消费 render_queue / EAU（单帧模型与更新回调的处置权在渲染器，
-    可在 on_frame 内调用 soup3D.update() 复用默认渲染主体）。
-    渲染器可访问的数据：
-    - 相机：soup3D.camera.X/Y/Z（位置）、soup3D.camera.QUAT（朝向四元数）、soup3D.proj_fov（视野角）
-    - 场景：soup3D.stable_shapes / soup3D.render_queue 中的模型（Model.face_groups
-      按表面分组的面数据，材质 Kd=surface.base_color，Ke=surface.emission）
-    """
+def frame_render():
+    global render_queue, EAU
 
-    def on_frame(self) -> None:
-        """
-        接管本帧全部画面输出，包括清屏。
-        :return: None
-        """
-        ...
+    # 清空画布
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
 
+    # 设置光源
+    if soup3D.light.dirty:
+        soup3D.light.set_surface_light()
 
-class DefaultFrameRenderer:
-    """
-    引擎内置默认渲染器：原 update() 的渲染主体（清屏+渲染队列+UI）原样迁入，
-    render=None 时与修改前的 update() 逐像素一致。
-    """
+    # 执行更新执行列队
+    EAU += soup3D.light.EAU
 
-    def on_frame(self) -> None:
-        global render_queue, EAU
+    EAU_len = len(EAU)  # 调用列队前列队的长度
+    for args in EAU:
+        args[0](*args[1:])
+        if EAU_len != len(EAU):
+            raise Exception(f"EAU length changed while running: {args[0].__name__}{(*args[1:],)}")
 
-        # 清空画布
-        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
+    EAU = []
+    soup3D.light.EAU = []
 
-        # 设置光源
-        if soup3D.light.dirty:
-            soup3D.light.set_surface_light()
+    # 渲染固定渲染物体
+    for shape_id in stable_shapes:
+        model = stable_shapes[shape_id]
+        for shape in model.faces:
+            surface: soup3D.shader.Surface = shape.surface
+            if surface.is_dirty():
+                surface.update()
+        glCallList(model.list_id)
 
-        # 执行更新执行列队
-        EAU += soup3D.light.EAU
+    # 渲染单帧渲染物体
+    for model in render_queue:
+        for shape in model.faces:
+            surface: soup3D.shader.Surface = shape.surface
+            if surface.is_dirty():
+                surface.update()
+        glCallList(model.list_id)
 
-        EAU_len = len(EAU)  # 调用列队前列队的长度
-        for args in EAU:
-            args[0](*args[1:])
-            if EAU_len != len(EAU):
-                raise Exception(f"EAU length changed while running: {args[0].__name__}{(*args[1:],)}")
+    # 清空渲染队列
+    render_queue = []
 
-        EAU = []
-        light.EAU = []
+    # 渲染 ui 界面
+    for i in soup3D.ui.render_queue:
+        _paint_ui(*i)
 
-        # 渲染固定渲染物体
-        for shape_id in stable_shapes:
-            model = stable_shapes[shape_id]
-            for shape in model.faces:
-                surface: soup3D.shader.Surface = shape.surface
-                if surface.is_dirty():
-                    surface.update()
-            glCallList(model.list_id)
+    # 渲染全屏叠加图像
+    if soup3D.ui.fullscreen_img is not None:
+        _render_fullscreen_image(soup3D.ui.fullscreen_img)
 
-        # 渲染单帧渲染物体
-        for model in render_queue:
-            for shape in model.faces:
-                surface: soup3D.shader.Surface = shape.surface
-                if surface.is_dirty():
-                    surface.update()
-            glCallList(model.list_id)
-
-        # 清空渲染队列
-        render_queue = []
-
-        # 渲染 ui 界面
-        for i in soup3D.ui.render_queue:
-            _paint_ui(*i)
-
-        # 渲染全屏叠加图像
-        if soup3D.ui.fullscreen_img is not None:
-            _render_fullscreen_image(soup3D.ui.fullscreen_img)
-
-        # 清空 ui 渲染列队
-        soup3D.ui.render_queue = []
-
-
-# 引擎内置默认渲染器实例（update(render=None) 时调用其 on_frame）
-_default_frame_renderer = DefaultFrameRenderer()
+    # 清空 ui 渲染列队
+    soup3D.ui.render_queue = []
 
 
 def _gl_scalar(value) -> int:
@@ -956,7 +923,7 @@ def _restore_frame_gl_state(state: tuple) -> None:
     glPopAttrib()
 
 
-def update(render: FrameRenderer | None = None, target: "RenderTarget | None" = None) -> None:
+def update(render=None, target: "RenderTarget | None" = None) -> None:
     """
     更新画布。
     :param render: 帧级渲染器（实现 FrameRenderer 协议：有 on_frame 方法即可）。
@@ -970,18 +937,16 @@ def update(render: FrameRenderer | None = None, target: "RenderTarget | None" = 
     if render is not None and target is not None:
         raise ValueError("render and target are mutually exclusive")
     if render is None and target is None:
-        _default_frame_renderer.on_frame()
+        frame_render()
         return
 
     if target is not None:
-        # 渲染目标路径：目标未绑定时由本函数管理绑定（bind 保存状态 → 渲染主体原样执行 → finally unbind 恢复）；
-        # 调用方已通过 with / bind() 绑定时沿用当前绑定（bind 重复绑定会抛错，文档示例即 with + update(target=) 组合）
-        if target._bound:
-            _default_frame_renderer.on_frame()
+        if target.bound:
+            frame_render()
         else:
             target.bind()
             try:
-                _default_frame_renderer.on_frame()
+                frame_render()
             finally:
                 target.unbind()
         return
@@ -1806,7 +1771,7 @@ def _gltf_load_animation(gltf_data: dict, buffers_data: list, world_transforms: 
                 s = nodes[node_idx].get("scale", [1, 1, 1])
 
             local = glm.translate(glm.mat4(1.0), glm.vec3(*t))
-            rot_mat = _quat_to_mat4(r[0], r[1], r[2], r[3])
+            rot_mat = quat_to_mat4(r[0], r[1], r[2], r[3])
             local = local * rot_mat
             local = glm.scale(local, glm.vec3(*s))
 
@@ -1840,7 +1805,7 @@ def _gltf_load_animation(gltf_data: dict, buffers_data: list, world_transforms: 
                     ps = nodes[parent_idx].get("scale", [1, 1, 1])
 
                 parent_local = glm.translate(glm.mat4(1.0), glm.vec3(*pt))
-                parent_rot_mat = _quat_to_mat4(pr[0], pr[1], pr[2], pr[3])
+                parent_rot_mat = quat_to_mat4(pr[0], pr[1], pr[2], pr[3])
                 parent_local = parent_local * parent_rot_mat
                 parent_local = glm.scale(parent_local, glm.vec3(*ps))
 
@@ -2068,7 +2033,7 @@ def _gltf_build_node_transform(node: dict) -> glm.mat4:
 
     # 旋转（四元数）
     r = node.get("rotation", [0, 0, 0, 1])
-    rot_mat = _quat_to_mat4(r[0], r[1], r[2], r[3])
+    rot_mat = quat_to_mat4(r[0], r[1], r[2], r[3])
     mat = mat * rot_mat
 
     # 缩放

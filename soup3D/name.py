@@ -66,3 +66,8 @@ BORDER = "border"      # 超出边缘后
 MESH = "mesh"
 SKELETON = "skeleton"
 ANIMATION = "animation"
+
+# color
+RGBA8 = "rgba8"
+RGBA16F = "rgba16f"
+RGBA32F = "rgba32f"

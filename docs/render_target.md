@@ -14,14 +14,14 @@
 
 ```python
 import soup3D
-import soup3D.render_target
+import soup3D.target
 
 soup3D.init(width=800, height=600)
 rt = soup3D.RenderTarget(800, 600, "rgba16f", "renderbuffer")
 with rt:
     soup3D.update(target=rt)
-pixels = rt.to_pixels()          # (600, 800, 4) float32，顶原点行序
-rt.present()                     # 或把结果直通显示到窗口
+pixels = rt.to_pixels()  # (600, 800, 4) float32，顶原点行序
+rt.present()  # 或把结果直通显示到窗口
 soup3D.update()
 ```
 
