@@ -956,7 +956,7 @@ def update(render=None, target: "RenderTarget | None" = None) -> None:
     # 自定义帧级渲染器：保存状态 → 渲染器接管整帧 → finally 恢复状态
     state = _save_frame_gl_state()
     try:
-        render.on_frame()
+        render()
     finally:
         _restore_frame_gl_state(state)
 
