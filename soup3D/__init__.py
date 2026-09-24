@@ -1048,7 +1048,7 @@ def gen_skeleton_model(_skeleton: soup3D.skeleton.Skeleton | dict, bone_color=No
     return model
 
 
-def _mtl_params(width, height, R, G, B, A, emission, bump_texture, double_side, max_light_count, ior, roughness, metallic, data_only) -> dict:
+def _mtl_params(width, height, R, G, B, A, emission, bump_texture, double_side, max_light_count, ior, roughness, metallic, shininess, illum, data_only) -> dict:
     """
     根据MTL解析状态构建表面着色器参数字典，数据模式(data_only)下产出可存储的数据形式
     :param width:           纹理宽度
@@ -1064,6 +1064,8 @@ def _mtl_params(width, height, R, G, B, A, emission, bump_texture, double_side, 
     :param ior:             MTL的Ni值(折射率)，文件未提供时为None
     :param roughness:       MTL的Pr值(粗糙度)，文件未提供时为None
     :param metallic:        MTL的Pm值(金属度)，文件未提供时为None
+    :param shininess:       MTL的Ns值(高光指数)，文件未提供时为None
+    :param illum:           MTL的illum值(光照模式)，文件未提供时为None
     :param data_only:       是否为数据存储模式
     :return: 材质数据字典
     """
@@ -1084,6 +1086,10 @@ def _mtl_params(width, height, R, G, B, A, emission, bump_texture, double_side, 
         params["roughness"] = roughness
     if metallic is not None:
         params["metallic"] = metallic
+    if shininess is not None:
+        params["shininess"] = shininess
+    if illum is not None:
+        params["illum"] = illum
     return params
 
 
@@ -1150,6 +1156,8 @@ def open_mtl(mtl: str,
     ior = None
     roughness = None
     metallic = None
+    shininess = None
+    illum = None
     roll_count = 0
 
     for row in command_lines:
@@ -1162,7 +1170,7 @@ def open_mtl(mtl: str,
             if args[0] == "newmtl":
                 if now_mtl is not None:
                     params = _mtl_params(width, height, R, G, B, A, emission, bump_texture,
-                                         double_side, max_light_count, ior, roughness, metallic, data_only)
+                                         double_side, max_light_count, ior, roughness, metallic, shininess, illum, data_only)
                     if data_only:
                         mtl_dict[now_mtl] = _store_mtl_material(params, surface)
                     else:
@@ -1175,6 +1183,8 @@ def open_mtl(mtl: str,
                     ior = None
                     roughness = None
                     metallic = None
+                    shininess = None
+                    illum = None
                 now_mtl = args[1]
             if args[0] == "Kd":
                 R, G, B = float(args[1]), float(args[2]), float(args[3])
@@ -1188,6 +1198,10 @@ def open_mtl(mtl: str,
                 roughness = float(args[1])
             if args[0] == "Pm":
                 metallic = float(args[1])
+            if args[0] == "Ns":
+                shininess = float(args[1])
+            if args[0] == "illum":
+                illum = int(float(args[1]))
             if args[0] == "map_Kd":
                 base_dir = os.path.dirname(mtl)
                 tex_path = (os.path.join(base_dir, args[1]))
@@ -1242,7 +1256,7 @@ def open_mtl(mtl: str,
     # 添加最后一个材质
     if now_mtl is not None:
         params = _mtl_params(width, height, R, G, B, A, emission, bump_texture,
-                             double_side, max_light_count, ior, roughness, metallic, data_only)
+                             double_side, max_light_count, ior, roughness, metallic, shininess, illum, data_only)
         if data_only:
             mtl_dict[now_mtl] = _store_mtl_material(params, surface)
         else:
@@ -1489,7 +1503,7 @@ def open_obj(obj: str,
             "mtl_data": mtl_data,
             "default_material": _store_mtl_material(
                 _mtl_params(1, 1, 1.0, 1.0, 1.0, 1.0, (0, 0, 0), None,
-                            double_side, max_light_count, None, None, None, True),
+                            double_side, max_light_count, None, None, None, None, None, True),
                 surface),
             "double_side": double_side,
             "max_light_count": max_light_count,

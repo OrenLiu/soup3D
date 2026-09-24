@@ -1830,7 +1830,7 @@ class BoneBinderSP(AutoSP):
 # 标准材质参数名:模型文件加载器会尽量提供这些参数，表面着色器类按需声明接收其中的任意子集
 SURFACE_MATERIAL_PARAMS = (
     "base_color", "normal", "emission", "double_side", "max_light_count",
-    "roughness", "metallic", "ior", "transmission",
+    "roughness", "metallic", "ior", "transmission", "shininess", "illum",
 )
 
 # 表面着色器类的参数内省缓存，键为类或工厂函数，值为(可接收参数集合或None, 必填参数名元组)，

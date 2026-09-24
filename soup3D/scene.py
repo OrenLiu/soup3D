@@ -71,13 +71,14 @@ def _unfold_indices(count: int, shape_type: str) -> list:
 
 
 def _face_vertex_arrays(verts, is_skin: bool) -> tuple:
-    """从面顶点列表提取局部位置/法线数组 (n,3)。
-    蒙皮面 (权重字典, x,y,z, u,v[,nx,ny,nz])：位置 [1:4]、法线 [6:9]；
-    普通面 (x,y,z,u,v[,nx,ny,nz])：位置 [0:3]、法线 [5:8]。
-    法线缺失时按 rend() 同语义回退 (0,0,1)。"""
+    """从面顶点列表提取局部位置/法线/UV 数组。
+    蒙皮面 (权重字典, x,y,z, u,v[,nx,ny,nz])：位置 [1:4]、法线 [6:9]、UV [4:6]；
+    普通面 (x,y,z,u,v[,nx,ny,nz])：位置 [0:3]、法线 [5:8]、UV [3:5]。
+    法线缺失时按 rend() 同语义回退 (0,0,1)，UV 缺失时回退 (0,0)。"""
     n = len(verts)
     pos = np.empty((n, 3), dtype=np.float32)
     nrm = np.empty((n, 3), dtype=np.float32)
+    uv = np.zeros((n, 2), dtype=np.float32)
     for i, v in enumerate(verts):
         b = 1 if is_skin else 0
         pos[i] = (v[b], v[b + 1], v[b + 2])
@@ -85,19 +86,22 @@ def _face_vertex_arrays(verts, is_skin: bool) -> tuple:
             nrm[i] = (v[b + 5], v[b + 6], v[b + 7])
         else:
             nrm[i] = (0.0, 0.0, 1.0)
-    return pos, nrm
+        if len(v) >= b + 5:
+            uv[i] = (v[b + 3], v[b + 4])
+    return pos, nrm, uv
 
 
 def _skin_face(verts, skeleton, mats_np: np.ndarray) -> tuple:
     """CPU 蒙皮：镜像 BoneBinderSP.rend() 的权重语义（按权重排序取前 4 + 归一化）。
     位置 = Σ w·B·p（totalWeight<0.001 时恒等），法线 = 逆转置(Σ w·B₃)·n。
     :param mats_np: 骨骼矩阵堆叠 (B,4,4) float32
-    :return: (位置 (n,3), 法线 (n,3))，均为局部系未归一化法线"""
+    :return: (位置 (n,3), 法线 (n,3), UV (n,2))，均为局部系未归一化法线，UV 直通不参与蒙皮"""
     n = len(verts)
     ids = np.zeros((n, 4), dtype=np.int32)
     ws = np.zeros((n, 4), dtype=np.float32)
     P = np.empty((n, 3), dtype=np.float32)
     N = np.empty((n, 3), dtype=np.float32)
+    U = np.zeros((n, 2), dtype=np.float32)
     for i, v in enumerate(verts):
         d = v[0] if isinstance(v[0], dict) else {}
         pairs = []
@@ -118,6 +122,8 @@ def _skin_face(verts, skeleton, mats_np: np.ndarray) -> tuple:
             N[i] = (v[6], v[7], v[8])
         else:
             N[i] = (0.0, 0.0, 1.0)
+        if len(v) >= 6:
+            U[i] = (v[4], v[5])
     ph = np.concatenate([P, np.ones((n, 1), dtype=np.float32)], axis=1)
     pos = np.zeros((n, 3), dtype=np.float32)
     skin3 = np.zeros((n, 3, 3), dtype=np.float32)
@@ -140,7 +146,7 @@ def _skin_face(verts, skeleton, mats_np: np.ndarray) -> tuple:
             except np.linalg.LinAlgError:
                 nit[i] = np.eye(3, dtype=np.float32)
     nrm = np.einsum('nij,nj->ni', nit, N)
-    return pos, nrm
+    return pos, nrm, U
 
 
 def _register_material(surface, mat_table: dict, mat_kd: list, mat_ke: list,
@@ -164,7 +170,7 @@ def _extract_model(model, skinned_mode: bool, mat_table: dict, mat_kd: list,
                    mat_ke: list, mat_flat: list, mat_tex: list) -> tuple:
     """导出单个模型的三角形与骨骼。
     :return: (tri_pts list[(3,3)元组], tri_nrm list[(3,)×3], tri_mats list[int],
-              骨骼矩阵 (B,4,4) 或 None)"""
+              tri_uvs list[((2,)×3)元组], 骨骼矩阵 (B,4,4) 或 None)"""
     m_glm = model.get_model_mat()
     m_np = _mat4_to_numpy(m_glm)
     m3 = m_np[:3, :3]
@@ -172,6 +178,7 @@ def _extract_model(model, skinned_mode: bool, mat_table: dict, mat_kd: list,
     tri_pts = []
     tri_nrm_rows = []
     tri_mats = []
+    tri_uvs = []
     skel_mats = None
     for face in model.faces:
         surface = face.surface
@@ -184,9 +191,9 @@ def _extract_model(model, skinned_mode: bool, mat_table: dict, mat_kd: list,
             mats = surface.skeleton.get_bone_matrices()
             skel_mats = np.stack([_mat4_to_numpy(bm) for bm in mats]) if mats else None
         if is_skin and skinned_mode and skel_mats is not None:
-            pos, nrm = _skin_face(face.vertex, surface.skeleton, skel_mats)
+            pos, nrm, uv = _skin_face(face.vertex, surface.skeleton, skel_mats)
         else:
-            pos, nrm = _face_vertex_arrays(face.vertex, is_skin)
+            pos, nrm, uv = _face_vertex_arrays(face.vertex, is_skin)
         for (a, b, c) in idx:
             pts = []
             nm = []
@@ -201,7 +208,8 @@ def _extract_model(model, skinned_mode: bool, mat_table: dict, mat_kd: list,
             tri_pts.append((pts[0], pts[1], pts[2]))
             tri_nrm_rows.extend(nm)
             tri_mats.append(mi)
-    return tri_pts, tri_nrm_rows, tri_mats, skel_mats
+            tri_uvs.append((uv[a], uv[b], uv[c]))
+    return tri_pts, tri_nrm_rows, tri_mats, tri_uvs, skel_mats
 
 
 class SceneSnapshot:
@@ -218,6 +226,7 @@ class SceneSnapshot:
     - triangle_count: 三角形总数 N
     - triangles: (N,3,3)，世界空间三角形顶点（局部顶点×模型矩阵，glm 同源变换）
     - normals: (N,3,3)，世界空间顶点法线（逆转置变换后归一化）
+    - triangle_uvs: (N,3,2)，各三角形三顶点 UV（引擎顶点存储原值，OBJ 为 (u, -v)；缺失补 (0,0)）
     - tri_model: (N,) int32，每三角形所属模型号
     - tri_material: (N,) int32，每三角形材质号（材质表索引）
     材质（与 AutoSP 表面同源，纹理表面 flat=False）：
@@ -240,7 +249,7 @@ class SceneSnapshot:
     """
 
     def __init__(self, model_ids, model_mats, model_skinned, model_skeletons,
-                 triangles, normals, tri_model, tri_material,
+                 triangles, normals, tri_model, tri_material, triangle_uvs,
                  material_kd, material_ke, material_flat, material_textures,
                  ambient, direct_dirs, direct_colors,
                  cone_positions, cone_directions, cone_colors, cone_attenuations,
@@ -253,6 +262,7 @@ class SceneSnapshot:
         self.model_skeletons = model_skeletons
         self.triangle_count = int(triangles.shape[0])
         self.triangles = triangles
+        self.triangle_uvs = triangle_uvs
         self.normals = normals
         self.tri_model = tri_model
         self.tri_material = tri_material
@@ -300,6 +310,7 @@ def scene_snapshot(skinned: bool = False) -> 'SceneSnapshot':
     tri_pts = []
     tri_nrm_rows = []
     tri_mats = []
+    tri_uvs = []
     tri_models = []
     model_ids = []
     model_mats_list = []
@@ -319,11 +330,12 @@ def scene_snapshot(skinned: bool = False) -> 'SceneSnapshot':
         model_ids.append(id(mdl))
         model_mats_list.append(_mat4_to_numpy(mdl.get_model_mat()))
     for midx, mdl in enumerate(models):
-        pts, nrm_rows, mats, skel = _extract_model(
+        pts, nrm_rows, mats, uvs, skel = _extract_model(
             mdl, skinned, mat_table, mat_kd, mat_ke, mat_flat, mat_tex)
         tri_pts.extend(pts)
         tri_nrm_rows.extend(nrm_rows)
         tri_mats.extend(mats)
+        tri_uvs.extend(uvs)
         tri_models.extend([midx] * len(pts))
         model_skinned.append(skel is not None)
         skel_list.append(skel)
@@ -331,6 +343,7 @@ def scene_snapshot(skinned: bool = False) -> 'SceneSnapshot':
     normals = np.array(tri_nrm_rows, dtype=np.float32).reshape(-1, 3, 3)
     tri_model_arr = np.array(tri_models, dtype=np.int32)
     tri_material_arr = np.array(tri_mats, dtype=np.int32)
+    triangle_uvs_arr = np.array(tri_uvs, dtype=np.float32).reshape(-1, 3, 2)
     material_kd_arr = np.array(mat_kd, dtype=np.float32).reshape(-1, 4)
     material_ke_arr = np.array(mat_ke, dtype=np.float32).reshape(-1, 3)
     material_flat_arr = np.array(mat_flat, dtype=bool)
@@ -364,7 +377,7 @@ def scene_snapshot(skinned: bool = False) -> 'SceneSnapshot':
     view_np = _mat4_to_numpy(soup3D.camera.get_view_mat())
     snap = SceneSnapshot(
         model_ids, mats_np, skinned_arr, skel_list,
-        triangles, normals, tri_model_arr, tri_material_arr,
+        triangles, normals, tri_model_arr, tri_material_arr, triangle_uvs_arr,
         material_kd_arr, material_ke_arr, material_flat_arr, mat_tex,
         ambient_np,
         np.array(d_dirs, dtype=np.float32).reshape(-1, 3),
