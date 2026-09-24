@@ -1,6 +1,6 @@
 """
 调用：soup3D
-这是一个基于OpenGL和pygame开发的3D引擎，易于新手学习，可
+这是一个基于OpenGL开发的3D引擎，易于新手学习，可
 用于3D游戏开发、数据可视化、3D图形的绘制等开发。
 """
 from OpenGL.GL import *

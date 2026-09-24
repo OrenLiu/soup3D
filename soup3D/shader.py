@@ -874,7 +874,7 @@ class AutoSP:
                  max_light_count: int = 8,
                  shader_program: ShaderProgram | None = None):
         """
-        更具用户提供的参数自动生成ShaderProgram类，并在需要时自动调用ShaderProgram的类成员，作为表面着色器渲染时使用的顶点列表格式：
+        根据用户提供的参数自动生成ShaderProgram类，并在需要时自动调用ShaderProgram的类成员，作为表面着色器渲染时使用的顶点列表格式：
         [
             (x, y, z, u, v) | (x, y, z, u, v, nx, ny, nz),
             ...
