@@ -9,8 +9,10 @@ soup3D/camera.py
 soup3D/light.py
 soup3D/name.py
 soup3D/s3dm.py
+soup3D/scene.py
 soup3D/shader.py
 soup3D/skeleton.py
+soup3D/target.py
 soup3D/ui.py
 soup3D.egg-info/PKG-INFO
 soup3D.egg-info/SOURCES.txt
@@ -30,6 +32,7 @@ test/test_gltf_internal.py
 test/test_gltf_load.py
 test/test_gltf_orient.py
 test/test_gltf_parse.py
+test/test_loader_compat.py
 test/test_new_bone_matrix.py
 test/test_skeleton.py
 test/test_skeleton_binding.py

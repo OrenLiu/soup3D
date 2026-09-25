@@ -1,6 +1,6 @@
 Metadata-Version: 2.4
 Name: soup3D
-Version: 6.0.0
+Version: 7.0.0
 Summary: A 3D engine based on OpenGL and pygame for beginners
 Author: OrangeSoup
 Author-email: deanliusy@163.com
@@ -129,7 +129,7 @@ Due to limited individual development capabilities, we welcome like-minded peopl
 
 ## More Information
 
-This library has many more methods for you to use. For more information, please refer to the [Help Document](./docs/README_zh.md)
+This library has many more methods for you to use. For more information, please refer to the [Help Document](./docs/README.md)
 
 ## License
 
