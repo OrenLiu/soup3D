@@ -4,9 +4,11 @@
    
 渲染目标（FBO + 颜色纹理 [ + 深度附着 ]），渲染到纹理的标准抽象。   
 可作为上下文管理器使用：   
-    with soup3D.RenderTarget(800, 600, "rgba16f", "renderbuffer") as rt:   
-        soup3D.update(target=rt)   
-        pixels = rt.to_pixels()   
+```python
+with soup3D.RenderTarget(800, 600, "rgba16f", "renderbuffer") as rt:   
+    soup3D.update(target=rt)   
+    pixels = rt.to_pixels()   
+```
    
 ## 方法   
    

@@ -2,7 +2,7 @@
    
 [返回上级](./README.md)   
    
-**签名**: `uniform(self, v_name, v_type)`   
+**签名**: `uniform(self, v_name, v_type, *value)`   
    
 在下一帧向着色器传递数据   
 :param v_name: 在着色器内该数据对应的变量名   

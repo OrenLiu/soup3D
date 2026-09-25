@@ -2,7 +2,7 @@
    
 [返回上级](./README.md)   
    
-**签名**: `__init__(self, x, y, z)`   
+**签名**: `__init__(self, x, y, z, *face)`   
    
 模型，由多个面(Face类)组成，建议将场景中的面组合成尽量少的模型   
 :param x:    模型原点对应x坐标   

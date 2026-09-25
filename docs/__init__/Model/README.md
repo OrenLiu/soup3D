@@ -4,7 +4,7 @@
    
 ## 方法   
    
-- [__init__(self, x, y, z)](__init__.md): `函数`   
+- [__init__(self, x, y, z, *face)](__init__.md): `函数`   
 - [__add__(self, other)](__add__.md): `函数`   
 - [gen_dis_list(self)](gen_dis_list.md): `函数`   
 - [del_dis_list(self)](del_dis_list.md): `函数`   
