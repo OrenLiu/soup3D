@@ -37,4 +37,21 @@ shader.py 末尾定义了三个类型别名（联合类型，非基类），供�
 表面着色器类按需声明接收其中的任意子集，make_surface() 按类签名过滤后实例化。   
 详见 [make_surface](make_surface.md)。   
    
-- 参数名：base_color, normal, emission, double_side, max_light_count, roughness, metallic, ior, transmission, shininess, illum   
+- 参数名：base_color, normal, emission, double_side, max_light_count, roughness, metallic, ior, transmission, shininess, illum
+
+## 最小示例：纯色三角形模型
+
+```python
+import soup3D
+import soup3D.shader
+
+# MixChannel 描述纯色，AutoSP 按它自动生成着色器
+sp = soup3D.shader.AutoSP(soup3D.shader.MixChannel((1, 1), 0.9, 0.2, 0.2))
+face = soup3D.Face("triangle_b", sp, [
+    (-1, -1, -3, 0, 0),
+    (1, -1, -3, 0, 0),
+    (0, 1, -3, 0, 0),
+])
+model = soup3D.Model(0, 0, 0, face)
+model.show()
+```   

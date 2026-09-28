@@ -13,5 +13,17 @@
 :param skinned: True 时对蒙皮模型 CPU 预蒙皮，导出三角形为蒙皮后   
     的局部顶点（再乘模型矩阵）；False 导出绑定姿态顶点。   
     骨骼矩阵表两种模式下都导出，消费方可自行蒙皮。   
-:return: SceneSnapshot 类实例   
+:return: SceneSnapshot 类实例
+
+## 示例
+
+```python
+class RayTracer:
+    def on_frame(self):
+        snap = soup3D.scene.scene_snapshot(skinned=True)
+        print(snap.triangles.shape)    # (N, 3, 3) 世界空间三角形
+        print(snap.material_kd.shape)  # (N, 3) 材质漫反射色
+```
+
+字段含义见 [SceneSnapshot](SceneSnapshot/README.md)。   
    

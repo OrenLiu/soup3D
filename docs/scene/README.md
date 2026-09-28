@@ -19,6 +19,17 @@
    
 - [SceneSnapshot](SceneSnapshot/README.md): `类型`   
    
+## 最小示例：on_frame 内导出本帧场景
+
+```python
+class RayTracer:
+    def on_frame(self):
+        snap = soup3D.scene.scene_snapshot()   # 零 GL 调用，on_frame 内安全
+        tris = snap.triangles          # (N, 3, 3) 世界空间三角形
+        mats = snap.material_kd        # (N, 3) 材质漫反射色
+        # ... 用 numpy 做 CPU 光线追踪，结果写回颜色缓冲 ...
+```
+
 ## 函数   
    
 - [scene_snapshot(skinned)](scene_snapshot.md): `函数`   
