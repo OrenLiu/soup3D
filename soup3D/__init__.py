@@ -38,41 +38,6 @@ stable_shapes = {}                # 固定渲染队列
 EAU = []                          # 更新执行队列
 
 
-def _glu_perspective_fallback(fovy: int | float,
-                              aspect: int | float,
-                              z_near: int | float,
-                              z_far: int | float) -> None:
-    """
-    在 GLU 的 gluPerspective 不可用时，使用 glFrustum 回退实现透视矩阵。
-    :param fovy: 视野角度
-    :param aspect: 宽高比
-    :param z_near: 近平面
-    :param z_far: 远平面
-    :return: None
-    """
-    fH = math.tan(fovy / 360.0 * math.pi) * z_near
-    fW = fH * aspect
-    glFrustum(-fW, fW, -fH, fH, z_near, z_far)
-
-
-def _safe_glu_perspective(fovy: int | float,
-                          aspect: int | float,
-                          z_near: int | float,
-                          z_far: int | float) -> None:
-    """
-    优先使用 GLU 的 gluPerspective，若当前环境绑定不可用则自动回退。
-    :param fovy: 视野角度
-    :param aspect: 宽高比
-    :param z_near: 近平面
-    :param z_far: 远平面
-    :return: None
-    """
-    if bool(gluPerspective):
-        gluPerspective(fovy, aspect, z_near, z_far)
-    else:
-        _glu_perspective_fallback(fovy, aspect, z_near, z_far)
-
-
 proj_fov = 45
 proj_near = 0.1
 proj_far = 1024
@@ -405,6 +370,1008 @@ class Data:
         raise Exception("Unsupported data type: " + self._data_type)
 
 
+def init(width: int | float = 1920,
+         height: int | float = 1080,
+         fov: int | float = 45,
+         bg_color: tuple[int | float, int | float, int | float] = (0.0, 0.0, 0.0),
+         near: int | float = 0.1,
+         far: int | float = 1024) -> None:
+    """
+    初始化3D引擎
+    :param width:    视网膜宽度
+    :param height:   视网膜高度
+    :param fov:      视野
+    :param bg_color: 背景颜色
+    :param near:     最近渲染距离
+    :param far:      最远渲染距离
+    :return: None
+    """
+    if not isinstance(width, (int, float)):
+        raise TypeError("width must be an int or float")
+    if not isinstance(height, (int, float)):
+        raise TypeError("height must be an int or float")
+    if not isinstance(fov, (int, float)):
+        raise TypeError("fov must be an int or float")
+    if not isinstance(bg_color, (list, tuple)) or len(bg_color) != 3:
+        raise TypeError("bg_color must be a list or tuple of 3 floats")
+    for c in bg_color:
+        if not isinstance(c, (int, float)):
+            raise TypeError("bg_color elements must be int or float")
+    if not isinstance(near, (int, float)):
+        raise TypeError("near must be an int or float")
+    if not isinstance(far, (int, float)):
+        raise TypeError("far must be an int or float")
+
+    global proj_fov, proj_near, proj_far
+    global proj_width, proj_height
+    proj_fov = fov
+    proj_near = near
+    proj_far = far
+
+    proj_width = width
+    proj_height = height
+
+    glClearColor(*bg_color, 1)  # 在上下文创建后设置背景颜色
+    glEnable(GL_DEPTH_TEST)  # 启用深度测试
+    glEnable(GL_BLEND)  # 启用混合
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)  # 设置混合函数
+    glMatrixMode(GL_PROJECTION)
+    glLoadIdentity()
+    _safe_glu_perspective(fov, (width / height), near, far)
+    soup3D.camera.goto(0, 0, 0)
+    soup3D.camera.turn(0, 0, 0)
+
+
+def resize(width: int | float, height: int | float) -> None:
+    """
+    重新定义窗口尺寸
+    :param width:  窗口宽度
+    :param height: 窗口高度
+    :return: None
+    """
+    if not isinstance(width, (int, float)):
+        raise TypeError("width must be an int or float")
+    if not isinstance(height, (int, float)):
+        raise TypeError("height must be an int or float")
+
+    global proj_width, proj_height
+
+    proj_width = width
+    proj_height = height
+
+    glViewport(0, 0, width, height)
+    glMatrixMode(GL_PROJECTION)
+    glLoadIdentity()
+    aspect_ratio = width / height
+    _safe_glu_perspective(proj_fov, aspect_ratio, proj_near, proj_far)
+    glMatrixMode(GL_MODELVIEW)
+
+    for surface_id in soup3D.shader.set_mat_queue:
+        surface = soup3D.shader.set_mat_queue[surface_id]
+        if hasattr(surface, "set_projection_mat"):
+            surface.set_projection_mat(get_projection_mat())
+
+
+def background_color(r: int | float, g: int | float, b: int | float) -> None:
+    """
+    设定背景颜色
+    :param r: 红色(0.0-1.0)
+    :param g: 绿色(0.0-1.0)
+    :param b: 蓝色(0.0-1.0)
+    :return: None
+    """
+    if not isinstance(r, (int, float)):
+        raise TypeError("r must be an int or float")
+    if not isinstance(g, (int, float)):
+        raise TypeError("g must be an int or float")
+    if not isinstance(b, (int, float)):
+        raise TypeError("b must be an int or float")
+
+    glClearColor(r, g, b, 1)
+
+
+def frame_render():
+    global render_queue, EAU
+
+    # 清空画布
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
+
+    # 设置光源
+    if soup3D.light.dirty:
+        soup3D.light.set_surface_light()
+
+    # 执行更新执行列队
+    EAU += soup3D.light.EAU
+
+    EAU_len = len(EAU)  # 调用列队前列队的长度
+    for args in EAU:
+        args[0](*args[1:])
+        if EAU_len != len(EAU):
+            raise Exception(f"EAU length changed while running: {args[0].__name__}{(*args[1:],)}")
+
+    EAU = []
+    soup3D.light.EAU = []
+
+    # 渲染固定渲染物体
+    for shape_id in stable_shapes:
+        model = stable_shapes[shape_id]
+        for shape in model.faces:
+            surface: soup3D.shader.Surface = shape.surface
+            if surface.is_dirty():
+                surface.update()
+        glCallList(model.list_id)
+
+    # 渲染单帧渲染物体
+    for model in render_queue:
+        for shape in model.faces:
+            surface: soup3D.shader.Surface = shape.surface
+            if surface.is_dirty():
+                surface.update()
+        glCallList(model.list_id)
+
+    # 清空渲染队列
+    render_queue = []
+
+    # 渲染 ui 界面
+    for i in soup3D.ui.render_queue:
+        _paint_ui(*i)
+
+    # 渲染全屏叠加图像
+    if soup3D.ui.fullscreen_img is not None:
+        _render_fullscreen_image(soup3D.ui.fullscreen_img)
+
+    # 清空 ui 渲染列队
+    soup3D.ui.render_queue = []
+
+
+def update(render=None, target: "RenderTarget | None" = None) -> None:
+    """
+    更新画布。
+    :param render: 帧级渲染器。传入后本帧全部画面输出（含清屏）交给该渲染器接管，引擎仅在
+                   其前后保存/恢复自身依赖的 GL 状态；
+                   None 时使用引擎内置默认渲染器，与修改前行为逐像素一致
+    :param target: 渲染目标（RenderTarget 实例）。传入后本帧默认渲染管线原样渲进该目标，
+                   viewport 跟随目标尺寸，不显示到窗口；与 render 同时传入抛 ValueError；None 时渲到窗口与修改前逐像素一致
+    :return: None
+    """
+    if render is not None and target is not None:
+        raise ValueError("render and target are mutually exclusive")
+    if render is None and target is None:
+        frame_render()
+        return
+
+    if target is not None:
+        if target.bound:
+            frame_render()
+        else:
+            target.bind()
+            try:
+                frame_render()
+            finally:
+                target.unbind()
+        return
+
+    # 自定义帧级渲染器：保存状态 → 渲染器接管整帧 → finally 恢复状态
+    state = _save_frame_gl_state()
+    try:
+        render()
+    finally:
+        _restore_frame_gl_state(state)
+
+
+def gen_skeleton_model(_skeleton: soup3D.skeleton.Skeleton | dict, bone_color=None, size=0.01):
+    """
+    生成骨架模型，在屏幕中用线条叠加渲染骨架，用于调试。警告：该操作比较占用性能，只建议在调试时使用。
+    :param _skeleton: 骨架对象或骨骼字典
+    :param bone_color:  骨骼颜色字典，键为骨骼名称，值为颜色元组
+    :param size:        骨骼模型的大小，默认0.01
+    :return: 模型(Model类)
+    """
+    if not isinstance(_skeleton, (soup3D.skeleton.Skeleton, dict)):
+        raise TypeError("_skeleton must be a Skeleton instance or dict")
+    if bone_color is not None and not isinstance(bone_color, dict):
+        raise TypeError("bone_color must be a dict or None")
+    if not isinstance(size, (int, float)):
+        raise TypeError("size must be an int or float")
+
+    print("warning: skeleton model is not stable, use it in debug mode only.")
+
+    if bone_color is None:
+        bone_color = {}
+
+    # Skeleton 实例取其骨骼字典；dict 输入的值需为具有 pos/quat/length 属性的骨骼对象
+    if isinstance(_skeleton, soup3D.skeleton.Skeleton):
+        _skeleton = _skeleton.bones
+
+    faces = []
+    for bone_name in _skeleton:
+        bone = _skeleton[bone_name]
+        color = (1, 0, 0)
+        if bone_name in bone_color:
+            color = bone_color[bone_name]
+        # 计算骨骼末端位置（用于可视化），统一读取骨骼四元数
+        rot = glm.mat4_cast(bone.quat)
+        endpoint = glm.vec3(rot * glm.vec4(0, 0, bone.length, 1.0))
+        end_pos = (bone.pos.x + endpoint.x, bone.pos.y + endpoint.y, bone.pos.z + endpoint.z)
+        faces.append(
+            Face(
+                TRIANGLE_B,
+                soup3D.shader.AutoSP(
+                    soup3D.shader.MixChannel((1, 1), *color)
+                ),
+                [
+                    (
+                        bone.pos.x + size,
+                        bone.pos.y,
+                        bone.pos.z,
+                        0, 0
+                    ),
+                    (
+                        bone.pos.x - size,
+                        bone.pos.y,
+                        bone.pos.z,
+                        0, 0)
+                    ,
+                    (*end_pos, 0, 0),
+                    (
+                        bone.pos.x,
+                        bone.pos.y + size,
+                        bone.pos.z,
+                        0, 0
+                    ),
+                    (
+                        bone.pos.x,
+                        bone.pos.y - size,
+                        bone.pos.z,
+                        0, 0
+                    ),
+                    (*end_pos, 0, 0),
+                    (
+                        bone.pos.x,
+                        bone.pos.y,
+                        bone.pos.z + size,
+                        0, 0
+                    ),
+                    (
+                        bone.pos.x,
+                        bone.pos.y,
+                        bone.pos.z - size,
+                        0, 0
+                    ),
+                    (*end_pos, 0, 0),
+                ]
+            )
+        )
+    model = Model(0, 0, 0, *faces)
+    return model
+
+
+def open_mtl(mtl: str,
+             double_side: bool = True,
+             roll_funk=None,
+             encoding: str = "utf-8",
+             max_light_count: int = 8,
+             surface=soup3D.shader.AutoSP,
+             data_only: bool = False) -> "dict | Data":
+    """
+    根据mtl文件生成多个着色器
+    :param mtl:             *.mtl纹理文件路径
+    :param double_side:     是否启用双面渲染
+    :param roll_funk:       每当读取一行时调用一次，方法需有，且仅有1个参数，用于接收已读取的行数
+    :param encoding:        读取文本文件时使用的字符集(建议在建模软件里把所有元素命名为英文，这样就不用管这个参数了)
+    :param max_light_count: 这些着色器出现时会同时出现的最多的光源数量，大了会导致性能问题
+    :param surface:         模型使用的表面着色器类。加载器通过 shader.make_surface 动态适配其构造参数，只传入该类
+                            可接收的参数，不强制要求任何参数。可按需声明接收这些标准材质参数：base_color, normal,
+                            emission, double_side, max_light_count, roughness, metallic, ior, transmission
+    :param data_only:       是否只创建模型数据结构，当为True时，则返回着色器相关的数据，而不是着色器本身。当需要用一个文件创建多组独立的着色
+                            器时，则将该值设为True。
+    :return: 所有生成出的表面着色器，当data_only为True时返回Data对象
+    """
+    if not isinstance(mtl, str):
+        raise TypeError("mtl must be a string path")
+    if not isinstance(double_side, bool):
+        raise TypeError("double_side must be a bool")
+    if roll_funk is not None and not callable(roll_funk):
+        raise TypeError("roll_funk must be callable or None")
+    if not isinstance(encoding, str):
+        raise TypeError("encoding must be a string")
+    if not isinstance(max_light_count, int):
+        raise TypeError("max_light_count must be an int")
+    if not isinstance(data_only, bool):
+        raise TypeError("data_only must be a bool")
+
+    mtl_dict = {}
+
+    mtl_file = open(mtl, "r", encoding=encoding)
+    mtl_str = mtl_file.read()
+    mtl_file.close()
+
+    command_lines = mtl_str.split("\n")
+    now_mtl = None
+
+    R, G, B, A = 1.0, 1.0, 1.0, 1.0
+    width, height = 1, 1
+    emission = 0, 0, 0
+    bump_texture = None
+    ior = None
+    roughness = None
+    metallic = None
+    shininess = None
+    illum = None
+    roll_count = 0
+
+    for row in command_lines:
+        if roll_funk is not None:
+            roll_funk(roll_count)
+            roll_count += 1
+        command = row.split("#")[0]
+        args = smart_split(command)
+        if len(args) > 0:
+            if args[0] == "newmtl":
+                if now_mtl is not None:
+                    params = _mtl_params(width, height, R, G, B, A, emission, bump_texture,
+                                         double_side, max_light_count, ior, roughness, metallic, shininess, illum,
+                                         data_only)
+                    if data_only:
+                        mtl_dict[now_mtl] = _store_mtl_material(params, surface)
+                    else:
+                        mtl_dict[now_mtl] = soup3D.shader.make_surface(surface, params)
+
+                    R, G, B, A = 1.0, 1.0, 1.0, 1.0
+                    width, height = 1, 1
+                    emission = 0, 0, 0
+                    bump_texture = None
+                    ior = None
+                    roughness = None
+                    metallic = None
+                    shininess = None
+                    illum = None
+                now_mtl = args[1]
+            if args[0] == "Kd":
+                R, G, B = float(args[1]), float(args[2]), float(args[3])
+            if args[0] == "d":
+                A = float(args[1])
+            if args[0] == "Ke":
+                emission = (float(args[1]), float(args[2]), float(args[3]))
+            if args[0] == "Ni":
+                ior = float(args[1])
+            if args[0] == "Pr":
+                roughness = float(args[1])
+            if args[0] == "Pm":
+                metallic = float(args[1])
+            if args[0] == "Ns":
+                shininess = float(args[1])
+            if args[0] == "illum":
+                illum = int(float(args[1]))
+            if args[0] == "map_Kd":
+                base_dir = os.path.dirname(mtl)
+                tex_path = (os.path.join(base_dir, args[1]))
+                try:
+                    img = imageio.imread(tex_path)
+                    height, width = img.shape[:2]
+                except:
+                    width, height = 1, 1
+                if data_only:
+                    R = ("channel", tex_path, 0)
+                    G = ("channel", tex_path, 1)
+                    B = ("channel", tex_path, 2)
+                else:
+                    texture = soup3D.shader.Texture(tex_path)
+                    R = soup3D.shader.Channel(texture, 0)
+                    G = soup3D.shader.Channel(texture, 1)
+                    B = soup3D.shader.Channel(texture, 2)
+            if args[0] == "map_d":
+                base_dir = os.path.dirname(mtl)
+                tex_path = (os.path.join(base_dir, args[1]))
+                if data_only:
+                    A = ("channel", tex_path, 3)
+                else:
+                    texture = soup3D.shader.Texture(tex_path)
+                    A = soup3D.shader.Channel(texture, 3)
+            if args[0] == "map_Ke":
+                base_dir = os.path.dirname(mtl)
+                tex_path = (os.path.join(base_dir, args[1]))
+                if data_only:
+                    emission = ("texture", tex_path)
+                else:
+                    emission = soup3D.shader.Texture(tex_path)
+            # map_Bump 与 Blender PBR 扩展的 norm 关键字均按法线贴图处理
+            if args[0] in ("map_Bump", "norm"):
+                tex_path = None
+                arg_name = None
+                for arg in args[1:]:
+                    if arg.startswith("-"):
+                        arg_name = arg
+                        continue
+                    if arg_name is None:
+                        base_dir = os.path.dirname(mtl)
+                        tex_path = (os.path.join(base_dir, arg))
+                    else:
+                        arg_name = None
+                        continue
+                if data_only:
+                    bump_texture = ("texture", tex_path)
+                else:
+                    bump_texture = soup3D.shader.Texture(tex_path)
+
+    # 添加最后一个材质
+    if now_mtl is not None:
+        params = _mtl_params(width, height, R, G, B, A, emission, bump_texture,
+                             double_side, max_light_count, ior, roughness, metallic, shininess, illum, data_only)
+        if data_only:
+            mtl_dict[now_mtl] = _store_mtl_material(params, surface)
+        else:
+            mtl_dict[now_mtl] = soup3D.shader.make_surface(surface, params)
+
+    if data_only:
+        return Data("mtl", mtl_dict)
+    return mtl_dict
+
+
+def open_obj(obj: str,
+             mtl: "str | dict | Data | None" = None,
+             double_side: bool = True,
+             roll_funk=None,
+             encoding: str = "utf-8",
+             max_light_count: int = 8,
+             data_only: bool = False,
+             surface=soup3D.shader.AutoSP) -> "Model | Data":
+    """
+    从obj文件导入模型
+    :param obj:             *.obj模型文件路径
+    :param mtl:             *.mtl纹理文件路径、已加载的材质字典或Data对象
+    :param double_side:     是否启用双面渲染
+    :param roll_funk:       每当读取一行时调用一次，方法需有，且仅有1个参数，用于接收已读取的行数
+    :param encoding:        读取文本文件时使用的字符集(建议在建模软件里把所有元素命名为英文，这样就不用管这个参数了)
+    :param max_light_count: 该模型出现时会同时出现的最多的光源数量，大了会导致性能问题
+    :param surface:         模型使用的表面着色器类，默认为AutoSP。加载器只传入该类可接收的材质参数
+                            (动态适配，不强制任何参数，详见 shader.make_surface)
+    :param data_only:       是否只创建模型数据结构，当为True时，则返回模型相关的数据，而不是模型本身。当需要用一个文件创建多个独立的模型时，
+                            则将该值设为True。
+    :return: 生成出来的模型数据(Model类)，当data_only为True时返回Data对象
+    """
+    if not isinstance(obj, str):
+        raise TypeError("obj must be a string path")
+    if mtl is not None and not isinstance(mtl, (str, dict, Data)):
+        raise TypeError("mtl must be a string, dict, Data instance, or None")
+    if not callable(surface):
+        raise TypeError("surface must be a surface shader class (callable)")
+    if not isinstance(double_side, bool):
+        raise TypeError("double_side must be a bool")
+    if roll_funk is not None and not callable(roll_funk):
+        raise TypeError("roll_funk must be callable or None")
+    if not isinstance(encoding, str):
+        raise TypeError("encoding must be a string")
+    if not isinstance(max_light_count, int):
+        raise TypeError("max_light_count must be an int")
+    if not isinstance(data_only, bool):
+        raise TypeError("data_only must be a bool")
+
+    # 处理mtl文件
+    mtl_dict = {}
+
+    # 如果mtl是字符串路径，则调用load_mtl加载
+    if isinstance(mtl, str):
+        mtl_dict = open_mtl(mtl, double_side, roll_funk, encoding, max_light_count, surface=surface,
+                            data_only=data_only)
+    elif isinstance(mtl, Data):
+        # 如果传入的是Data对象，根据data_only决定是否构建着色器
+        if data_only:
+            mtl_dict = mtl
+        else:
+            mtl_dict = mtl.make()
+    elif isinstance(mtl, dict):
+        # 如果已经是字典，则直接使用
+        mtl_dict = mtl
+
+    # 创建默认材质（如果未提供MTL或材质未定义时使用），data_only模式下不创建着色器对象
+    default_material = None
+    if not data_only:
+        default_material = soup3D.shader.make_surface(surface, {
+            "base_color": soup3D.shader.MixChannel((1, 1), 1.0, 1.0, 1.0, 1.0),
+            "emission": (0, 0, 0),
+            "normal": (0.5, 0.5, 1),
+            "double_side": double_side,
+            "max_light_count": max_light_count
+        })
+
+    # 处理obj文件
+    obj_file = open(obj, 'r', encoding=encoding)
+    obj_str = obj_file.read()
+    obj_file.close()
+
+    vertices = []  # 顶点坐标 (x, y, z)
+    tex_coords = []  # 纹理坐标 (u, v)
+    normals = []  # 法线向量 (nx, ny, nz)
+    faces_by_material = {}  # 按材质分组存储面数据
+
+    # 当前使用的材质
+    current_material = None
+    current_material_name = None
+
+    command_lines = obj_str.split("\n")
+    roll_count = 0
+
+    for row in command_lines:
+        if roll_funk is not None:
+            roll_funk(roll_count)
+            roll_count += 1
+
+        row = row.strip()
+        if not row or row.startswith('#'):
+            continue
+
+        tokens = smart_split(row)
+        if not tokens:
+            continue
+
+        prefix = tokens[0]
+        data = tokens[1:]
+
+        # 处理顶点数据
+        if prefix == 'v':
+            # 顶点坐标 (x, y, z [, w])
+            if len(data) >= 3:
+                x, y, z = map(float, data[:3])
+                vertices.append((x, y, z))
+
+        # 处理纹理坐标
+        elif prefix == 'vt':
+            # 纹理坐标 (u, v [, w])
+            if len(data) >= 2:
+                u, v = map(float, data[:2])
+                tex_coords.append((u, v))
+
+        # 处理法线
+        elif prefix == 'vn':
+            # 法线向量 (x, y, z)
+            if len(data) >= 3:
+                nx, ny, nz = map(float, data[:3])
+                normals.append((nx, ny, nz))
+
+        # 处理材质库引用
+        elif prefix == 'mtllib':
+            # 如果mtl参数未提供，但obj文件中指定了mtl文件，则自动加载
+            if mtl is None and data:
+                mtl_path = os.path.join(os.path.dirname(obj), data[0])
+                if os.path.exists(mtl_path):
+                    mtl_dict = open_mtl(mtl_path, double_side, roll_funk, encoding, max_light_count, surface=surface,
+                                        data_only=data_only)
+
+        # 处理材质使用
+        elif prefix == 'usemtl':
+            # 切换当前使用的材质
+            if data:
+                material_name = data[0]
+                current_material_name = material_name
+                if not data_only:
+                    # 如果材质在库中未定义，使用默认材质
+                    if isinstance(mtl_dict, dict):
+                        current_material = mtl_dict.get(material_name, default_material)
+                    else:
+                        current_material = default_material
+
+        # 处理面定义
+        elif prefix == 'f':
+            if len(data) < 3:
+                continue  # 至少需要3个顶点构成面
+
+            # 多边形三角剖分（简单实现，适合凸多边形）
+            base_indexes = []
+            for vertex_def in data:
+                # 解析顶点/纹理/法线索引（格式如：v/vt/vn 或 v//vn 等）
+                indexes = vertex_def.split('/')
+
+                # 处理缺少纹理坐标的情况（填充空值）
+                while len(indexes) < 3:
+                    indexes.append('')
+
+                # 转换索引为整数（索引从1开始，需要转为0开始）
+                # 支持负数索引（从末尾开始计数）
+                v_idx = int(indexes[0]) - 1 if indexes[0] else -1
+                vt_idx = int(indexes[1]) - 1 if indexes[1] else -1
+                vn_idx = int(indexes[2]) - 1 if indexes[2] else -1
+
+                # 处理负索引（相对索引）
+                if v_idx < 0:
+                    v_idx = len(vertices) + v_idx
+                if vt_idx < 0:
+                    vt_idx = len(tex_coords) + vt_idx
+                if vn_idx < 0:
+                    vn_idx = len(normals) + vn_idx
+
+                # 获取顶点数据（确保索引在有效范围内）
+                vert = list(vertices[v_idx])
+
+                # 如果有纹理坐标，添加纹理坐标
+                if 0 <= vt_idx < len(tex_coords):
+                    u, v = tex_coords[vt_idx]
+                    vert.extend([u, -v])
+                else:
+                    vert.extend([0.0, 0.0])  # 默认纹理坐标
+
+                # 如果有法线，添加法线数据
+                if 0 <= vn_idx < len(normals):
+                    nx, ny, nz = normals[vn_idx]
+                    vert.extend([nx, ny, nz])
+                else:
+                    vert.extend([0.0, 0.0, 0.0])  # 默认法线
+
+                base_indexes.append(tuple(vert))
+
+            # 简单三角剖分：使用第一个顶点为基准，连接其他顶点形成三角形
+            triangles = []
+            for i in range(1, len(base_indexes) - 1):
+                triangles.extend([
+                    base_indexes[0],
+                    base_indexes[i],
+                    base_indexes[i + 1]
+                ])
+
+            if data_only:
+                # data_only模式：按材质名称分组
+                mat_key = current_material_name
+                if mat_key not in faces_by_material:
+                    faces_by_material[mat_key] = {'vertices': []}
+                faces_by_material[mat_key]['vertices'].extend(triangles)
+            else:
+                # 普通模式：按材质对象id分组
+                material_id = id(current_material) if current_material else id(default_material)
+                if material_id not in faces_by_material:
+                    faces_by_material[material_id] = {
+                        'material': current_material if current_material else default_material,
+                        'vertices': []
+                    }
+                faces_by_material[material_id]['vertices'].extend(triangles)
+
+    if data_only:
+        # 获取材质数据
+        if isinstance(mtl_dict, Data):
+            mtl_data = mtl_dict._data
+        elif isinstance(mtl_dict, dict):
+            mtl_data = mtl_dict
+        else:
+            mtl_data = {}
+
+        face_groups = []
+        for mat_name, face_data in faces_by_material.items():
+            if face_data['vertices']:
+                face_groups.append({
+                    "material_name": mat_name,
+                    "vertices": face_data['vertices'],
+                })
+
+        obj_data = {
+            "face_groups": face_groups,
+            "mtl_data": mtl_data,
+            "default_material": _store_mtl_material(
+                _mtl_params(1, 1, 1.0, 1.0, 1.0, 1.0, (0, 0, 0), None,
+                            double_side, max_light_count, None, None, None, None, None, True),
+                surface),
+            "double_side": double_side,
+            "max_light_count": max_light_count,
+        }
+        return Data("obj", obj_data)
+
+    # 创建面对象，每个材质对应一个面
+    faces = []
+    for material_id, face_data in faces_by_material.items():
+        if face_data['vertices']:  # 只有当有顶点数据时才创建面
+            face = Face(
+                shape_type="triangle_b",  # 分离的三角形
+                surface=face_data['material'],
+                vertex=face_data['vertices']
+            )
+            faces.append(face)
+
+    # 创建模型对象（原点设置为0,0,0）
+    model = Model(0, 0, 0, *faces)
+    return model
+
+
+def open_gltf(
+        gltf: str,
+        double_side: bool = True,
+        max_light_count: int = 8,
+        surface=soup3D.shader.AutoSP,
+        skin=soup3D.shader.BoneBinderSP,
+        data_only: bool = False,
+        resources: list[str] | tuple[str, ...] | str = ("mesh", "skeleton")
+):
+    """
+    从gltf文件导入模型和骨骼
+    :param gltf:            gltf模型文件路径
+    :param double_side:     是否启用双面渲染
+    :param max_light_count: 该模型出现时会同时出现的最多的光源数量，大了会导致性能问题
+    :param surface:         模型使用的表面着色器类型，加载器会按其构造签名动态提供材质参数(base_color、emission、normal、double_side、
+                            max_light_count、roughness、metallic、ior、transmission)，不强制要求任何参数，不接收的参数会被自动过滤；
+                            也可以接收**kwargs以获取全部参数
+    :param skin:            模型使用的蒙皮着色器类型，参数规则同surface，另可在签名中声明skeleton参数以接收骨架
+    :param data_only:       是否只创建模型和骨骼的数据结构，当为True时，则返回模型相关的数据，而不是模型和骨骼本身。当需要用一个文件创建多个
+                            独立的模型时，则将该值设为True。
+    :param resources:       需要返回的资源，当为列表或数组时，则按顺序返回带有所有需要的资源的数组。当为字符串时，则只返回一个需要的资源。字
+                            符串可以填写：
+                            mesh:      网格模型
+                            skeleton:  骨架模型
+                            animation: 骨骼动画
+                            其中如果在单次调用时同时返回网格模型和骨架，则骨架与网格模型绑定，可直接通过骨架对模型造成形变。
+    :return: (资源, 资源) | 资源 | Data对象
+    """
+    if not isinstance(gltf, str):
+        raise TypeError("gltf must be a string path")
+    if not isinstance(double_side, bool):
+        raise TypeError("double_side must be a bool")
+    if not isinstance(max_light_count, int):
+        raise TypeError("max_light_count must be an int")
+    if not isinstance(data_only, bool):
+        raise TypeError("data_only must be a bool")
+    if not isinstance(resources, (str, list, tuple)):
+        raise TypeError("resources must be a string, list, or tuple")
+
+    base_dir = os.path.dirname(os.path.abspath(gltf))
+
+    # 读取GLTF文件
+    with open(gltf, "r", encoding="utf-8") as f:
+        gltf_data = json.load(f)
+
+    # 加载缓冲区数据
+    buffers_data = _gltf_load_buffers(gltf_data, base_dir)
+
+    nodes = gltf_data["nodes"]
+
+    # 计算所有节点的世界变换矩阵
+    world_transforms = _gltf_compute_world_transforms(nodes)
+
+    # 加载材质
+    materials_dict = _gltf_load_materials(gltf_data, base_dir, double_side, max_light_count, surface,
+                                          data_only=data_only)
+
+    # 检查是否有蒙皮数据
+    skins_data = gltf_data.get("skins", [])
+    has_skin = len(skins_data) > 0
+
+    # 构建骨架或存储骨架数据
+    skeleton = None
+    skeleton_data = None
+    if data_only:
+        skeleton_data = _gltf_store_skeleton(gltf_data, world_transforms)
+    else:
+        skeleton = _gltf_build_skeleton(gltf_data, world_transforms)
+
+    # 读取蒙皮的逆绑定矩阵和关节映射
+    # JOINTS_0的值是skin.joints数组的索引，需要映射到骨骼名称
+    joint_name_map = {}
+    if has_skin:
+        skin_info = skins_data[0]
+        joints = skin_info["joints"]
+        for arr_idx, node_idx in enumerate(joints):
+            joint_name_map[arr_idx] = nodes[node_idx].get("name", f"bone_{node_idx}")
+
+    # 创建默认材质（data_only模式下不创建着色器对象）
+    default_surface = None
+    if not data_only:
+        default_surface = soup3D.shader.make_surface(surface, {
+            "base_color": soup3D.shader.MixChannel((1, 1), 0.8, 0.8, 0.8, 1.0),
+            "emission": (0, 0, 0),
+            "normal": (0.5, 0.5, 1),
+            "double_side": double_side,
+            "max_light_count": max_light_count
+        })
+
+    # 处理所有网格
+    all_faces = []
+    primitives_data = []
+    meshes = gltf_data.get("meshes", [])
+
+    for mesh in meshes:
+        for primitive in mesh.get("primitives", []):
+            attributes = primitive.get("attributes", {})
+
+            # 读取顶点数据
+            positions = _gltf_read_accessor(gltf_data, buffers_data,
+                                            attributes.get("POSITION", -1)) if "POSITION" in attributes else []
+            prim_normals = _gltf_read_accessor(gltf_data, buffers_data,
+                                               attributes.get("NORMAL", -1)) if "NORMAL" in attributes else []
+            texcoords = _gltf_read_accessor(gltf_data, buffers_data,
+                                            attributes.get("TEXCOORD_0", -1)) if "TEXCOORD_0" in attributes else []
+            joints_data = _gltf_read_accessor(gltf_data, buffers_data,
+                                              attributes.get("JOINTS_0", -1)) if "JOINTS_0" in attributes else []
+            weights_data = _gltf_read_accessor(gltf_data, buffers_data,
+                                               attributes.get("WEIGHTS_0", -1)) if "WEIGHTS_0" in attributes else []
+
+            # 读取索引数据
+            indices = []
+            if "indices" in primitive:
+                indices = _gltf_read_accessor(gltf_data, buffers_data, primitive["indices"])
+
+            # 获取材质
+            mat_idx = primitive.get("material", -1)
+            prim_surface = default_surface
+            if not data_only:
+                if mat_idx >= 0 and mat_idx in materials_dict:
+                    prim_surface = materials_dict[mat_idx]
+
+            # 构建顶点列表
+            vertices = []
+            prim_has_skin = has_skin and bool(joints_data) and bool(weights_data)
+            if indices:
+                index_list = indices
+            else:
+                index_list = list(range(len(positions)))
+
+            for idx in index_list:
+                # 位置
+                pos = positions[idx] if idx < len(positions) else (0, 0, 0)
+
+                # 纹理坐标
+                uv = texcoords[idx] if idx < len(texcoords) else (0, 0)
+
+                # 法线
+                nrm = prim_normals[idx] if idx < len(prim_normals) else (0, 0, 1)
+
+                if prim_has_skin:
+                    # 带骨骼权重的顶点
+                    joint_indices = joints_data[idx] if idx < len(joints_data) else (0, 0, 0, 0)
+                    joint_weights = weights_data[idx] if idx < len(weights_data) else (0, 0, 0, 0)
+
+                    # 构建骨骼权重字典
+                    bone_weights_dict = {}
+                    for j in range(4):
+                        if joint_weights[j] > 0.0 and joint_indices[j] in joint_name_map:
+                            bone_weights_dict[joint_name_map[joint_indices[j]]] = joint_weights[j]
+
+                    vertex = (
+                        bone_weights_dict,
+                        pos[0], pos[1], pos[2],
+                        uv[0], uv[1],
+                        nrm[0], nrm[1], nrm[2]
+                    )
+                else:
+                    # 普通顶点
+                    vertex = (
+                        pos[0], pos[1], pos[2],
+                        uv[0], uv[1],
+                        nrm[0], nrm[1], nrm[2]
+                    )
+                vertices.append(vertex)
+
+            if not vertices:
+                continue
+
+            if data_only:
+                primitives_data.append({
+                    "vertices": vertices,
+                    "has_skin": prim_has_skin,
+                    "material_idx": mat_idx,
+                })
+            else:
+                # 根据是否有骨骼选择着色器类型，蒙皮时按目标类动态转移材质参数
+                if prim_has_skin:
+                    face_surface = _transfer_surface_params(prim_surface, skin, skeleton=skeleton)
+                else:
+                    face_surface = prim_surface
+
+                face = Face(TRIANGLE_B, face_surface, vertices)
+                all_faces.append(face)
+
+    animation = None
+    if "animation" in resources:
+        animation = _gltf_load_animation(gltf_data, buffers_data, world_transforms)
+
+    if data_only:
+        gltf_stored = {
+            "primitives": primitives_data,
+            "materials": materials_dict,
+            "skeleton_data": skeleton_data,
+            "double_side": double_side,
+            "max_light_count": max_light_count,
+            "surface": surface,
+            "skin": skin,
+            "default_surface_class": surface,
+            "animation": animation,
+            "resources": resources,
+        }
+        return Data("gltf", gltf_stored)
+
+    model = Model(0, 0, 0, *all_faces)
+
+    if isinstance(resources, str):
+        if resources == "mesh":
+            return model
+        elif resources == "skeleton":
+            return skeleton
+        elif resources == "animation":
+            return animation
+        else:
+            return model, skeleton
+    else:
+        results = []
+        for res in resources:
+            if res == "mesh":
+                results.append(model)
+            elif res == "skeleton":
+                results.append(skeleton)
+            elif res == "animation":
+                results.append(animation)
+        if len(results) == 1:
+            return results[0]
+        return tuple(results)
+
+
+def get_projection_mat() -> glm.fmat4x4:
+    """
+    获取透视矩阵，可用于代码着色器
+    :return: 矩阵
+    """
+    return glm.perspective(
+        glm.radians(proj_fov),
+        proj_width / proj_height,
+        proj_near,
+        proj_far
+    )
+
+
+def smart_split(line):
+    """
+    高效的字符串分割函数，用于替代shlex.split处理OBJ/MTL文件行解析
+    针对OBJ/MTL文件格式进行了优化，比shlex.split快得多
+    :param line: 要分割的行
+    :return: 分割后的字符串列表
+    """
+    # 快速路径：如果不包含引号或转义字符，直接使用split()
+    if '"' not in line and "'" not in line and '\\' not in line:
+        return line.split()
+
+    # 处理包含引号的情况
+    result = []
+    current_token = ""
+    in_single_quote = False
+    in_double_quote = False
+    i = 0
+
+    while i < len(line):
+        char = line[i]
+
+        # 处理转义字符
+        if char == '\\' and i + 1 < len(line):
+            # 如果在引号内，保留转义字符和下一个字符
+            if in_single_quote or in_double_quote:
+                current_token += char + line[i + 1]
+            else:
+                # 如果不在引号内，跳过转义字符（按照普通空格分隔处理）
+                current_token += line[i + 1]
+            i += 2
+            continue
+
+        # 处理单引号
+        if char == "'" and not in_double_quote:
+            in_single_quote = not in_single_quote
+            i += 1
+            continue
+
+        # 处理双引号
+        if char == '"' and not in_single_quote:
+            in_double_quote = not in_double_quote
+            i += 1
+            continue
+
+        # 处理空格分隔符
+        if char.isspace() and not in_single_quote and not in_double_quote:
+            if current_token:
+                result.append(current_token)
+                current_token = ""
+        else:
+            current_token += char
+
+        i += 1
+
+    # 添加最后一个token
+    if current_token:
+        result.append(current_token)
+
+    return result
+
+
 def _build_channel_value(val):
     """
     从存储的通道数据构建通道值，用于Data.make()内部调用
@@ -633,104 +1600,39 @@ def _make_gltf_data(data: dict):
         return tuple(results)
 
 
-def init(width: int | float = 1920,
-         height: int | float = 1080,
-         fov: int | float = 45,
-         bg_color: tuple[int | float, int | float, int | float] = (0.0, 0.0, 0.0),
-         near: int | float = 0.1,
-         far: int | float = 1024) -> None:
+def _glu_perspective_fallback(fovy: int | float,
+                              aspect: int | float,
+                              z_near: int | float,
+                              z_far: int | float) -> None:
     """
-    初始化3D引擎
-    :param width:    视网膜宽度
-    :param height:   视网膜高度
-    :param fov:      视野
-    :param bg_color: 背景颜色
-    :param near:     最近渲染距离
-    :param far:      最远渲染距离
+    在 GLU 的 gluPerspective 不可用时，使用 glFrustum 回退实现透视矩阵。
+    :param fovy: 视野角度
+    :param aspect: 宽高比
+    :param z_near: 近平面
+    :param z_far: 远平面
     :return: None
     """
-    if not isinstance(width, (int, float)):
-        raise TypeError("width must be an int or float")
-    if not isinstance(height, (int, float)):
-        raise TypeError("height must be an int or float")
-    if not isinstance(fov, (int, float)):
-        raise TypeError("fov must be an int or float")
-    if not isinstance(bg_color, (list, tuple)) or len(bg_color) != 3:
-        raise TypeError("bg_color must be a list or tuple of 3 floats")
-    for c in bg_color:
-        if not isinstance(c, (int, float)):
-            raise TypeError("bg_color elements must be int or float")
-    if not isinstance(near, (int, float)):
-        raise TypeError("near must be an int or float")
-    if not isinstance(far, (int, float)):
-        raise TypeError("far must be an int or float")
-
-    global proj_fov, proj_near, proj_far
-    global proj_width, proj_height
-    proj_fov = fov
-    proj_near = near
-    proj_far = far
-
-    proj_width = width
-    proj_height = height
-
-    glClearColor(*bg_color, 1)  # 在上下文创建后设置背景颜色
-    glEnable(GL_DEPTH_TEST)  # 启用深度测试
-    glEnable(GL_BLEND)  # 启用混合
-    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)  # 设置混合函数
-    glMatrixMode(GL_PROJECTION)
-    glLoadIdentity()
-    _safe_glu_perspective(fov, (width / height), near, far)
-    soup3D.camera.goto(0, 0, 0)
-    soup3D.camera.turn(0, 0, 0)
+    fH = math.tan(fovy / 360.0 * math.pi) * z_near
+    fW = fH * aspect
+    glFrustum(-fW, fW, -fH, fH, z_near, z_far)
 
 
-def resize(width: int | float, height: int | float) -> None:
+def _safe_glu_perspective(fovy: int | float,
+                          aspect: int | float,
+                          z_near: int | float,
+                          z_far: int | float) -> None:
     """
-    重新定义窗口尺寸
-    :param width:  窗口宽度
-    :param height: 窗口高度
+    优先使用 GLU 的 gluPerspective，若当前环境绑定不可用则自动回退。
+    :param fovy: 视野角度
+    :param aspect: 宽高比
+    :param z_near: 近平面
+    :param z_far: 远平面
     :return: None
     """
-    if not isinstance(width, (int, float)):
-        raise TypeError("width must be an int or float")
-    if not isinstance(height, (int, float)):
-        raise TypeError("height must be an int or float")
-
-    global proj_width, proj_height
-
-    proj_width = width
-    proj_height = height
-
-    glViewport(0, 0, width, height)
-    glMatrixMode(GL_PROJECTION)
-    glLoadIdentity()
-    aspect_ratio = width / height
-    _safe_glu_perspective(proj_fov, aspect_ratio, proj_near, proj_far)
-    glMatrixMode(GL_MODELVIEW)
-
-    for surface_id in soup3D.shader.set_mat_queue:
-        surface = soup3D.shader.set_mat_queue[surface_id]
-        if hasattr(surface, "set_projection_mat"):
-            surface.set_projection_mat(get_projection_mat())
-
-
-def background_color(r: int | float, g: int | float, b: int | float) -> None:
-    """
-    设定背景颜色
-    :param r: 红色(0.0-1.0)
-    :param g: 绿色(0.0-1.0)
-    :param b: 蓝色(0.0-1.0)
-    :return: None
-    """
-    if not isinstance(r, (int, float)):
-        raise TypeError("r must be an int or float")
-    if not isinstance(g, (int, float)):
-        raise TypeError("g must be an int or float")
-    if not isinstance(b, (int, float)):
-        raise TypeError("b must be an int or float")
-
-    glClearColor(r, g, b, 1)
+    if bool(gluPerspective):
+        gluPerspective(fovy, aspect, z_near, z_far)
+    else:
+        _glu_perspective_fallback(fovy, aspect, z_near, z_far)
 
 
 def _paint_ui(shape: soup3D.ui.Shape, x: int | float, y: int | float) -> None:
@@ -838,60 +1740,6 @@ def _render_fullscreen_image(img: soup3D.shader.Img) -> None:
     glPopMatrix()
 
 
-def frame_render():
-    global render_queue, EAU
-
-    # 清空画布
-    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
-
-    # 设置光源
-    if soup3D.light.dirty:
-        soup3D.light.set_surface_light()
-
-    # 执行更新执行列队
-    EAU += soup3D.light.EAU
-
-    EAU_len = len(EAU)  # 调用列队前列队的长度
-    for args in EAU:
-        args[0](*args[1:])
-        if EAU_len != len(EAU):
-            raise Exception(f"EAU length changed while running: {args[0].__name__}{(*args[1:],)}")
-
-    EAU = []
-    soup3D.light.EAU = []
-
-    # 渲染固定渲染物体
-    for shape_id in stable_shapes:
-        model = stable_shapes[shape_id]
-        for shape in model.faces:
-            surface: soup3D.shader.Surface = shape.surface
-            if surface.is_dirty():
-                surface.update()
-        glCallList(model.list_id)
-
-    # 渲染单帧渲染物体
-    for model in render_queue:
-        for shape in model.faces:
-            surface: soup3D.shader.Surface = shape.surface
-            if surface.is_dirty():
-                surface.update()
-        glCallList(model.list_id)
-
-    # 清空渲染队列
-    render_queue = []
-
-    # 渲染 ui 界面
-    for i in soup3D.ui.render_queue:
-        _paint_ui(*i)
-
-    # 渲染全屏叠加图像
-    if soup3D.ui.fullscreen_img is not None:
-        _render_fullscreen_image(soup3D.ui.fullscreen_img)
-
-    # 清空 ui 渲染列队
-    soup3D.ui.render_queue = []
-
-
 def _gl_scalar(value) -> int:
     """把 PyOpenGL 标量查询结果归一化为 int（不同绑定可能返回数组、numpy 标量或 int）"""
     try:
@@ -923,128 +1771,6 @@ def _restore_frame_gl_state(state: tuple) -> None:
     glBindFramebuffer(GL_DRAW_FRAMEBUFFER, draw_fbo)
     glBindFramebuffer(GL_READ_FRAMEBUFFER, read_fbo)
     glPopAttrib()
-
-
-def update(render=None, target: "RenderTarget | None" = None) -> None:
-    """
-    更新画布。
-    :param render: 帧级渲染器。传入后本帧全部画面输出（含清屏）交给该渲染器接管，引擎仅在
-                   其前后保存/恢复自身依赖的 GL 状态；
-                   None 时使用引擎内置默认渲染器，与修改前行为逐像素一致
-    :param target: 渲染目标（RenderTarget 实例）。传入后本帧默认渲染管线原样渲进该目标，
-                   viewport 跟随目标尺寸，不显示到窗口；与 render 同时传入抛 ValueError；None 时渲到窗口与修改前逐像素一致
-    :return: None
-    """
-    if render is not None and target is not None:
-        raise ValueError("render and target are mutually exclusive")
-    if render is None and target is None:
-        frame_render()
-        return
-
-    if target is not None:
-        if target.bound:
-            frame_render()
-        else:
-            target.bind()
-            try:
-                frame_render()
-            finally:
-                target.unbind()
-        return
-
-    # 自定义帧级渲染器：保存状态 → 渲染器接管整帧 → finally 恢复状态
-    state = _save_frame_gl_state()
-    try:
-        render()
-    finally:
-        _restore_frame_gl_state(state)
-
-
-def gen_skeleton_model(_skeleton: soup3D.skeleton.Skeleton | dict, bone_color=None, size=0.01):
-    """
-    生成骨架模型，在屏幕中用线条叠加渲染骨架，用于调试。警告：该操作比较占用性能，只建议在调试时使用。
-    :param _skeleton: 骨架对象或骨骼字典
-    :param bone_color:  骨骼颜色字典，键为骨骼名称，值为颜色元组
-    :param size:        骨骼模型的大小，默认0.01
-    :return: 模型(Model类)
-    """
-    if not isinstance(_skeleton, (soup3D.skeleton.Skeleton, dict)):
-        raise TypeError("_skeleton must be a Skeleton instance or dict")
-    if bone_color is not None and not isinstance(bone_color, dict):
-        raise TypeError("bone_color must be a dict or None")
-    if not isinstance(size, (int, float)):
-        raise TypeError("size must be an int or float")
-
-    print("warning: skeleton model is not stable, use it in debug mode only.")
-
-    if bone_color is None:
-        bone_color = {}
-
-    # Skeleton 实例取其骨骼字典；dict 输入的值需为具有 pos/quat/length 属性的骨骼对象
-    if isinstance(_skeleton, soup3D.skeleton.Skeleton):
-        _skeleton = _skeleton.bones
-
-    faces = []
-    for bone_name in _skeleton:
-        bone = _skeleton[bone_name]
-        color = (1, 0, 0)
-        if bone_name in bone_color:
-            color = bone_color[bone_name]
-        # 计算骨骼末端位置（用于可视化），统一读取骨骼四元数
-        rot = glm.mat4_cast(bone.quat)
-        endpoint = glm.vec3(rot * glm.vec4(0, 0, bone.length, 1.0))
-        end_pos = (bone.pos.x + endpoint.x, bone.pos.y + endpoint.y, bone.pos.z + endpoint.z)
-        faces.append(
-            Face(
-                TRIANGLE_B,
-                soup3D.shader.AutoSP(
-                    soup3D.shader.MixChannel((1, 1), *color)
-                ),
-                [
-                    (
-                        bone.pos.x + size,
-                        bone.pos.y,
-                        bone.pos.z,
-                        0, 0
-                    ),
-                    (
-                        bone.pos.x - size,
-                        bone.pos.y,
-                        bone.pos.z,
-                        0, 0)
-                    ,
-                    (*end_pos, 0, 0),
-                    (
-                        bone.pos.x,
-                        bone.pos.y + size,
-                        bone.pos.z,
-                        0, 0
-                    ),
-                    (
-                        bone.pos.x,
-                        bone.pos.y - size,
-                        bone.pos.z,
-                        0, 0
-                    ),
-                    (*end_pos, 0, 0),
-                    (
-                        bone.pos.x,
-                        bone.pos.y,
-                        bone.pos.z + size,
-                        0, 0
-                    ),
-                    (
-                        bone.pos.x,
-                        bone.pos.y,
-                        bone.pos.z - size,
-                        0, 0
-                    ),
-                    (*end_pos, 0, 0),
-                ]
-            )
-        )
-    model = Model(0, 0, 0, *faces)
-    return model
 
 
 def _mtl_params(width, height, R, G, B, A, emission, bump_texture, double_side, max_light_count, ior, roughness, metallic, shininess, illum, data_only) -> dict:
@@ -1103,426 +1829,6 @@ def _store_mtl_material(params, surface):
         "params": dict(params),
         "surface": surface,
     }
-
-
-def open_mtl(mtl: str,
-             double_side: bool = True,
-             roll_funk=None,
-             encoding: str = "utf-8",
-             max_light_count: int = 8,
-             surface = soup3D.shader.AutoSP,
-             data_only: bool = False) -> "dict | Data":
-    """
-    根据mtl文件生成多个着色器
-    :param mtl:             *.mtl纹理文件路径
-    :param double_side:     是否启用双面渲染
-    :param roll_funk:       每当读取一行时调用一次，方法需有，且仅有1个参数，用于接收已读取的行数
-    :param encoding:        读取文本文件时使用的字符集(建议在建模软件里把所有元素命名为英文，这样就不用管这个参数了)
-    :param max_light_count: 这些着色器出现时会同时出现的最多的光源数量，大了会导致性能问题
-    :param surface:         模型使用的表面着色器类。加载器通过 shader.make_surface 动态适配其构造参数，只传入该类
-                            可接收的参数，不强制要求任何参数。可按需声明接收这些标准材质参数：base_color, normal,
-                            emission, double_side, max_light_count, roughness, metallic, ior, transmission
-    :param data_only:       是否只创建模型数据结构，当为True时，则返回着色器相关的数据，而不是着色器本身。当需要用一个文件创建多组独立的着色
-                            器时，则将该值设为True。
-    :return: 所有生成出的表面着色器，当data_only为True时返回Data对象
-    """
-    if not isinstance(mtl, str):
-        raise TypeError("mtl must be a string path")
-    if not isinstance(double_side, bool):
-        raise TypeError("double_side must be a bool")
-    if roll_funk is not None and not callable(roll_funk):
-        raise TypeError("roll_funk must be callable or None")
-    if not isinstance(encoding, str):
-        raise TypeError("encoding must be a string")
-    if not isinstance(max_light_count, int):
-        raise TypeError("max_light_count must be an int")
-    if not isinstance(data_only, bool):
-        raise TypeError("data_only must be a bool")
-
-    mtl_dict = {}
-
-    mtl_file = open(mtl, "r", encoding=encoding)
-    mtl_str = mtl_file.read()
-    mtl_file.close()
-
-    command_lines = mtl_str.split("\n")
-    now_mtl = None
-
-    R, G, B, A = 1.0, 1.0, 1.0, 1.0
-    width, height = 1, 1
-    emission = 0, 0, 0
-    bump_texture = None
-    ior = None
-    roughness = None
-    metallic = None
-    shininess = None
-    illum = None
-    roll_count = 0
-
-    for row in command_lines:
-        if roll_funk is not None:
-            roll_funk(roll_count)
-            roll_count += 1
-        command = row.split("#")[0]
-        args = smart_split(command)
-        if len(args) > 0:
-            if args[0] == "newmtl":
-                if now_mtl is not None:
-                    params = _mtl_params(width, height, R, G, B, A, emission, bump_texture,
-                                         double_side, max_light_count, ior, roughness, metallic, shininess, illum, data_only)
-                    if data_only:
-                        mtl_dict[now_mtl] = _store_mtl_material(params, surface)
-                    else:
-                        mtl_dict[now_mtl] = soup3D.shader.make_surface(surface, params)
-
-                    R, G, B, A = 1.0, 1.0, 1.0, 1.0
-                    width, height = 1, 1
-                    emission = 0, 0, 0
-                    bump_texture = None
-                    ior = None
-                    roughness = None
-                    metallic = None
-                    shininess = None
-                    illum = None
-                now_mtl = args[1]
-            if args[0] == "Kd":
-                R, G, B = float(args[1]), float(args[2]), float(args[3])
-            if args[0] == "d":
-                A = float(args[1])
-            if args[0] == "Ke":
-                emission = (float(args[1]), float(args[2]), float(args[3]))
-            if args[0] == "Ni":
-                ior = float(args[1])
-            if args[0] == "Pr":
-                roughness = float(args[1])
-            if args[0] == "Pm":
-                metallic = float(args[1])
-            if args[0] == "Ns":
-                shininess = float(args[1])
-            if args[0] == "illum":
-                illum = int(float(args[1]))
-            if args[0] == "map_Kd":
-                base_dir = os.path.dirname(mtl)
-                tex_path = (os.path.join(base_dir, args[1]))
-                try:
-                    img = imageio.imread(tex_path)
-                    height, width = img.shape[:2]
-                except:
-                    width, height = 1, 1
-                if data_only:
-                    R = ("channel", tex_path, 0)
-                    G = ("channel", tex_path, 1)
-                    B = ("channel", tex_path, 2)
-                else:
-                    texture = soup3D.shader.Texture(tex_path)
-                    R = soup3D.shader.Channel(texture, 0)
-                    G = soup3D.shader.Channel(texture, 1)
-                    B = soup3D.shader.Channel(texture, 2)
-            if args[0] == "map_d":
-                base_dir = os.path.dirname(mtl)
-                tex_path = (os.path.join(base_dir, args[1]))
-                if data_only:
-                    A = ("channel", tex_path, 3)
-                else:
-                    texture = soup3D.shader.Texture(tex_path)
-                    A = soup3D.shader.Channel(texture, 3)
-            if args[0] == "map_Ke":
-                base_dir = os.path.dirname(mtl)
-                tex_path = (os.path.join(base_dir, args[1]))
-                if data_only:
-                    emission = ("texture", tex_path)
-                else:
-                    emission = soup3D.shader.Texture(tex_path)
-            # map_Bump 与 Blender PBR 扩展的 norm 关键字均按法线贴图处理
-            if args[0] in ("map_Bump", "norm"):
-                tex_path = None
-                arg_name = None
-                for arg in args[1:]:
-                    if arg.startswith("-"):
-                        arg_name = arg
-                        continue
-                    if arg_name is None:
-                        base_dir = os.path.dirname(mtl)
-                        tex_path = (os.path.join(base_dir, arg))
-                    else:
-                        arg_name = None
-                        continue
-                if data_only:
-                    bump_texture = ("texture", tex_path)
-                else:
-                    bump_texture = soup3D.shader.Texture(tex_path)
-
-    # 添加最后一个材质
-    if now_mtl is not None:
-        params = _mtl_params(width, height, R, G, B, A, emission, bump_texture,
-                             double_side, max_light_count, ior, roughness, metallic, shininess, illum, data_only)
-        if data_only:
-            mtl_dict[now_mtl] = _store_mtl_material(params, surface)
-        else:
-            mtl_dict[now_mtl] = soup3D.shader.make_surface(surface, params)
-
-    if data_only:
-        return Data("mtl", mtl_dict)
-    return mtl_dict
-
-
-def open_obj(obj: str,
-             mtl: "str | dict | Data | None" = None,
-             double_side: bool = True,
-             roll_funk=None,
-             encoding: str = "utf-8",
-             max_light_count: int = 8,
-             data_only: bool = False,
-             surface = soup3D.shader.AutoSP) -> "Model | Data":
-    """
-    从obj文件导入模型
-    :param obj:             *.obj模型文件路径
-    :param mtl:             *.mtl纹理文件路径、已加载的材质字典或Data对象
-    :param double_side:     是否启用双面渲染
-    :param roll_funk:       每当读取一行时调用一次，方法需有，且仅有1个参数，用于接收已读取的行数
-    :param encoding:        读取文本文件时使用的字符集(建议在建模软件里把所有元素命名为英文，这样就不用管这个参数了)
-    :param max_light_count: 该模型出现时会同时出现的最多的光源数量，大了会导致性能问题
-    :param surface:         模型使用的表面着色器类，默认为AutoSP。加载器只传入该类可接收的材质参数
-                            (动态适配，不强制任何参数，详见 shader.make_surface)
-    :param data_only:       是否只创建模型数据结构，当为True时，则返回模型相关的数据，而不是模型本身。当需要用一个文件创建多个独立的模型时，
-                            则将该值设为True。
-    :return: 生成出来的模型数据(Model类)，当data_only为True时返回Data对象
-    """
-    if not isinstance(obj, str):
-        raise TypeError("obj must be a string path")
-    if mtl is not None and not isinstance(mtl, (str, dict, Data)):
-        raise TypeError("mtl must be a string, dict, Data instance, or None")
-    if not callable(surface):
-        raise TypeError("surface must be a surface shader class (callable)")
-    if not isinstance(double_side, bool):
-        raise TypeError("double_side must be a bool")
-    if roll_funk is not None and not callable(roll_funk):
-        raise TypeError("roll_funk must be callable or None")
-    if not isinstance(encoding, str):
-        raise TypeError("encoding must be a string")
-    if not isinstance(max_light_count, int):
-        raise TypeError("max_light_count must be an int")
-    if not isinstance(data_only, bool):
-        raise TypeError("data_only must be a bool")
-
-    # 处理mtl文件
-    mtl_dict = {}
-
-    # 如果mtl是字符串路径，则调用load_mtl加载
-    if isinstance(mtl, str):
-        mtl_dict = open_mtl(mtl, double_side, roll_funk, encoding, max_light_count, surface=surface, data_only=data_only)
-    elif isinstance(mtl, Data):
-        # 如果传入的是Data对象，根据data_only决定是否构建着色器
-        if data_only:
-            mtl_dict = mtl
-        else:
-            mtl_dict = mtl.make()
-    elif isinstance(mtl, dict):
-        # 如果已经是字典，则直接使用
-        mtl_dict = mtl
-
-    # 创建默认材质（如果未提供MTL或材质未定义时使用），data_only模式下不创建着色器对象
-    default_material = None
-    if not data_only:
-        default_material = soup3D.shader.make_surface(surface, {
-            "base_color": soup3D.shader.MixChannel((1, 1), 1.0, 1.0, 1.0, 1.0),
-            "emission": (0, 0, 0),
-            "normal": (0.5, 0.5, 1),
-            "double_side": double_side,
-            "max_light_count": max_light_count
-        })
-
-    # 处理obj文件
-    obj_file = open(obj, 'r', encoding=encoding)
-    obj_str = obj_file.read()
-    obj_file.close()
-
-    vertices = []  # 顶点坐标 (x, y, z)
-    tex_coords = []  # 纹理坐标 (u, v)
-    normals = []  # 法线向量 (nx, ny, nz)
-    faces_by_material = {}  # 按材质分组存储面数据
-
-    # 当前使用的材质
-    current_material = None
-    current_material_name = None
-
-    command_lines = obj_str.split("\n")
-    roll_count = 0
-
-    for row in command_lines:
-        if roll_funk is not None:
-            roll_funk(roll_count)
-            roll_count += 1
-
-        row = row.strip()
-        if not row or row.startswith('#'):
-            continue
-
-        tokens = smart_split(row)
-        if not tokens:
-            continue
-
-        prefix = tokens[0]
-        data = tokens[1:]
-
-        # 处理顶点数据
-        if prefix == 'v':
-            # 顶点坐标 (x, y, z [, w])
-            if len(data) >= 3:
-                x, y, z = map(float, data[:3])
-                vertices.append((x, y, z))
-
-        # 处理纹理坐标
-        elif prefix == 'vt':
-            # 纹理坐标 (u, v [, w])
-            if len(data) >= 2:
-                u, v = map(float, data[:2])
-                tex_coords.append((u, v))
-
-        # 处理法线
-        elif prefix == 'vn':
-            # 法线向量 (x, y, z)
-            if len(data) >= 3:
-                nx, ny, nz = map(float, data[:3])
-                normals.append((nx, ny, nz))
-
-        # 处理材质库引用
-        elif prefix == 'mtllib':
-            # 如果mtl参数未提供，但obj文件中指定了mtl文件，则自动加载
-            if mtl is None and data:
-                mtl_path = os.path.join(os.path.dirname(obj), data[0])
-                if os.path.exists(mtl_path):
-                    mtl_dict = open_mtl(mtl_path, double_side, roll_funk, encoding, max_light_count, surface=surface, data_only=data_only)
-
-        # 处理材质使用
-        elif prefix == 'usemtl':
-            # 切换当前使用的材质
-            if data:
-                material_name = data[0]
-                current_material_name = material_name
-                if not data_only:
-                    # 如果材质在库中未定义，使用默认材质
-                    if isinstance(mtl_dict, dict):
-                        current_material = mtl_dict.get(material_name, default_material)
-                    else:
-                        current_material = default_material
-
-        # 处理面定义
-        elif prefix == 'f':
-            if len(data) < 3:
-                continue  # 至少需要3个顶点构成面
-
-            # 多边形三角剖分（简单实现，适合凸多边形）
-            base_indexes = []
-            for vertex_def in data:
-                # 解析顶点/纹理/法线索引（格式如：v/vt/vn 或 v//vn 等）
-                indexes = vertex_def.split('/')
-
-                # 处理缺少纹理坐标的情况（填充空值）
-                while len(indexes) < 3:
-                    indexes.append('')
-
-                # 转换索引为整数（索引从1开始，需要转为0开始）
-                # 支持负数索引（从末尾开始计数）
-                v_idx = int(indexes[0]) - 1 if indexes[0] else -1
-                vt_idx = int(indexes[1]) - 1 if indexes[1] else -1
-                vn_idx = int(indexes[2]) - 1 if indexes[2] else -1
-
-                # 处理负索引（相对索引）
-                if v_idx < 0:
-                    v_idx = len(vertices) + v_idx
-                if vt_idx < 0:
-                    vt_idx = len(tex_coords) + vt_idx
-                if vn_idx < 0:
-                    vn_idx = len(normals) + vn_idx
-
-                # 获取顶点数据（确保索引在有效范围内）
-                vert = list(vertices[v_idx])
-
-                # 如果有纹理坐标，添加纹理坐标
-                if 0 <= vt_idx < len(tex_coords):
-                    u, v = tex_coords[vt_idx]
-                    vert.extend([u, -v])
-                else:
-                    vert.extend([0.0, 0.0])  # 默认纹理坐标
-
-                # 如果有法线，添加法线数据
-                if 0 <= vn_idx < len(normals):
-                    nx, ny, nz = normals[vn_idx]
-                    vert.extend([nx, ny, nz])
-                else:
-                    vert.extend([0.0, 0.0, 0.0])  # 默认法线
-
-                base_indexes.append(tuple(vert))
-
-            # 简单三角剖分：使用第一个顶点为基准，连接其他顶点形成三角形
-            triangles = []
-            for i in range(1, len(base_indexes) - 1):
-                triangles.extend([
-                    base_indexes[0],
-                    base_indexes[i],
-                    base_indexes[i + 1]
-                ])
-
-            if data_only:
-                # data_only模式：按材质名称分组
-                mat_key = current_material_name
-                if mat_key not in faces_by_material:
-                    faces_by_material[mat_key] = {'vertices': []}
-                faces_by_material[mat_key]['vertices'].extend(triangles)
-            else:
-                # 普通模式：按材质对象id分组
-                material_id = id(current_material) if current_material else id(default_material)
-                if material_id not in faces_by_material:
-                    faces_by_material[material_id] = {
-                        'material': current_material if current_material else default_material,
-                        'vertices': []
-                    }
-                faces_by_material[material_id]['vertices'].extend(triangles)
-
-    if data_only:
-        # 获取材质数据
-        if isinstance(mtl_dict, Data):
-            mtl_data = mtl_dict._data
-        elif isinstance(mtl_dict, dict):
-            mtl_data = mtl_dict
-        else:
-            mtl_data = {}
-
-        face_groups = []
-        for mat_name, face_data in faces_by_material.items():
-            if face_data['vertices']:
-                face_groups.append({
-                    "material_name": mat_name,
-                    "vertices": face_data['vertices'],
-                })
-
-        obj_data = {
-            "face_groups": face_groups,
-            "mtl_data": mtl_data,
-            "default_material": _store_mtl_material(
-                _mtl_params(1, 1, 1.0, 1.0, 1.0, 1.0, (0, 0, 0), None,
-                            double_side, max_light_count, None, None, None, None, None, True),
-                surface),
-            "double_side": double_side,
-            "max_light_count": max_light_count,
-        }
-        return Data("obj", obj_data)
-
-    # 创建面对象，每个材质对应一个面
-    faces = []
-    for material_id, face_data in faces_by_material.items():
-        if face_data['vertices']:  # 只有当有顶点数据时才创建面
-            face = Face(
-                shape_type="triangle_b",  # 分离的三角形
-                surface=face_data['material'],
-                vertex=face_data['vertices']
-            )
-            faces.append(face)
-
-    # 创建模型对象（原点设置为0,0,0）
-    model = Model(0, 0, 0, *faces)
-    return model
 
 
 def _gltf_component_size(component_type: int) -> int:
@@ -2401,303 +2707,6 @@ def _transfer_surface_params(src_surface, dst_surface_class, **extra):
                 pass
     params.update(extra)
     return soup3D.shader.make_surface(dst_surface_class, params)
-
-
-def open_gltf(
-        gltf: str,
-        double_side: bool = True,
-        max_light_count: int = 8,
-        surface = soup3D.shader.AutoSP,
-        skin = soup3D.shader.BoneBinderSP,
-        data_only: bool = False,
-        resources: list[str] | tuple[str, ...] | str = ("mesh", "skeleton")
-    ):
-    """
-    从gltf文件导入模型和骨骼
-    :param gltf:            gltf模型文件路径
-    :param double_side:     是否启用双面渲染
-    :param max_light_count: 该模型出现时会同时出现的最多的光源数量，大了会导致性能问题
-    :param surface:         模型使用的表面着色器类型，加载器会按其构造签名动态提供材质参数(base_color、emission、normal、double_side、
-                            max_light_count、roughness、metallic、ior、transmission)，不强制要求任何参数，不接收的参数会被自动过滤；
-                            也可以接收**kwargs以获取全部参数
-    :param skin:            模型使用的蒙皮着色器类型，参数规则同surface，另可在签名中声明skeleton参数以接收骨架
-    :param data_only:       是否只创建模型和骨骼的数据结构，当为True时，则返回模型相关的数据，而不是模型和骨骼本身。当需要用一个文件创建多个
-                            独立的模型时，则将该值设为True。
-    :param resources:       需要返回的资源，当为列表或数组时，则按顺序返回带有所有需要的资源的数组。当为字符串时，则只返回一个需要的资源。字
-                            符串可以填写：
-                            mesh:      网格模型
-                            skeleton:  骨架模型
-                            animation: 骨骼动画
-                            其中如果在单次调用时同时返回网格模型和骨架，则骨架与网格模型绑定，可直接通过骨架对模型造成形变。
-    :return: (资源, 资源) | 资源 | Data对象
-    """
-    if not isinstance(gltf, str):
-        raise TypeError("gltf must be a string path")
-    if not isinstance(double_side, bool):
-        raise TypeError("double_side must be a bool")
-    if not isinstance(max_light_count, int):
-        raise TypeError("max_light_count must be an int")
-    if not isinstance(data_only, bool):
-        raise TypeError("data_only must be a bool")
-    if not isinstance(resources, (str, list, tuple)):
-        raise TypeError("resources must be a string, list, or tuple")
-
-    base_dir = os.path.dirname(os.path.abspath(gltf))
-
-    # 读取GLTF文件
-    with open(gltf, "r", encoding="utf-8") as f:
-        gltf_data = json.load(f)
-
-    # 加载缓冲区数据
-    buffers_data = _gltf_load_buffers(gltf_data, base_dir)
-
-    nodes = gltf_data["nodes"]
-
-    # 计算所有节点的世界变换矩阵
-    world_transforms = _gltf_compute_world_transforms(nodes)
-
-    # 加载材质
-    materials_dict = _gltf_load_materials(gltf_data, base_dir, double_side, max_light_count, surface, data_only=data_only)
-
-    # 检查是否有蒙皮数据
-    skins_data = gltf_data.get("skins", [])
-    has_skin = len(skins_data) > 0
-
-    # 构建骨架或存储骨架数据
-    skeleton = None
-    skeleton_data = None
-    if data_only:
-        skeleton_data = _gltf_store_skeleton(gltf_data, world_transforms)
-    else:
-        skeleton = _gltf_build_skeleton(gltf_data, world_transforms)
-
-    # 读取蒙皮的逆绑定矩阵和关节映射
-    # JOINTS_0的值是skin.joints数组的索引，需要映射到骨骼名称
-    joint_name_map = {}
-    if has_skin:
-        skin_info = skins_data[0]
-        joints = skin_info["joints"]
-        for arr_idx, node_idx in enumerate(joints):
-            joint_name_map[arr_idx] = nodes[node_idx].get("name", f"bone_{node_idx}")
-
-    # 创建默认材质（data_only模式下不创建着色器对象）
-    default_surface = None
-    if not data_only:
-        default_surface = soup3D.shader.make_surface(surface, {
-            "base_color": soup3D.shader.MixChannel((1, 1), 0.8, 0.8, 0.8, 1.0),
-            "emission": (0, 0, 0),
-            "normal": (0.5, 0.5, 1),
-            "double_side": double_side,
-            "max_light_count": max_light_count
-        })
-
-    # 处理所有网格
-    all_faces = []
-    primitives_data = []
-    meshes = gltf_data.get("meshes", [])
-
-    for mesh in meshes:
-        for primitive in mesh.get("primitives", []):
-            attributes = primitive.get("attributes", {})
-
-            # 读取顶点数据
-            positions = _gltf_read_accessor(gltf_data, buffers_data, attributes.get("POSITION", -1)) if "POSITION" in attributes else []
-            prim_normals = _gltf_read_accessor(gltf_data, buffers_data, attributes.get("NORMAL", -1)) if "NORMAL" in attributes else []
-            texcoords = _gltf_read_accessor(gltf_data, buffers_data, attributes.get("TEXCOORD_0", -1)) if "TEXCOORD_0" in attributes else []
-            joints_data = _gltf_read_accessor(gltf_data, buffers_data, attributes.get("JOINTS_0", -1)) if "JOINTS_0" in attributes else []
-            weights_data = _gltf_read_accessor(gltf_data, buffers_data, attributes.get("WEIGHTS_0", -1)) if "WEIGHTS_0" in attributes else []
-
-            # 读取索引数据
-            indices = []
-            if "indices" in primitive:
-                indices = _gltf_read_accessor(gltf_data, buffers_data, primitive["indices"])
-
-            # 获取材质
-            mat_idx = primitive.get("material", -1)
-            prim_surface = default_surface
-            if not data_only:
-                if mat_idx >= 0 and mat_idx in materials_dict:
-                    prim_surface = materials_dict[mat_idx]
-
-            # 构建顶点列表
-            vertices = []
-            prim_has_skin = has_skin and bool(joints_data) and bool(weights_data)
-            if indices:
-                index_list = indices
-            else:
-                index_list = list(range(len(positions)))
-
-            for idx in index_list:
-                # 位置
-                pos = positions[idx] if idx < len(positions) else (0, 0, 0)
-
-                # 纹理坐标
-                uv = texcoords[idx] if idx < len(texcoords) else (0, 0)
-
-                # 法线
-                nrm = prim_normals[idx] if idx < len(prim_normals) else (0, 0, 1)
-
-                if prim_has_skin:
-                    # 带骨骼权重的顶点
-                    joint_indices = joints_data[idx] if idx < len(joints_data) else (0, 0, 0, 0)
-                    joint_weights = weights_data[idx] if idx < len(weights_data) else (0, 0, 0, 0)
-
-                    # 构建骨骼权重字典
-                    bone_weights_dict = {}
-                    for j in range(4):
-                        if joint_weights[j] > 0.0 and joint_indices[j] in joint_name_map:
-                            bone_weights_dict[joint_name_map[joint_indices[j]]] = joint_weights[j]
-
-                    vertex = (
-                        bone_weights_dict,
-                        pos[0], pos[1], pos[2],
-                        uv[0], uv[1],
-                        nrm[0], nrm[1], nrm[2]
-                    )
-                else:
-                    # 普通顶点
-                    vertex = (
-                        pos[0], pos[1], pos[2],
-                        uv[0], uv[1],
-                        nrm[0], nrm[1], nrm[2]
-                    )
-                vertices.append(vertex)
-
-            if not vertices:
-                continue
-
-            if data_only:
-                primitives_data.append({
-                    "vertices": vertices,
-                    "has_skin": prim_has_skin,
-                    "material_idx": mat_idx,
-                })
-            else:
-                # 根据是否有骨骼选择着色器类型，蒙皮时按目标类动态转移材质参数
-                if prim_has_skin:
-                    face_surface = _transfer_surface_params(prim_surface, skin, skeleton=skeleton)
-                else:
-                    face_surface = prim_surface
-
-                face = Face(TRIANGLE_B, face_surface, vertices)
-                all_faces.append(face)
-
-    animation = None
-    if "animation" in resources:
-        animation = _gltf_load_animation(gltf_data, buffers_data, world_transforms)
-
-    if data_only:
-        gltf_stored = {
-            "primitives": primitives_data,
-            "materials": materials_dict,
-            "skeleton_data": skeleton_data,
-            "double_side": double_side,
-            "max_light_count": max_light_count,
-            "surface": surface,
-            "skin": skin,
-            "default_surface_class": surface,
-            "animation": animation,
-            "resources": resources,
-        }
-        return Data("gltf", gltf_stored)
-
-    model = Model(0, 0, 0, *all_faces)
-
-    if isinstance(resources, str):
-        if resources == "mesh":
-            return model
-        elif resources == "skeleton":
-            return skeleton
-        elif resources == "animation":
-            return animation
-        else:
-            return model, skeleton
-    else:
-        results = []
-        for res in resources:
-            if res == "mesh":
-                results.append(model)
-            elif res == "skeleton":
-                results.append(skeleton)
-            elif res == "animation":
-                results.append(animation)
-        if len(results) == 1:
-            return results[0]
-        return tuple(results)
-
-
-def get_projection_mat() -> glm.fmat4x4:
-    """
-    获取透视矩阵，可用于代码着色器
-    :return: 矩阵
-    """
-    return glm.perspective(
-        glm.radians(proj_fov),
-        proj_width / proj_height,
-        proj_near,
-        proj_far
-    )
-
-
-def smart_split(line):
-    """
-    高效的字符串分割函数，用于替代shlex.split处理OBJ/MTL文件行解析
-    针对OBJ/MTL文件格式进行了优化，比shlex.split快得多
-    :param line: 要分割的行
-    :return: 分割后的字符串列表
-    """
-    # 快速路径：如果不包含引号或转义字符，直接使用split()
-    if '"' not in line and "'" not in line and '\\' not in line:
-        return line.split()
-
-    # 处理包含引号的情况
-    result = []
-    current_token = ""
-    in_single_quote = False
-    in_double_quote = False
-    i = 0
-
-    while i < len(line):
-        char = line[i]
-
-        # 处理转义字符
-        if char == '\\' and i + 1 < len(line):
-            # 如果在引号内，保留转义字符和下一个字符
-            if in_single_quote or in_double_quote:
-                current_token += char + line[i + 1]
-            else:
-                # 如果不在引号内，跳过转义字符（按照普通空格分隔处理）
-                current_token += line[i + 1]
-            i += 2
-            continue
-
-        # 处理单引号
-        if char == "'" and not in_double_quote:
-            in_single_quote = not in_single_quote
-            i += 1
-            continue
-
-        # 处理双引号
-        if char == '"' and not in_single_quote:
-            in_double_quote = not in_double_quote
-            i += 1
-            continue
-
-        # 处理空格分隔符
-        if char.isspace() and not in_single_quote and not in_double_quote:
-            if current_token:
-                result.append(current_token)
-                current_token = ""
-        else:
-            current_token += char
-
-        i += 1
-
-    # 添加最后一个token
-    if current_token:
-        result.append(current_token)
-
-    return result
 
 
 if __name__ == '__main__':

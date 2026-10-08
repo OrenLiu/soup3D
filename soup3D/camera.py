@@ -27,49 +27,6 @@ QUAT : glm.quat = glm.quat(1.0, 0.0, 0.0, 0.0)
 # 相机旋转的四元数主存储 (w, x, y, z)
 
 
-def _glu_look_at_fallback(ex: int | float,
-                          ey: int | float,
-                          ez: int | float,
-                          cx: int | float,
-                          cy: int | float,
-                          cz: int | float,
-                          ux: int | float,
-                          uy: int | float,
-                          uz: int | float) -> None:
-    """
-    在 GLU 的 gluLookAt 不可用时，使用等价矩阵乘法回退实现。
-    """
-    f = normalize([cx - ex, cy - ey, cz - ez])
-    up = normalize([ux, uy, uz])
-    s = normalize(cross(f, up))
-    u = cross(s, f)
-
-    matrix = [
-        s[0], u[0], -f[0], 0.0,
-        s[1], u[1], -f[1], 0.0,
-        s[2], u[2], -f[2], 0.0,
-        0.0,  0.0,   0.0,  1.0,
-    ]
-    glMultMatrixf((ctypes.c_float * 16)(*matrix))
-    glTranslatef(-ex, -ey, -ez)
-
-
-def _safe_glu_look_at(ex: int | float,
-                      ey: int | float,
-                      ez: int | float,
-                      cx: int | float,
-                      cy: int | float,
-                      cz: int | float,
-                      ux: int | float,
-                      uy: int | float,
-                      uz: int | float) -> None:
-    """优先使用 gluLookAt，不可用时自动回退。"""
-    if bool(gluLookAt):
-        gluLookAt(ex, ey, ez, cx, cy, cz, ux, uy, uz)
-    else:
-        _glu_look_at_fallback(ex, ey, ez, cx, cy, cz, ux, uy, uz)
-
-
 def goto(x: int | float, y: int | float, z: int | float) -> None:
     """
     移动相机位置
@@ -157,3 +114,46 @@ def get_view_mat() -> glm.mat4x4:
     camera_target = glm.vec3(X + center.x, Y + center.y, Z + center.z)
     camera_up = glm.vec3(up.x, up.y, up.z)
     return glm.lookAt(camera_pos, camera_target, camera_up)
+
+
+def _glu_look_at_fallback(ex: int | float,
+                          ey: int | float,
+                          ez: int | float,
+                          cx: int | float,
+                          cy: int | float,
+                          cz: int | float,
+                          ux: int | float,
+                          uy: int | float,
+                          uz: int | float) -> None:
+    """
+    在 GLU 的 gluLookAt 不可用时，使用等价矩阵乘法回退实现。
+    """
+    f = normalize([cx - ex, cy - ey, cz - ez])
+    up = normalize([ux, uy, uz])
+    s = normalize(cross(f, up))
+    u = cross(s, f)
+
+    matrix = [
+        s[0], u[0], -f[0], 0.0,
+        s[1], u[1], -f[1], 0.0,
+        s[2], u[2], -f[2], 0.0,
+        0.0,  0.0,   0.0,  1.0,
+    ]
+    glMultMatrixf((ctypes.c_float * 16)(*matrix))
+    glTranslatef(-ex, -ey, -ez)
+
+
+def _safe_glu_look_at(ex: int | float,
+                      ey: int | float,
+                      ez: int | float,
+                      cx: int | float,
+                      cy: int | float,
+                      cz: int | float,
+                      ux: int | float,
+                      uy: int | float,
+                      uz: int | float) -> None:
+    """优先使用 gluLookAt，不可用时自动回退。"""
+    if bool(gluLookAt):
+        gluLookAt(ex, ey, ez, cx, cy, cz, ux, uy, uz)
+    else:
+        _glu_look_at_fallback(ex, ey, ez, cx, cy, cz, ux, uy, uz)

@@ -1838,60 +1838,6 @@ SURFACE_MATERIAL_PARAMS = (
 _surface_sig_cache = {}
 
 
-def _surface_params_from_callable(target) -> "frozenset | None":
-    """
-    内省一个可调用对象的形参，返回(可接收的参数名集合或None, 必填参数名元组)
-    :param target: 函数、方法等可调用对象
-    :return: 内省结果；可接收参数集合为None表示含**kwargs形参，可接收任意关键字参数
-    """
-    try:
-        sig = inspect.signature(target)
-    except (TypeError, ValueError):
-        return None, ()
-    accepts_all = False
-    params = set()
-    required = []
-    for param in sig.parameters.values():
-        if param.kind == inspect.Parameter.VAR_KEYWORD:
-            accepts_all = True
-        elif param.kind in (inspect.Parameter.POSITIONAL_OR_KEYWORD, inspect.Parameter.KEYWORD_ONLY):
-            params.add(param.name)
-            if param.default is inspect.Parameter.empty:
-                required.append(param.name)
-    if accepts_all:
-        return None, ()
-    return frozenset(params), tuple(required)
-
-
-def get_surface_params(cls) -> "frozenset[str] | None":
-    """
-    内省表面着色器类(或工厂函数)可接收的构造参数名集合
-    :param cls: 表面着色器类或工厂函数
-    :return: 可接收的参数名集合；当形参含**kwargs或无法内省(如C扩展)时返回None，表示可接收任意参数
-    """
-    return _surface_sig_info(cls)[0]
-
-
-def _surface_sig_info(cls) -> tuple:
-    """
-    获取表面着色器类的签名内省结果，带缓存
-    :param cls: 表面着色器类或工厂函数
-    :return: (可接收的参数名集合或None, 必填参数名元组)
-    """
-    try:
-        return _surface_sig_cache[cls]
-    except KeyError:
-        pass
-    if inspect.isclass(cls):
-        # 内省类本身而非__init__，inspect.signature会自动排除self并遵循__init__/__new__
-        result = _surface_params_from_callable(cls)
-    else:
-        # 类以外的可调用对象(工厂函数)直接内省其形参
-        result = _surface_params_from_callable(cls)
-    _surface_sig_cache[cls] = result
-    return result
-
-
 def filter_surface_params(cls, params: dict) -> dict:
     """
     从参数字典中筛选出目标表面着色器类可接收的参数
@@ -1928,6 +1874,60 @@ def make_surface(cls, params: dict) -> "Surface":
             + ", ".join(sorted(kwargs))
         )
     return cls(**kwargs)
+
+
+def get_surface_params(cls) -> "frozenset[str] | None":
+    """
+    内省表面着色器类(或工厂函数)可接收的构造参数名集合
+    :param cls: 表面着色器类或工厂函数
+    :return: 可接收的参数名集合；当形参含**kwargs或无法内省(如C扩展)时返回None，表示可接收任意参数
+    """
+    return _surface_sig_info(cls)[0]
+
+
+def _surface_params_from_callable(target) -> "frozenset | None":
+    """
+    内省一个可调用对象的形参，返回(可接收的参数名集合或None, 必填参数名元组)
+    :param target: 函数、方法等可调用对象
+    :return: 内省结果；可接收参数集合为None表示含**kwargs形参，可接收任意关键字参数
+    """
+    try:
+        sig = inspect.signature(target)
+    except (TypeError, ValueError):
+        return None, ()
+    accepts_all = False
+    params = set()
+    required = []
+    for param in sig.parameters.values():
+        if param.kind == inspect.Parameter.VAR_KEYWORD:
+            accepts_all = True
+        elif param.kind in (inspect.Parameter.POSITIONAL_OR_KEYWORD, inspect.Parameter.KEYWORD_ONLY):
+            params.add(param.name)
+            if param.default is inspect.Parameter.empty:
+                required.append(param.name)
+    if accepts_all:
+        return None, ()
+    return frozenset(params), tuple(required)
+
+
+def _surface_sig_info(cls) -> tuple:
+    """
+    获取表面着色器类的签名内省结果，带缓存
+    :param cls: 表面着色器类或工厂函数
+    :return: (可接收的参数名集合或None, 必填参数名元组)
+    """
+    try:
+        return _surface_sig_cache[cls]
+    except KeyError:
+        pass
+    if inspect.isclass(cls):
+        # 内省类本身而非__init__，inspect.signature会自动排除self并遵循__init__/__new__
+        result = _surface_params_from_callable(cls)
+    else:
+        # 类以外的可调用对象(工厂函数)直接内省其形参
+        result = _surface_params_from_callable(cls)
+    _surface_sig_cache[cls] = result
+    return result
 
 
 Img = Texture | MixChannel
