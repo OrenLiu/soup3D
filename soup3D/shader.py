@@ -80,6 +80,12 @@ _INT_TYPE_MAP = {
     GL_INT: np.int32, GL_UNSIGNED_INT: np.uint32,
 }
 
+# rend_cached 单个 surface 实例的缓存槽上限。正常静态场景每 surface 的不同顶点
+# 列表数 = 共享它的 Face 数，远小于该值；超出则 FIFO 淘汰最旧槽（被淘汰的顶点
+# 列表下次调用时重建缓冲，性能退化但结果正确），防止逐帧换新列表的调用方式
+# 让缓存无限增长
+_REND_CACHE_MAX_SLOTS = 256
+
 
 class Texture:
     def __init__(self, image_data: bytes | str, width: int = None, height: int = None, format: str = 'RGBA'):
@@ -639,11 +645,11 @@ class ShaderProgram:
 
         self.texture_val = {}
 
-        # 缓存式渲染（rend_cached）的缓冲：None＝未创建，首次渲染时创建；
-        # 生命周期与实例对齐（__del__ 中随程序资源一并删除）
-        self._cached_vao = None
-        self._cached_vbo = None
-        self._cached_vertex_count = 0
+        # 缓存式渲染（rend_cached）的多槽缓冲缓存：按传入顶点列表对象的 id 分槽，
+        # 值为 (顶点列表, vao, vbo_ids, 顶点数)；缓存强引用保活顶点列表，使 id 不可能
+        # 被回收复用，命中时以 is 校验对象同一性。槽位上限 _REND_CACHE_MAX_SLOTS，
+        # 满则 FIFO 淘汰（GL 资源一并删除）。生命周期与实例对齐（__del__ 中随程序资源一并删除）
+        self._rend_cache = {}
 
         self.dirty = False
 
@@ -741,9 +747,12 @@ class ShaderProgram:
         缓冲生命周期与着色器程序对齐，仅首次付出创建与上传成本，消除逐帧的
         缓冲创建/删除churn，绘制时顶点装配状态由 VAO 直接恢复。
 
-        契约：顶点数据视为静态——同一实例后续调用传入的顶点数据须保持不变，
-        本方法不再重新上传（仅首次数据生效）。缓存的 VAO/VBO 随实例被垃圾回收，
-        在 __del__ 中随程序资源一并删除，无需显式清理。
+        契约：顶点数据视为静态——同一顶点列表对象后续调用传入的数据须保持不变，
+        本方法不再重新上传（仅首次数据生效）。支持同一实例的多个不同静态顶点列表
+        （如多个 Face 共享 surface）：按顶点列表对象 id 分槽缓存，上限
+        _REND_CACHE_MAX_SLOTS 槽，满则 FIFO 淘汰最旧槽（其 GL 资源一并删除；
+        被淘汰的顶点列表下次调用时重建，性能退化但结果正确）。缓存的 VAO/VBO
+        随实例被垃圾回收，在 __del__ 中随程序资源一并删除，无需显式清理。
 
         :param mode:   绘制方式
         :param vertex: 表面中所有的顶点
@@ -767,8 +776,16 @@ class ShaderProgram:
         else:
             glDisable(GL_DEPTH_TEST)
 
-        if self._cached_vao is None:
-            # 首次调用：创建 VAO/VBO 并上传顶点数据；属性指针绑定记录进 VAO 状态，
+        # 按 id(顶点列表) 查缓存；命中时校验缓存保活的顶点列表与入参为同一对象
+        cache_key = id(vertex)
+        entry = self._rend_cache.get(cache_key)
+        if entry is not None and entry[0] is not vertex:
+            # id 槽被其他对象占用：删除旧槽资源并视为未命中
+            self._drop_rend_cache_slot(cache_key)
+            entry = None
+
+        if entry is None:
+            # 未命中：创建 VAO/VBO 并上传顶点数据；属性指针绑定记录进 VAO 状态，
             # 之后逐帧只需绑定该 VAO 即可恢复全部顶点装配状态
             num_buffers = len(vertex)
             vbo_ids = glGenBuffers(num_buffers)
@@ -804,20 +821,50 @@ class ShaderProgram:
 
             # 使用第一个顶点组的长度作为顶点数量（静态契约：数量随首帧数据固定）
             if vertex and vertex[0]:
-                self._cached_vertex_count = len(vertex[0])
+                cache_count = len(vertex[0])
             else:
-                self._cached_vertex_count = 0
+                cache_count = 0
 
-            self._cached_vao = vao
-            self._cached_vbo = vbo_ids
+            self._store_rend_cache_slot(cache_key, vertex, vao, vbo_ids, cache_count)
+            draw_vao = vao
+            draw_count = cache_count
+        else:
+            draw_vao = entry[1]
+            draw_count = entry[3]
 
-        glBindVertexArray(self._cached_vao)
-        glDrawArrays(mode, 0, self._cached_vertex_count)
+        glBindVertexArray(draw_vao)
+        glDrawArrays(mode, 0, draw_count)
         glBindVertexArray(0)
         # 状态卫生：纹理绑定循环把活动纹理单元遗留在最后一个引擎纹理的单元上
         # （如 GL_TEXTURE3），不归位会令下游基于固定管线/默认单元的渲染方
         # （如 pyimgui 的字体绑定）落在错误单元上而整体不可见
         glActiveTexture(GL_TEXTURE0)
+
+    def _drop_rend_cache_slot(self, key):
+        """
+        删除一个 rend_cached 缓存槽及其 VAO/VBO GL 资源
+        :param key: 缓存键（id(顶点列表)）
+        :return: None
+        """
+        entry = self._rend_cache.pop(key, None)
+        if entry is None:
+            return
+        glDeleteVertexArrays(1, [entry[1]])
+        glDeleteBuffers(len(entry[2]), entry[2])
+
+    def _store_rend_cache_slot(self, key, vertex, vao, vbo_ids, count):
+        """
+        存入 rend_cached 缓存槽；槽满则 FIFO 淘汰最旧槽，其 GL 资源一并删除
+        :param key:     缓存键（id(顶点列表)）
+        :param vertex:  顶点列表（缓存强引用保活，防止 id 复用）
+        :param vao:     新建的 VAO
+        :param vbo_ids: 新建的 VBO id 列表
+        :param count:   顶点数
+        :return: None
+        """
+        if len(self._rend_cache) >= _REND_CACHE_MAX_SLOTS and key not in self._rend_cache:
+            self._drop_rend_cache_slot(next(iter(self._rend_cache)))
+        self._rend_cache[key] = (vertex, vao, vbo_ids, count)
 
     def unuse(self):
         """
@@ -975,14 +1022,14 @@ class ShaderProgram:
             glDeleteProgram(self.shader)
             self.shader = None
 
-        # 删除缓存式渲染（rend_cached）的 VAO/VBO；GL 上下文可能已释放，失败静默
+        # 删除缓存式渲染（rend_cached）的多槽缓冲缓存；GL 上下文可能已释放，失败静默
         try:
-            if getattr(self, '_cached_vao', None) is not None:
-                glDeleteVertexArrays(1, [self._cached_vao])
-                self._cached_vao = None
-            if getattr(self, '_cached_vbo', None) is not None:
-                glDeleteBuffers(len(self._cached_vbo), self._cached_vbo)
-                self._cached_vbo = None
+            cache = getattr(self, '_rend_cache', None)
+            if cache:
+                for entry in cache.values():
+                    glDeleteVertexArrays(1, [entry[1]])
+                    glDeleteBuffers(len(entry[2]), entry[2])
+                cache.clear()
         except Exception:
             pass
 
@@ -1066,10 +1113,11 @@ class AutoSP:
         self._view_ptr = glm.value_ptr(self.view_mat)
         self._proj_ptr = glm.value_ptr(self.projection_mat)
 
-        # 缓存式渲染（rend_cached）的拆分缓存：_cached_split_src 记录上次拆分的
-        # 源顶点列表对象，后续帧传入同一对象（id 不变）时直接复用拆分结果
-        self._cached_split = None
-        self._cached_split_src = None
+        # 缓存式渲染（rend_cached）的多槽拆分缓存：按源顶点列表对象 id 分槽，
+        # 值为 (源顶点列表, 拆分结果)；缓存强引用保活源顶点列表，使 id 不可能被
+        # 回收复用，命中时以 is 校验对象同一性。槽位上限 _REND_CACHE_MAX_SLOTS，
+        # 满则 FIFO 淘汰（纯 Python 数据，无 GL 资源需删除）
+        self._split_cache = {}
 
         # 注册到矩阵更新队列
         set_mat_queue[id(self)] = self
@@ -1440,14 +1488,26 @@ class AutoSP:
 
         契约：以入参 vertex 的对象 id 变化判定重拆——修改顶点数据须传入新的
         列表对象，原地改动不会被感知；顶点数据本身也视为静态（不再重新上传）。
-        拆分缓存随实例被垃圾回收自然释放，无需显式清理。仅适用于 AutoSP 的
-        顶点格式（骨骼绑定的 BoneBinderSP 顶点格式不同，勿对其调用）。
+        支持同一实例的多个不同静态顶点列表（如多个 Face 共享 surface）：按源
+        顶点列表对象 id 分槽缓存拆分结果，上限 _REND_CACHE_MAX_SLOTS 槽，满则
+        FIFO 淘汰（被淘汰的列表下次调用时重拆，性能退化但内容正确）。拆分缓存
+        随实例被垃圾回收自然释放，无需显式清理。仅适用于 AutoSP 的顶点格式
+        （骨骼绑定的 BoneBinderSP 顶点格式不同，勿对其调用）。
 
         :param mode:   绘制方式
         :param vertex: 表面中所有的顶点
         :return: None
         """
-        if self._cached_split is None or self._cached_split_src is not vertex:
+        # 按 id(源顶点列表) 查拆分缓存；命中时校验缓存保活的源顶点列表与入参为同一对象
+        cache_key = id(vertex)
+        entry = self._split_cache.get(cache_key)
+        if entry is not None and entry[0] is not vertex:
+            # id 槽被其他对象占用：淘汰旧槽
+            del self._split_cache[cache_key]
+            entry = None
+
+        if entry is None:
+            # 未命中：拆分顶点（计算面法线，按位置/纹理坐标/法线分列）
             # 计算面法线（使用前三个顶点）
             normal = [0.0, 0.0, 1.0]  # 默认法线
             if len(vertex) >= 3:
@@ -1502,11 +1562,25 @@ class AutoSP:
             tex_coords = tex_coords[:min_len]
             normals = normals[:min_len]
 
-            self._cached_split = [positions, tex_coords, normals]
-            self._cached_split_src = vertex
+            split = [positions, tex_coords, normals]
+            self._store_split_cache_slot(cache_key, vertex, split)
+        else:
+            split = entry[1]
 
         # 渲染
-        self.shader_program.rend_cached(mode, self._cached_split)
+        self.shader_program.rend_cached(mode, split)
+
+    def _store_split_cache_slot(self, key, vertex, split):
+        """
+        存入拆分缓存槽；槽满则 FIFO 淘汰最旧槽（纯 Python 数据，无 GL 资源需删除）
+        :param key:   缓存键（id(源顶点列表)）
+        :param vertex: 源顶点列表（缓存强引用保活，防止 id 复用）
+        :param split: 拆分结果
+        :return: None
+        """
+        if len(self._split_cache) >= _REND_CACHE_MAX_SLOTS and key not in self._split_cache:
+            del self._split_cache[next(iter(self._split_cache))]
+        self._split_cache[key] = (vertex, split)
 
     def unuse(self):
         """

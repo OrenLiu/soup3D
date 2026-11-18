@@ -135,6 +135,10 @@ class Model:
         self.list_id = None
         self.surfaces = None
 
+        # 固定渲染优化标记：fixed() 校验通过后置 True，显示列表按缓存渲染命令编译
+        # （重放零上传）；paint/hide/goto/turn/turn_quat/size 调用后自动失效（见 _reset_fixed）
+        self.fixed_mode = False
+
     def __add__(self, other: "Model"):
         """
         将多个模型组合成一个模型，当使用"model1 + model2"时，model2将会被组合到model1。需要注意的是，模型组合后，模型中其他模型的部分将与模
@@ -162,6 +166,12 @@ class Model:
             if hasattr(surface, "set_view_mat"):
                 surface.set_view_mat(soup3D.camera.get_view_mat())
 
+        if self.fixed_mode:
+            # 固定渲染优化随面集合变化重新校验；失效且仍显示中且无显示列表时重建显示列表
+            self.fixed()
+            if not self.fixed and self.list_id is None and id(self) in stable_shapes:
+                self.gen_dis_list()
+
         if self.list_id is not None:
             self.gen_dis_list()
 
@@ -169,11 +179,28 @@ class Model:
 
     def gen_dis_list(self):
         """
-        创建显示列表，该操作开销较大，不建议实时使用
+        创建显示列表，该操作开销较大，不建议实时使用。固定渲染模式（fixed_mode 为
+        True）下编译的是缓存渲染命令：编译前先预热触发 rend_cached 的缓冲创建/上传，
+        使列表只录制「绑定缓存 VAO + 绘制」，逐帧重放零上传。
         :return: None
         """
         self.list_id = glGenLists(1)
         self.surfaces = {}
+        if self.fixed_mode:
+            # 预热：列表外直调 rend_cached 完成缓冲创建/上传（未命中分支），
+            # 预热绘制用颜色/深度写入屏蔽，避免污染当前帧缓冲
+            glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE)
+            glDepthMask(GL_FALSE)
+            for surface_id in self.face_groups:
+                for face in self.face_groups[surface_id]:
+                    surface = face.surface
+                    if hasattr(surface, "use"):
+                        surface.use()
+                    surface.rend_cached(face.mode, face.vertex)
+                    if hasattr(surface, "unuse"):
+                        surface.unuse()
+            glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE)
+            glDepthMask(GL_TRUE)
         glNewList(self.list_id, GL_COMPILE)
         for surface_id in self.face_groups:
             faces = self.face_groups[surface_id]
@@ -183,7 +210,11 @@ class Model:
                     self.surfaces[id(surface)] = surface
                 if i == 0 and hasattr(surface, "use"):
                     surface.use()
-                surface.rend(face.mode, face.vertex)
+                if self.fixed_mode:
+                    # 固定模式：此时缓存必已命中，列表只录制绑定+绘制命令
+                    surface.rend_cached(face.mode, face.vertex)
+                else:
+                    surface.rend(face.mode, face.vertex)
                 if i == len(faces) - 1 and hasattr(surface, "unuse"):
                     surface.unuse()
         glEndList()
@@ -214,6 +245,7 @@ class Model:
         在单帧绘制该模型
         :return: None
         """
+        self._reset_fixed()
         if self.list_id is None:
             self.gen_dis_list()
         render_queue.append(self)
@@ -236,6 +268,40 @@ class Model:
         """
         global stable_shapes
         stable_shapes.pop(id(self))
+        self._reset_fixed()
+
+    def fixed(self):
+        """
+        将场景设为固定渲染模式。当模型长期不改变，固定在场景中时(如地图模型)，调用该函数可在着色器支持的前提下优化后续渲染性能。该优化在调用
+        paint, hide, goto, turn, turn_quat, size这些函数后自动失效。
+        表面着色器须支持缓存式渲染 rend_cached（ShaderProgram / AutoSP 支持；骨骼绑定的
+        BoneBinderSP 顶点格式不同，不支持）。不支持时本方法静默不优化，模型照常渲染，
+        成员 fixed_mode 记录实际是否生效，重新调用本方法可再次启用。
+        :return: None
+        """
+        # 逐面校验表面支持性：须提供 rend_cached，且不得是骨骼绑定表面
+        # BoneBinderSP（顶点格式不同， rend_cached 不适用）
+        for face in self.faces:
+            surface = face.surface
+            if not hasattr(surface, "rend_cached") or isinstance(surface, soup3D.shader.BoneBinderSP):
+                self.fixed_mode = False
+                return
+        self.fixed_mode = True
+        # 重建为缓存渲染版显示列表：预热后只编译 rend_cached 命中命令
+        # （绑定缓存 VAO + 绘制），逐帧 glCallList 重放零上传、零 Python 分派
+        self.gen_dis_list()
+
+    def _reset_fixed(self):
+        """
+        固定渲染优化失效处理：复位标记；若模型仍处于固定渲染队列（stable_shapes）
+        且无显示列表，重建显示列表以恢复常规渲染路径
+        :return: None
+        """
+        if not self.fixed_mode:
+            return
+        self.fixed_mode = False
+        if self.list_id is None and id(self) in stable_shapes:
+            self.gen_dis_list()
 
     def goto(self, x: int | float, y: int | float, z: int | float) -> None:
         """
@@ -257,6 +323,7 @@ class Model:
             surface = face.surface
             if hasattr(surface, "set_model_mat"):
                 surface.set_model_mat(self.get_model_mat())
+        self._reset_fixed()
 
     def turn(self, yaw: int | float, pitch: int | float, roll: int | float) -> None:
         """
@@ -278,6 +345,7 @@ class Model:
             surface = face.surface
             if hasattr(surface, "set_model_mat"):
                 surface.set_model_mat(self.get_model_mat())
+        self._reset_fixed()
 
     def turn_quat(self, quat) -> None:
         """
@@ -294,6 +362,7 @@ class Model:
             surface = face.surface
             if hasattr(surface, "set_model_mat"):
                 surface.set_model_mat(self.get_model_mat())
+        self._reset_fixed()
 
     def size(self, width: int | float, height: int | float, length: int | float) -> None:
         """
@@ -315,6 +384,7 @@ class Model:
             surface = face.surface
             if hasattr(surface, "set_model_mat"):
                 surface.set_model_mat(self.get_model_mat())
+        self._reset_fixed()
 
     def get_model_mat(self) -> glm.mat4:
         """

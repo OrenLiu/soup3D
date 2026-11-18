@@ -68,9 +68,14 @@ entry 表容量，同键重新插入不再触发分配，消除每帧每 surface
 
 ## 契约与注意事项汇总
 
-1. `rend_cached` 契约「静态数据」：顶点数据仅首次上传生效；AutoSP 侧以入参
-   列表对象的 id 判定是否重拆，修改顶点数据须传入新的列表对象，原地改动
-   不会被感知。
+1. `rend_cached` 契约「静态数据」：顶点数据仅首次上传生效；AutoSP 侧以入参   
+   列表对象的 id 判定是否重拆，修改顶点数据须传入新的列表对象，原地改动   
+   不会被感知。缓存按顶点列表对象 id 分槽（上限 256 槽，满则 FIFO 淘汰）   
+   支持多个 Face 共享一个 surface 的静态模型。   
+   引擎已将该路径接入 `Model.fixed()`：固定渲染模型的显示列表改按 rend_cached
+   命中命令编译（预热后列表内只录制「绑定缓存 VAO + 绘制」，逐帧 glCallList
+   重放零上传）；调用 paint/hide/goto/turn/turn_quat/size 后优化自动失效。
+   见 [Model.fixed](../__init__/Model/fixed.md)。
 2. 矩阵 setter 不再保存外部矩阵引用（见第 2 节行为变化）。
 3. raw 层 uniform 上传不再经包装层做 `glGetError` 检查。
 4. `BoneBinderSP` 不适用 `rend_cached`。

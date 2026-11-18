@@ -11,6 +11,7 @@
 - [paint(self)](paint.md): `函数`   
 - [show(self)](show.md): `函数`   
 - [hide(self)](hide.md): `函数`   
+- [fixed(self)](fixed.md): `函数`   
 - [goto(self, x, y, z)](goto.md): `函数`   
 - [turn(self, yaw, pitch, roll)](turn.md): `函数`   
 - [turn_quat(self, quat)](turn_quat.md): `函数`   
