@@ -39,6 +39,10 @@ shader.py 末尾定义了三个类型别名（联合类型，非基类），供�
    
 - 参数名：base_color, normal, emission, double_side, max_light_count, roughness, metallic, ior, transmission, shininess, illum
 
+## 性能优化记录   
+
+2026 年 11 月针对 shader.py 的一轮性能优化修改汇总（缓存式渲染 rend_cached、矩阵持久 value_ptr 与 setter 原地拷贝、uniform 上传切换 PyOpenGL raw 层、uniform_loc 字典容量复用）见 [performance_optimizations.md](performance_optimizations.md)。   
+
 ## 最小示例：纯色三角形模型
 
 ```python

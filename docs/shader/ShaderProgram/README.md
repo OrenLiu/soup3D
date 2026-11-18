@@ -7,6 +7,7 @@
 - [__init__(self, vertex, fragment, vbo_type, depth_test)](__init__.md): `函数`   
 - [use(self)](use.md): `函数`   
 - [rend(self, mode, vertex)](rend.md): `函数`   
+- [rend_cached(self, mode, vertex)](rend_cached.md): `函数`   
 - [unuse(self)](unuse.md): `函数`   
 - [uniform(self, v_name, v_type, *value)](uniform.md): `函数`   
 - [uniform_tex(self, v_name, texture, texture_unit)](uniform_tex.md): `函数`   

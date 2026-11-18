@@ -15,6 +15,7 @@
 - [set_light(self)](set_light.md): `函数`   
 - [use(self)](use.md): `函数`   
 - [rend(self, mode, vertex)](rend.md): `函数`   
+- [rend_cached(self, mode, vertex)](rend_cached.md): `函数`   
 - [unuse(self)](unuse.md): `函数`   
 - [is_dirty(self)](is_dirty.md): `函数`   
 - [update(self)](update.md): `函数`   

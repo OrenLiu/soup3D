@@ -22,26 +22,43 @@ set_mat_queue = weakref.WeakValueDictionary()
 light_queue = {}
 
 
+# uniform 上传函数走 PyOpenGL raw 层（ctypes 直调 + argtypes，无包装层
+# 的每调用 Python 对象分配——包装层 _cast/转换器是 GC 升代大户，见
+# gc-stutter 诊断；raw 层语义一致，仅无 glGetError 检查，引擎已有独立检查）
+from OpenGL.raw.GL.VERSION.GL_2_0 import (
+    glUniform1f as _glUniform1f, glUniform2f as _glUniform2f,
+    glUniform3f as _glUniform3f, glUniform4f as _glUniform4f,
+    glUniform1i as _glUniform1i, glUniform2i as _glUniform2i,
+    glUniform3i as _glUniform3i, glUniform4i as _glUniform4i,
+    glUniform1fv as _glUniform1fv, glUniform2fv as _glUniform2fv,
+    glUniform3fv as _glUniform3fv, glUniform4fv as _glUniform4fv,
+    glUniform1iv as _glUniform1iv, glUniform2iv as _glUniform2iv,
+    glUniform3iv as _glUniform3iv, glUniform4iv as _glUniform4iv,
+    glUniformMatrix2fv as _glUniformMatrix2fv,
+    glUniformMatrix3fv as _glUniformMatrix3fv,
+    glUniformMatrix4fv as _glUniformMatrix4fv,
+)
+
 type_map = {
-    soup3D.name.FLOAT_VEC1: glUniform1f,
-    soup3D.name.FLOAT_VEC2: glUniform2f,
-    soup3D.name.FLOAT_VEC3: glUniform3f,
-    soup3D.name.FLOAT_VEC4: glUniform4f,
-    soup3D.name.INT_VEC1: glUniform1i,
-    soup3D.name.INT_VEC2: glUniform2i,
-    soup3D.name.INT_VEC3: glUniform3i,
-    soup3D.name.INT_VEC4: glUniform4i,
-    soup3D.name.ARRAY_FLOAT_VEC1: glUniform1fv,
-    soup3D.name.ARRAY_FLOAT_VEC2: glUniform2fv,
-    soup3D.name.ARRAY_FLOAT_VEC3: glUniform3fv,
-    soup3D.name.ARRAY_FLOAT_VEC4: glUniform4fv,
-    soup3D.name.ARRAY_INT_VEC1: glUniform1iv,
-    soup3D.name.ARRAY_INT_VEC2: glUniform2iv,
-    soup3D.name.ARRAY_INT_VEC3: glUniform3iv,
-    soup3D.name.ARRAY_INT_VEC4: glUniform4iv,
-    soup3D.name.ARRAY_MATRIX_VEC2: glUniformMatrix2fv,
-    soup3D.name.ARRAY_MATRIX_VEC3: glUniformMatrix3fv,
-    soup3D.name.ARRAY_MATRIX_VEC4: glUniformMatrix4fv,
+    soup3D.name.FLOAT_VEC1: _glUniform1f,
+    soup3D.name.FLOAT_VEC2: _glUniform2f,
+    soup3D.name.FLOAT_VEC3: _glUniform3f,
+    soup3D.name.FLOAT_VEC4: _glUniform4f,
+    soup3D.name.INT_VEC1: _glUniform1i,
+    soup3D.name.INT_VEC2: _glUniform2i,
+    soup3D.name.INT_VEC3: _glUniform3i,
+    soup3D.name.INT_VEC4: _glUniform4i,
+    soup3D.name.ARRAY_FLOAT_VEC1: _glUniform1fv,
+    soup3D.name.ARRAY_FLOAT_VEC2: _glUniform2fv,
+    soup3D.name.ARRAY_FLOAT_VEC3: _glUniform3fv,
+    soup3D.name.ARRAY_FLOAT_VEC4: _glUniform4fv,
+    soup3D.name.ARRAY_INT_VEC1: _glUniform1iv,
+    soup3D.name.ARRAY_INT_VEC2: _glUniform2iv,
+    soup3D.name.ARRAY_INT_VEC3: _glUniform3iv,
+    soup3D.name.ARRAY_INT_VEC4: _glUniform4iv,
+    soup3D.name.ARRAY_MATRIX_VEC2: _glUniformMatrix2fv,
+    soup3D.name.ARRAY_MATRIX_VEC3: _glUniformMatrix3fv,
+    soup3D.name.ARRAY_MATRIX_VEC4: _glUniformMatrix4fv,
 
     soup3D.name.BYTE: GL_BYTE,
     soup3D.name.BYTE_US: GL_UNSIGNED_BYTE,
@@ -53,6 +70,14 @@ type_map = {
     soup3D.name.FLOAT: GL_FLOAT,
     soup3D.name.FLOAT_D: GL_DOUBLE,
     soup3D.name.FIXED: GL_FIXED
+}
+
+# 整型 GL 类型 → numpy dtype 映射（整型属性指针路径 glVertexAttribIPointer 使用）。
+# rend_cached 共享本表；rend 保持其函数内局部映射不动（上游代码原样）
+_INT_TYPE_MAP = {
+    GL_BYTE: np.int8, GL_UNSIGNED_BYTE: np.uint8,
+    GL_SHORT: np.int16, GL_UNSIGNED_SHORT: np.uint16,
+    GL_INT: np.int32, GL_UNSIGNED_INT: np.uint32,
 }
 
 
@@ -614,6 +639,12 @@ class ShaderProgram:
 
         self.texture_val = {}
 
+        # 缓存式渲染（rend_cached）的缓冲：None＝未创建，首次渲染时创建；
+        # 生命周期与实例对齐（__del__ 中随程序资源一并删除）
+        self._cached_vao = None
+        self._cached_vbo = None
+        self._cached_vertex_count = 0
+
         self.dirty = False
 
     def use(self):
@@ -699,6 +730,94 @@ class ShaderProgram:
         glBindVertexArray(0)
         glDeleteVertexArrays(1, [vao])
         glDeleteBuffers(num_buffers, vbo_ids)
+
+    def rend_cached(self, mode, vertex):
+        """
+        缓存式渲染：与 rend(mode, vertex) 入参语义一致，但首次调用创建的 VAO/VBO
+        缓存在自身，后续调用直接绑定缓存 VAO 绘制，不重复创建/上传/删除缓冲。
+
+        设计说明：静态模型逐帧渲染的缓冲复用。rend() 每帧「新建 VAO/VBO → 上传 →
+        绘制 → 删除」，对顶点数据不变的静态场景（如地图模型）是纯浪费；本方法将
+        缓冲生命周期与着色器程序对齐，仅首次付出创建与上传成本，消除逐帧的
+        缓冲创建/删除churn，绘制时顶点装配状态由 VAO 直接恢复。
+
+        契约：顶点数据视为静态——同一实例后续调用传入的顶点数据须保持不变，
+        本方法不再重新上传（仅首次数据生效）。缓存的 VAO/VBO 随实例被垃圾回收，
+        在 __del__ 中随程序资源一并删除，无需显式清理。
+
+        :param mode:   绘制方式
+        :param vertex: 表面中所有的顶点
+        :return: None
+        """
+        if isinstance(self.vbo_type, str):
+            types = [type_map[self.vbo_type] for i in vertex]
+        else:
+            if len(self.vbo_type) != len(vertex):
+                raise TypeError(f"this ShaderProgram need {len(self.vbo_type)} vbo but {len(vertex)} were given")
+            types = [type_map[i] for i in self.vbo_type]
+
+        for i in self.texture_val:
+            value = self.texture_val[i]
+            texture, texture_unit = value
+            glActiveTexture(GL_TEXTURE0 + texture_unit)
+            glBindTexture(GL_TEXTURE_2D, texture.get_texture_id())
+
+        if self.depth_test:
+            glEnable(GL_DEPTH_TEST)
+        else:
+            glDisable(GL_DEPTH_TEST)
+
+        if self._cached_vao is None:
+            # 首次调用：创建 VAO/VBO 并上传顶点数据；属性指针绑定记录进 VAO 状态，
+            # 之后逐帧只需绑定该 VAO 即可恢复全部顶点装配状态
+            num_buffers = len(vertex)
+            vbo_ids = glGenBuffers(num_buffers)
+
+            if num_buffers == 1:
+                vbo_ids = [vbo_ids]  # 包装为列表
+
+            vao = glGenVertexArrays(1)
+            glBindVertexArray(vao)
+
+            for i, vert_group in enumerate(vertex):
+                if not vert_group:  # 空顶点组跳过
+                    continue
+
+                gl_type = types[i]
+                if gl_type in _INT_TYPE_MAP:
+                    vbo_np = np.array(vert_group, dtype=_INT_TYPE_MAP[gl_type])
+                else:
+                    vbo_np = np.array(vert_group, dtype=np.float32)
+
+                glBindBuffer(GL_ARRAY_BUFFER, vbo_ids[i])
+                glBufferData(GL_ARRAY_BUFFER, vbo_np.nbytes, vbo_np, GL_STATIC_DRAW)
+
+                # 计算每个顶点的元素个数
+                components = len(vert_group[0])
+                if gl_type in _INT_TYPE_MAP:
+                    glVertexAttribIPointer(i, components, gl_type, 0, ctypes.c_void_p(0))
+                else:
+                    glVertexAttribPointer(i, components, gl_type, GL_FALSE, 0, ctypes.c_void_p(0))
+                glEnableVertexAttribArray(i)
+
+            glBindBuffer(GL_ARRAY_BUFFER, 0)
+
+            # 使用第一个顶点组的长度作为顶点数量（静态契约：数量随首帧数据固定）
+            if vertex and vertex[0]:
+                self._cached_vertex_count = len(vertex[0])
+            else:
+                self._cached_vertex_count = 0
+
+            self._cached_vao = vao
+            self._cached_vbo = vbo_ids
+
+        glBindVertexArray(self._cached_vao)
+        glDrawArrays(mode, 0, self._cached_vertex_count)
+        glBindVertexArray(0)
+        # 状态卫生：纹理绑定循环把活动纹理单元遗留在最后一个引擎纹理的单元上
+        # （如 GL_TEXTURE3），不归位会令下游基于固定管线/默认单元的渲染方
+        # （如 pyimgui 的字体绑定）落在错误单元上而整体不可见
+        glActiveTexture(GL_TEXTURE0)
 
     def unuse(self):
         """
@@ -810,7 +929,9 @@ class ShaderProgram:
                 if v_type in type_map:
                     type_map[v_type](loc, *value)
 
-        self.uniform_loc = {}
+        # clear() 而非重建 dict：CPython dict clear 后保留 entry 表容量，
+        # 同键重新插入不再分配（每帧 45 surface × 新 dict 是 GC 升代大户）
+        self.uniform_loc.clear()
         self.dirty = False
 
     def has_uniform(self, v_name: str) -> bool:
@@ -853,6 +974,17 @@ class ShaderProgram:
         if hasattr(self, 'shader') and self.shader:
             glDeleteProgram(self.shader)
             self.shader = None
+
+        # 删除缓存式渲染（rend_cached）的 VAO/VBO；GL 上下文可能已释放，失败静默
+        try:
+            if getattr(self, '_cached_vao', None) is not None:
+                glDeleteVertexArrays(1, [self._cached_vao])
+                self._cached_vao = None
+            if getattr(self, '_cached_vbo', None) is not None:
+                glDeleteBuffers(len(self._cached_vbo), self._cached_vbo)
+                self._cached_vbo = None
+        except Exception:
+            pass
 
         # 清空相关字典
         if hasattr(self, 'uniform_loc'):
@@ -927,6 +1059,17 @@ class AutoSP:
         self.model_mat = glm.mat4(1.0)
         self.view_mat = glm.mat4(1.0)
         self.projection_mat = glm.mat4(1.0)
+        # 持久 value_ptr：矩阵对象此后恒定（setter 改为原地拷贝，不替换引用），
+        # 指针数据随矩阵原地写自动同步；消除每帧 glm.value_ptr() 的 ctypes
+        # 指针包装分配（GC 升代大户，见 gc-stutter 诊断）
+        self._model_ptr = glm.value_ptr(self.model_mat)
+        self._view_ptr = glm.value_ptr(self.view_mat)
+        self._proj_ptr = glm.value_ptr(self.projection_mat)
+
+        # 缓存式渲染（rend_cached）的拆分缓存：_cached_split_src 记录上次拆分的
+        # 源顶点列表对象，后续帧传入同一对象（id 不变）时直接复用拆分结果
+        self._cached_split = None
+        self._cached_split_src = None
 
         # 注册到矩阵更新队列
         set_mat_queue[id(self)] = self
@@ -1169,7 +1312,10 @@ class AutoSP:
         """
         if not isinstance(mat, glm.mat4):
             raise TypeError("mat must be a glm.mat4")
-        self.model_mat = mat
+        # 原地拷贝而非替换引用：矩阵对象恒定，持久 value_ptr 指针保持有效；
+        # pyglm 支持整行 vec4 赋值且 C 端按值拷贝（已验证）
+        for i in range(4):
+            self.model_mat[i] = mat[i]
         self.dirty = True
         self.model_dirty = True
 
@@ -1181,7 +1327,9 @@ class AutoSP:
         """
         if not isinstance(mat, glm.mat4):
             raise TypeError("mat must be a glm.mat4")
-        self.view_mat = mat
+        # 原地拷贝（同 set_model_mat：矩阵对象恒定，持久指针保持有效）
+        for i in range(4):
+            self.view_mat[i] = mat[i]
         self.dirty = True
         self.view_dirty = True
 
@@ -1193,7 +1341,9 @@ class AutoSP:
         """
         if not isinstance(mat, glm.mat4):
             raise TypeError("mat must be a glm.mat4")
-        self.projection_mat = mat
+        # 原地拷贝（同 set_model_mat：矩阵对象恒定，持久指针有效）
+        for i in range(4):
+            self.projection_mat[i] = mat[i]
         self.dirty = True
         self.projection_dirty = True
 
@@ -1277,6 +1427,87 @@ class AutoSP:
         # 渲染
         self.shader_program.rend(mode, [positions, tex_coords, normals])
 
+    def rend_cached(self, mode, vertex):
+        """
+        缓存式渲染：顶点拆分逻辑与 rend(mode, vertex) 一致，但拆分结果缓存在自身，
+        后续帧传入同一顶点列表对象（按 id 判定）时跳过纯 Python 逐顶点拆分，
+        直接以缓存结果调用 ShaderProgram.rend_cached 绘制。
+
+        设计说明：静态模型逐帧渲染的拆分缓存。rend() 每帧把 (x, y, z, u, v, ...)
+        顶点列表重新拆分为位置/纹理坐标/法线三列表，对数万顶点的静态地图是
+        每帧重复的纯 Python 开销；本方法只在顶点列表对象变化（id 不同）时重拆一次，
+        并复用着色器程序侧缓存的 VAO/VBO（见 ShaderProgram.rend_cached）。
+
+        契约：以入参 vertex 的对象 id 变化判定重拆——修改顶点数据须传入新的
+        列表对象，原地改动不会被感知；顶点数据本身也视为静态（不再重新上传）。
+        拆分缓存随实例被垃圾回收自然释放，无需显式清理。仅适用于 AutoSP 的
+        顶点格式（骨骼绑定的 BoneBinderSP 顶点格式不同，勿对其调用）。
+
+        :param mode:   绘制方式
+        :param vertex: 表面中所有的顶点
+        :return: None
+        """
+        if self._cached_split is None or self._cached_split_src is not vertex:
+            # 计算面法线（使用前三个顶点）
+            normal = [0.0, 0.0, 1.0]  # 默认法线
+            if len(vertex) >= 3:
+                v0 = vertex[0]
+                v1 = vertex[1]
+                v2 = vertex[2]
+
+                # 确保顶点有足够的数据
+                if len(v0) >= 3 and len(v1) >= 3 and len(v2) >= 3:
+                    # 计算两个向量
+                    u = [v1[0] - v0[0], v1[1] - v0[1], v1[2] - v0[2]]
+                    v = [v2[0] - v0[0], v2[1] - v0[1], v2[2] - v0[2]]
+
+                    # 叉积得到法线
+                    normal = [
+                        u[1] * v[2] - u[2] * v[1],
+                        u[2] * v[0] - u[0] * v[2],
+                        u[0] * v[1] - u[1] * v[0]
+                    ]
+
+                    # 归一化
+                    length = (normal[0] ** 2 + normal[1] ** 2 + normal[2] ** 2) ** 0.5
+                    if length > 0:
+                        normal = [n / length for n in normal]
+
+            # 将顶点数据拆分为位置、纹理坐标和法线
+            positions = []
+            tex_coords = []
+            normals = []  # 法线数据
+
+            for v in vertex:
+                # 位置数据
+                if len(v) >= 3:
+                    positions.append(v[0:3])
+                else:
+                    positions.append((0.0, 0.0, 0.0))
+
+                # 纹理坐标
+                if len(v) >= 5:
+                    tex_coords.append((v[3], 1.0 - v[4]))  # 翻转纹理坐标的Y轴
+                else:
+                    tex_coords.append((0.0, 0.0))
+                # 法线数据 - 使用计算的面法线
+                if len(v) >= 8:
+                    normals.append(v[5:8])
+                else:
+                    normals.append(normal)
+
+            # 确保所有数据长度一致
+            min_len = min(len(positions), len(tex_coords), len(normals))
+            positions = positions[:min_len]
+            tex_coords = tex_coords[:min_len]
+            normals = normals[:min_len]
+
+            self._cached_split = [positions, tex_coords, normals]
+            self._cached_split_src = vertex
+
+        # 渲染
+        self.shader_program.rend_cached(mode, self._cached_split)
+
     def unuse(self):
         """
         停用该着色器，会在结束应用时自动调用
@@ -1295,7 +1526,7 @@ class AutoSP:
                     soup3D.ARRAY_MATRIX_VEC4,
                     1,
                     GL_FALSE,
-                    glm.value_ptr(self.model_mat)
+                    self._model_ptr
                 )
                 self.model_dirty = False
             if self.view_dirty:
@@ -1304,7 +1535,7 @@ class AutoSP:
                     soup3D.ARRAY_MATRIX_VEC4,
                     1,
                     GL_FALSE,
-                    glm.value_ptr(self.view_mat)
+                    self._view_ptr
                 )
                 self.view_dirty = False
             if self.projection_dirty:
@@ -1313,7 +1544,7 @@ class AutoSP:
                     soup3D.ARRAY_MATRIX_VEC4,
                     1,
                     GL_FALSE,
-                    glm.value_ptr(self.projection_mat)
+                    self._proj_ptr
                 )
                 self.projection_dirty = False
             if self.light_dirty:
